@@ -18,14 +18,14 @@ A game narrative engine with probabily at its core.
   - [ ] Database
   - [ ] State Save/Load
   - [ ] Public Interface
+    - [ ] Get Random Event
+    - [ ] Set Choice
+    - [ ] Get Result for Choice
     - [ ] CRUD Events
     - [ ] CRUD Resources
     - [ ] CRUD Inventories
     - [ ] CRUD Items
     - [ ] State Machine w/Inspection
-    - [ ] Get Random Event
-    - [ ] Set Choice
-    - [ ] Get Result for Choice
   - [ ] Balancing Interface
   - [ ] C++ Interface
   - [ ] UE4 Bindings
