@@ -1,16 +1,62 @@
+use cuentitos_common::Config;
+use std::io::Write;
+use std::fs::create_dir;
+use std::fs::File;
+use rmp_serde::Serializer;
+use crate::parser::Parser;
 use std::path::Path;
 use cuentitos_common::Result;
+use serde::Serialize;
+use std::error;
+use std::fmt;
 
-mod config;
+#[derive(Debug)]
+pub enum CompileError
+{
+    SourceNotDirectory,
+    DestinationNotDirectory,
+}
 
+impl error::Error for CompileError {}
 
-pub fn compile<T,U>(source_path: T, _destination_path: U)  -> Result<()>
+impl fmt::Display for CompileError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self
+        {
+            CompileError::SourceNotDirectory => write!(f, "Source is not a folder."),
+            CompileError::DestinationNotDirectory => write!(f, "Destination is not a folder."),
+        }
+        
+    }
+}  
+
+mod parser;
+pub mod parsers;
+
+pub fn compile<T,U>(source_path: T, destination_path: U)  -> Result<Parser>
 where T: AsRef<Path>, U: AsRef<Path>
 {
   check_required_files(&source_path).unwrap();
-  let config = config::load(&source_path);
-  println!("Config: {:?}", config);
-  Ok(())
+  let mut config = Config::load(&source_path, &destination_path).unwrap();
+  config.base_path = source_path.as_ref().to_path_buf();
+  config.destination_path = destination_path.as_ref().to_path_buf();
+  let mut parser = parser::Parser::new(config);
+  parser.parse().unwrap();
+
+  // TODO(fran): check validity of all events.
+
+  let mut buf: Vec<u8> = Vec::new();
+  let mut serializer = Serializer::new(&mut buf);
+
+  parser.serialize(&mut serializer);
+
+  let mut destination_path = destination_path.as_ref().to_path_buf();
+
+  let mut file = File::create(&destination_path)?;
+  
+  file.write_all(&buf)?;
+
+  Ok(parser)
 }
 
 

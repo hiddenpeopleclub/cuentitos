@@ -1,14 +1,16 @@
 use crate::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Default, Clone, Deserialize, Serialize)]
+pub type EventId = String;
+
+#[derive(Default, Clone, Deserialize, Serialize, Debug, PartialEq, Eq)]
 pub struct Event {
-  id: String,
-  unique: bool,
-  title: String,
-  description: String,
-  choices: Vec<EventChoice>,
-  requirements: Vec<EventRequirement>
+  pub id: EventId,
+  pub unique: bool,
+  pub title: String,
+  pub description: String,
+  pub choices: Vec<EventChoice>,
+  pub requirements: Vec<EventRequirement>
 }
 
 #[derive(Default)]
@@ -52,6 +54,14 @@ impl EventBuilder {
   pub fn choice(&mut self, choice: EventChoice) -> &mut EventBuilder {
     self.event.choices.push(choice);
     self
+  }
+
+  pub fn choice_count(&self) -> usize {
+    self.event.choices.len()
+  }
+
+  pub fn result_count(&self, choice: usize) -> usize {
+    self.event.choices[choice].results.len()
   }
 
   pub fn require(&mut self, requirement: EventRequirement) -> &mut EventBuilder {

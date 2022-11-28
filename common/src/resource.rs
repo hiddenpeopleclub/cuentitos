@@ -1,8 +1,8 @@
-use serde::Deserialize;
+use serde::{ Serialize, Deserialize };
 
 pub type ResourceId = String;
 
-#[derive(Debug, PartialEq, Default, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Default, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum ResourceKind {
   #[default]
@@ -11,10 +11,10 @@ pub enum ResourceKind {
   Bool
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct Resource {
-  id: ResourceId,
-  kind: ResourceKind
+  pub id: ResourceId,
+  pub kind: ResourceKind
 }
 
 #[cfg(test)]

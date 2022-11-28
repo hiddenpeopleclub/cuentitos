@@ -14,10 +14,20 @@ fn main() {
 
   let Args { source_path, build_path } = args;
   {
-    let result = compile(source_path, build_path);
-    if result.is_err()
-    {
-      println!("{}",result.unwrap_err());
+    let result = compile(&source_path, &build_path).unwrap();
+
+    println!("");
+    println!("Parse result for events in '{}/events'", source_path.display());
+    println!("");
+
+    for (id, event) in result.events {
+      match event {
+        Ok(_) => println!("  ✔️  {}", id),
+        Err(error) => println!("  ❌  {}: {}", id, error)
+      }
     }
+
+    println!("");
+
   }
 }
