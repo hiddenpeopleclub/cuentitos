@@ -11,13 +11,12 @@ struct Args {
 fn main() {
   let args = Args::parse();
 
-  match args {
-    Args { source_path, build_path } => {
-      let result = compile(source_path, build_path);
-      if result.is_err()
-      {
-        println!("{}",result.unwrap_err());
-      }
+  let Args { source_path, build_path } = args;
+  {
+    let result = compile(source_path, build_path);
+    if result.is_err()
+    {
+      println!("{}",result.unwrap_err());
     }
   }
 }

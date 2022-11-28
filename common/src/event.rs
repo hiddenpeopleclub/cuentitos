@@ -1,5 +1,4 @@
 use crate::*;
-use crate::test_utils::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Default, Clone, Deserialize, Serialize)]
@@ -68,6 +67,7 @@ impl EventBuilder {
 
 #[cfg(test)]
 mod test {
+  use crate::test_utils::serialize;
   use crate::{event::*, test_utils::load_mp_fixture};
 
   #[test]
