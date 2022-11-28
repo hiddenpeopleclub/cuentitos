@@ -3,6 +3,7 @@ use cuentitos_compiler::compile;
 
 #[derive(Parser,Debug)]
 struct Args {
+    #[clap(default_value=".")]
     source_path: std::path::PathBuf,
     #[clap(default_value="./cuentitos.db")]
     build_path: std::path::PathBuf,

@@ -1,6 +1,9 @@
+use serde::Deserialize;
+
 pub type ResourceId = String;
 
-#[derive(Debug, PartialEq, Default)]
+#[derive(Debug, PartialEq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ResourceKind {
   #[default]
   Integer,
