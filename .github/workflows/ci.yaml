@@ -29,7 +29,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2
-        if: runner.os == 'linux'
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
