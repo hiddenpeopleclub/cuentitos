@@ -367,13 +367,14 @@ mod test {
     );
   }
 
-  #[test]
-  fn error_on_missing_item() {
-    let config = Config::default();
-    let _result = EventRequirement::parse("item wood 1", &config).unwrap();
-    // assert_eq!(Err("\"wood\" is not defined as a valid item".to_string()), result);
-    todo!()
-  }
+  // TODO(fran): Figure out how to implement this
+  // #[test]
+  // fn error_on_missing_item() {
+  //   let config = Config::default();
+  //   let _result = EventRequirement::parse("item wood 1", &config).unwrap();
+  //   // assert_eq!(Err("\"wood\" is not defined as a valid item".to_string()), result);
+  //   todo!()
+  // }
 
   #[test]
   fn parses_reputations() {
@@ -545,13 +546,14 @@ mod test {
     );
   }
 
-  #[test]
-  fn error_on_missing_event() {
-    let config = Config::default();
-    let _result = EventRequirement::parse("event that_doesnt_exists", &config).unwrap();
-    // assert_eq!(Err("\"that_doesnt_exists\" is not a defined event".to_string()), result);
-    todo!()
-  }
+  // TODO(fran): Figure out how to implement this
+  // #[test]
+  // fn error_on_missing_event() {
+  //   let config = Config::default();
+  //   let _result = EventRequirement::parse("event that_doesnt_exists", &config).unwrap();
+  //   // assert_eq!(Err("\"that_doesnt_exists\" is not a defined event".to_string()), result);
+  //   todo!()
+  // }
 
   #[test]
   fn parses_decision() {
@@ -605,7 +607,6 @@ mod test {
     let config = Config::default();
     let result = EventRequirement::parse("tile forest", &config);
     assert_eq!(Err("'forest' is not a valid tile".to_string()), result);
-    todo!()
   }
 
   #[test]

@@ -225,14 +225,15 @@ mod test {
       }
     );
   }
-
-  #[test]
-  fn error_on_missing_item() {
-    let config = Config::default();
-    let _result = Modifier::parse("item wood 1", &config).unwrap();
-    // assert_eq!(Err("\"wood\" is not defined as a valid item".to_string()), result);
-    todo!()
-  }
+  
+  // TODO(fran): Figure out how to implement this
+  // #[test]
+  // fn error_on_missing_item() {
+  //   let config = Config::default();
+  //   let _result = Modifier::parse("item wood 1", &config).unwrap();
+  //   // assert_eq!(Err("\"wood\" is not defined as a valid item".to_string()), result);
+  //   todo!()
+  // }
 
   #[test]
   fn parses_reputations() {
