@@ -2,18 +2,16 @@
 A game narrative engine with probabily at its core.
 
 ## TODO
-### Definitions
-  - [ ] Resources
-  - [ ] Items
-  - [ ] Inventory
-
-### Language
-  - [ ] Linter
-  - [ ] Parser
+### Compiler
+  - [x] Parse events
+  - [ ] Error on missing events
+  - [ ] Parse items
+  - [ ] Error on missing items
+  - [ ] Suggest similar event/item/tile names
   - [ ] I18n -> xls export/load
 
 ### Runtime
-  - [ ] Instance
+  - [ ] Instances
   - [ ] Configuration
   - [ ] Database
   - [ ] State Save/Load
@@ -25,10 +23,9 @@ A game narrative engine with probabily at its core.
     - [ ] CRUD Resources
     - [ ] CRUD Inventories
     - [ ] CRUD Items
-    - [ ] State Machine w/Inspection
-  - [ ] Balancing Interface
-  - [ ] C++ Interface
+  - [ ] C interface
   - [ ] UE4 Bindings
+  - [ ] Balancing Interface
   - [ ] C# Interface
   - [ ] Unity Bindings
 
@@ -36,9 +33,8 @@ A game narrative engine with probabily at its core.
   - [ ] Writing (using Visual Studio Code & Sublime Text?)
   - [ ] Testing
   - [ ] Database Querying
-  - [ ] Balancing
 
 ### CI
-  - [ ] Add tests
-  - [ ] Add coverage
-  - [ ] Add automated builds for windows, mac and linux
+  - [x] Add tests
+  - [x] Add coverage
+  - [x] Add automated builds for windows, mac and linux
