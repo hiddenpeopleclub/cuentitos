@@ -77,8 +77,8 @@ impl EventBuilder {
 
 #[cfg(test)]
 mod test {
-  use crate::test_utils::serialize;
-  use crate::{event::*, test_utils::load_mp_fixture};
+  use crate::test_utils::{ serialize, load_mp_fixture };
+  use crate::event::*;
 
   #[test]
   fn event_builder_supports_id() {

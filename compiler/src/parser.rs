@@ -29,10 +29,10 @@ impl Parser {
 
     for path in paths {
       let id = &path.file_name();
-      let id = id.to_str().unwrap()[3..].split(".").next().unwrap();
+      let id = id.to_str().unwrap()[3..].split('.').next().unwrap();
       let id = String::from_str(id).unwrap();
 
-      if id != "" {
+      if !id.is_empty() {
         let content = match fs::read(path.path()) {
           Ok(data) => data,
           Err(err) => { panic!("Error reading '{}': {}", path.path().to_str().unwrap(), err) }

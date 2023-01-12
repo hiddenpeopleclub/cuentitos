@@ -16,9 +16,9 @@ fn main() {
   {
     let result = compile(&source_path, &build_path).unwrap();
 
-    println!("");
+    println!();
     println!("Parse result for events in '{}/events'", source_path.display());
-    println!("");
+    println!();
 
     for (id, event) in result.events {
       match event {
@@ -27,7 +27,7 @@ fn main() {
       }
     }
 
-    println!("");
+    println!();
 
   }
 }

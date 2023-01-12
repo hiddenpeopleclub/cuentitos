@@ -103,10 +103,11 @@ impl Event {
   fn parse_choice(line: &str) -> Option<EventChoice> {
     let regexp = Regex::new(r"^\s+\* (.+)").unwrap();
 
-    for result in regexp.captures_iter(line) {
-      let mut choice = EventChoice::default();
-      choice.text = result[1].to_string();
-      return Some(choice)
+    if let Some(result) = regexp.captures_iter(line).next() {
+      return Some(EventChoice {
+        text: result[1].to_string(),
+        ..Default::default()
+      })
     }
     None
   }
@@ -114,11 +115,12 @@ impl Event {
   fn parse_result(line: &str) -> Option<EventResult> {
     let regexp = Regex::new(r"^\s+\((\d+)\) (.+)").unwrap();
 
-    for result in regexp.captures_iter(line) {
-      let mut event_result = EventResult::default();
-      event_result.chance = u8::from_str(&result[1]).unwrap();
-      event_result.text = result[2].to_string();
-      return Some(event_result)
+    if let Some(result) = regexp.captures_iter(line).next() {
+      return Some(EventResult {
+        chance: u8::from_str(&result[1]).unwrap(),
+        text: result[2].to_string(),
+        ..Default::default()
+      })
     }
     None
   }
@@ -126,7 +128,7 @@ impl Event {
   fn parse_requirement(line: &str, config: &Config) -> Option<core::result::Result<EventRequirement, String>> {
     let regexp = Regex::new(r"^\s+require (.+)").unwrap();
 
-    for result in regexp.captures_iter(line) {
+    if let Some(result) = regexp.captures_iter(line).next() {
       return Some(crate::parsers::EventRequirement::parse(result[1].to_string(), config))
     }
     None
@@ -135,9 +137,10 @@ impl Event {
   fn parse_modifier(line: &str, config: &Config) -> Option<core::result::Result<Modifier, String>> {
     let regexp = Regex::new(r"^\s+mod (.+)").unwrap();
 
-    for result in regexp.captures_iter(line) {
+    if let Some(result) = regexp.captures_iter(line).next() {
       return Some(crate::parsers::Modifier::parse(result[1].to_string(), config))
     }
+
     None
   }
 

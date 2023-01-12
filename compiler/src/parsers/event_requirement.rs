@@ -10,7 +10,7 @@ impl EventRequirement {
   pub fn parse<T>(data: T, config: &Config) -> Result<cuentitos_common::EventRequirement, String>
     where T: AsRef<str>
   {
-    let params : Vec<&str> = data.as_ref().split(" ").collect();
+    let params : Vec<&str> = data.as_ref().split(' ').collect();
 
     match params[0] {
       "resource" => {
@@ -26,7 +26,7 @@ impl EventRequirement {
             match result {
               Ok((amount, condition)) => { 
                 let resource = Resource{ id: resource.to_string(), kind: kind.clone() };
-                return Ok(cuentitos_common::EventRequirement::Resource { resource, amount, condition })
+                Ok(cuentitos_common::EventRequirement::Resource { resource, amount, condition })
               },
               Err(error) => return Err(format!("{} for resource '{}'", error, resource))
             }
@@ -44,20 +44,20 @@ impl EventRequirement {
           amount = result.0;
           condition = result.1;
         }        
-        return Ok(cuentitos_common::EventRequirement::Item { id, amount, condition })
+        Ok(cuentitos_common::EventRequirement::Item { id, amount, condition })
       },
       "reputation" => {
-        let reputation = params[1].to_string();
-        if config.reputations.contains(&reputation) {
+        let id = params[1].to_string();
+        if config.reputations.contains(&id) {
           match Self::parse_amount_and_condition::<&str, i32>(params[2], Condition::HigherThan) {
             Ok((amount, condition)) =>  {
-              return Ok(cuentitos_common::EventRequirement::Reputation { id: reputation, amount: amount, condition })  
+              Ok(cuentitos_common::EventRequirement::Reputation { id, amount, condition })  
             },
-            Err(error) => return Err(format!("{} for reputation '{}'", error, reputation))
+            Err(error) => return Err(format!("{} for reputation '{}'", error, id))
           }
         }
         else {
-          return Err(format!("'{}' is not a valid reputation", reputation));
+          return Err(format!("'{}' is not a valid reputation", id));
         }
       },
       "time_of_day" => {
@@ -99,7 +99,7 @@ impl EventRequirement {
   }
 
   fn parse_condition(id: &mut String, default: Condition) -> Condition {
-    match id.chars().nth(0) {
+    match id.chars().next() {
       Some(c) => {
         if c == '!' { 
           id.remove(0);
@@ -118,7 +118,7 @@ impl EventRequirement {
     U: FromStr + Display
   {
     let mut value = data.as_ref().to_string();
-    let condition = match value.chars().nth(0) {
+    let condition = match value.chars().next() {
       Some(c) => {
         match c {
           '>' => {

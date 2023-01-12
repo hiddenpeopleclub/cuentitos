@@ -1,6 +1,5 @@
 use cuentitos_common::Config;
 use std::io::Write;
-use std::fs::create_dir;
 use std::fs::File;
 use rmp_serde::Serializer;
 use crate::parser::Parser;
@@ -48,11 +47,11 @@ where T: AsRef<Path>, U: AsRef<Path>
   let mut buf: Vec<u8> = Vec::new();
   let mut serializer = Serializer::new(&mut buf);
 
-  parser.serialize(&mut serializer);
+  parser.serialize(&mut serializer).unwrap();
 
-  let mut destination_path = destination_path.as_ref().to_path_buf();
+  let destination_path = destination_path.as_ref().to_path_buf();
 
-  let mut file = File::create(&destination_path)?;
+  let mut file = File::create(destination_path)?;
   
   file.write_all(&buf)?;
 
@@ -69,7 +68,7 @@ where T: AsRef<Path>
   
   if !config.exists() { panic!("Missing config.toml") }
 
-  let mut events = base_path.clone();
+  let mut events = base_path;
   events.push("events");
   if !events.exists() { panic!("Missing events folder"); }
 

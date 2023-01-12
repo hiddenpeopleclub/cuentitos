@@ -1,5 +1,6 @@
 use serde::{ Serialize, Deserialize };
 
+#[cfg(test)]
 mod test_utils;
 
 mod event;

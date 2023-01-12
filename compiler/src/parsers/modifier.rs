@@ -2,7 +2,7 @@ use cuentitos_common::{Resource};
 use core::fmt::Display;
 use core::str::FromStr;
 use crate::Config;
-use cuentitos_common::{Condition, ResourceKind::*};
+use cuentitos_common::{ResourceKind::*};
 
 pub struct Modifier;
 
@@ -10,7 +10,7 @@ impl Modifier {
   pub fn parse<T>(data: T, config: &Config) -> Result<cuentitos_common::Modifier, String>
     where T: AsRef<str>
   {
-    let params : Vec<&str> = data.as_ref().split(" ").collect();
+    let params : Vec<&str> = data.as_ref().split(' ').collect();
 
     match params[0] {
       "resource" => {
@@ -26,7 +26,7 @@ impl Modifier {
             match result {
               Ok(amount) => { 
                 let resource = Resource{ id: resource.to_string(), kind: kind.clone() };
-                return Ok(cuentitos_common::Modifier::Resource { resource, amount })
+                Ok(cuentitos_common::Modifier::Resource { resource, amount })
               },
               Err(error) => return Err(format!("{} for resource '{}'", error, resource))
             }
@@ -41,20 +41,20 @@ impl Modifier {
         if params.len() > 2 {
           amount = Self::parse_amount::<&str, i32>(params[2])?;
         }        
-        return Ok(cuentitos_common::Modifier::Item { id, amount })
+        Ok(cuentitos_common::Modifier::Item { id, amount })
       },
       "reputation" => {
-        let reputation = params[1].to_string();
-        if config.reputations.contains(&reputation) {
+        let id = params[1].to_string();
+        if config.reputations.contains(&id) {
           match Self::parse_amount::<&str, i32>(params[2]) {
             Ok(amount) =>  {
-              return Ok(cuentitos_common::Modifier::Reputation { id: reputation, amount: amount })  
+              Ok(cuentitos_common::Modifier::Reputation { id, amount })  
             },
-            Err(error) => return Err(format!("{} for reputation '{}'", error, reputation))
+            Err(error) => return Err(format!("{} for reputation '{}'", error, id))
           }
         }
         else {
-          return Err(format!("'{}' is not a valid reputation", reputation));
+          return Err(format!("'{}' is not a valid reputation", id));
         }
       },
       "decision" => {
@@ -117,7 +117,6 @@ mod test {
       resource: resource.clone(),
       amount: (-100).to_string()
     });
-
   }
 
   #[test]
