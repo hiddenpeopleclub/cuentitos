@@ -1,4 +1,4 @@
-use serde::{ Serialize, Deserialize };
+use serde::{Deserialize, Serialize};
 
 pub type ResourceId = String;
 
@@ -8,13 +8,13 @@ pub enum ResourceKind {
   #[default]
   Integer,
   Float,
-  Bool
+  Bool,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct Resource {
   pub id: ResourceId,
-  pub kind: ResourceKind
+  pub kind: ResourceKind,
 }
 
 #[cfg(test)]
@@ -23,10 +23,10 @@ mod test {
 
   #[test]
   fn resource_id_is_a_string() {
-    let resource_id : ResourceId = "health".to_string();
+    let resource_id: ResourceId = "health".to_string();
     assert!(resource_id == "health")
   }
-  
+
   #[test]
   fn resource_kind_has_needed_values() {
     let resource_kind = ResourceKind::Integer;

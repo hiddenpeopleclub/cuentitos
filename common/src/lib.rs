@@ -1,4 +1,4 @@
-use serde::{ Serialize, Deserialize };
+use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
 mod test_utils;
@@ -41,5 +41,5 @@ pub enum TimeOfDay {
   Morning,
   Noon,
   Evening,
-  Night
+  Night,
 }

@@ -10,12 +10,12 @@ pub struct Event {
   pub title: String,
   pub description: String,
   pub choices: Vec<EventChoice>,
-  pub requirements: Vec<EventRequirement>
+  pub requirements: Vec<EventRequirement>,
 }
 
 #[derive(Default)]
 pub struct EventBuilder {
-  event: Event
+  event: Event,
 }
 
 impl EventBuilder {
@@ -25,8 +25,9 @@ impl EventBuilder {
     }
   }
 
-  pub fn id<T>(&mut self, id: T) -> &mut EventBuilder 
-    where T: AsRef<str>  
+  pub fn id<T>(&mut self, id: T) -> &mut EventBuilder
+  where
+    T: AsRef<str>,
   {
     self.event.id = id.as_ref().to_string();
     self
@@ -37,15 +38,17 @@ impl EventBuilder {
     self
   }
 
-  pub fn title<T>(&mut self, title: T) -> &mut EventBuilder 
-    where T: AsRef<str>  
+  pub fn title<T>(&mut self, title: T) -> &mut EventBuilder
+  where
+    T: AsRef<str>,
   {
     self.event.title = title.as_ref().to_string();
     self
   }
 
-  pub fn description<T>(&mut self, description: T) -> &mut EventBuilder 
-    where T: AsRef<str>  
+  pub fn description<T>(&mut self, description: T) -> &mut EventBuilder
+  where
+    T: AsRef<str>,
   {
     self.event.description = description.as_ref().to_string();
     self
@@ -69,7 +72,6 @@ impl EventBuilder {
     self
   }
 
-
   pub fn build(&mut self) -> Event {
     self.event.clone()
   }
@@ -77,31 +79,27 @@ impl EventBuilder {
 
 #[cfg(test)]
 mod test {
-  use crate::test_utils::{ serialize, load_mp_fixture };
   use crate::event::*;
+  use crate::test_utils::{load_mp_fixture, serialize};
 
   #[test]
   fn event_builder_supports_id() {
     let event = EventBuilder::new().build();
     assert_eq!(event.id, "");
 
-    let event = EventBuilder::new()
-                  .id("my-event")
-                  .build();
+    let event = EventBuilder::new().id("my-event").build();
 
     assert_eq!(event.id, "my-event");
   }
 
   #[test]
   fn event_builder_supports_unique() {
-      let event = EventBuilder::new().build();
-      assert_eq!(event.unique, false);
+    let event = EventBuilder::new().build();
+    assert_eq!(event.unique, false);
 
-      let event = EventBuilder::new()
-                    .unique()
-                    .build();
+    let event = EventBuilder::new().unique().build();
 
-      assert_eq!(event.unique, true);
+    assert_eq!(event.unique, true);
   }
 
   #[test]
@@ -109,9 +107,7 @@ mod test {
     let event = EventBuilder::new().build();
     assert_eq!(event.title, "");
 
-    let event = EventBuilder::new()
-                  .title("My Event")
-                  .build();
+    let event = EventBuilder::new().title("My Event").build();
 
     assert_eq!(event.title, "My Event");
   }
@@ -122,8 +118,8 @@ mod test {
     assert_eq!(event.description, "");
 
     let event = EventBuilder::new()
-                  .description("My event's description")
-                  .build();
+      .description("My event's description")
+      .build();
 
     assert_eq!(event.description, "My event's description");
   }
@@ -133,9 +129,7 @@ mod test {
     let event = EventBuilder::new().build();
     assert_eq!(event.choices.len(), 0);
 
-    let event = EventBuilder::new()
-                  .choice(EventChoice::default())
-                  .build();
+    let event = EventBuilder::new().choice(EventChoice::default()).build();
 
     assert_eq!(event.choices[0], EventChoice::default());
   }
@@ -146,8 +140,8 @@ mod test {
     assert_eq!(event.requirements.len(), 0);
 
     let event = EventBuilder::new()
-                  .require(EventRequirement::default())
-                  .build();
+      .require(EventRequirement::default())
+      .build();
 
     assert_eq!(event.requirements[0], EventRequirement::default());
   }

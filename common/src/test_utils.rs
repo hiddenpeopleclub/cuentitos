@@ -3,12 +3,11 @@ use std::fs;
 use std::fs::File;
 use std::io::Read;
 
-use rmp_serde::encode::*;
 use crate::Result;
-
+use rmp_serde::encode::*;
 
 #[cfg(test)]
-pub fn load_mp_fixture<U>(fixture: U) -> Result<Vec<u8>> 
+pub fn load_mp_fixture<U>(fixture: U) -> Result<Vec<u8>>
 where
   U: AsRef<str>,
 {
