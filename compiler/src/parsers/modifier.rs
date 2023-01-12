@@ -225,7 +225,7 @@ mod test {
       }
     );
   }
-  
+
   // TODO(fran): Figure out how to implement this
   // #[test]
   // fn error_on_missing_item() {
