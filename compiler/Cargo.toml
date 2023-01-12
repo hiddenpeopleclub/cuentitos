@@ -4,13 +4,15 @@ version = "0.0.0"
 edition = "2021"
 
 [[bin]]
-name = "cuentitos"
+name = "cuentitos-compiler"
 path = "src/main.rs"
 
 [lib]
 path = "src/lib.rs"
 
 [dependencies]
+serde = { version = "1.0.144", features = ["derive"] }
 rmp-serde = "1.1.1"
 clap = { version = "4.0.17", features = ["derive"] }
 cuentitos-common = { path = "../common" }
+regex = "1.7.0"

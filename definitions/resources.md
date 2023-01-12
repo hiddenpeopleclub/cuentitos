@@ -4,7 +4,7 @@ A user can define resources and their types to use inside conditions.
 
 This is done in the configuration file.
 
-These can be of type "integer", "float", and "bool".
+These can be of type `integer`, `float`, and `bool`.
 
 ```toml
 [resources]

@@ -1,0 +1,5 @@
+reputations = [ "rep-1", "rep-2" ]
+tiles = [ "forest" ]
+[resources]
+health = "integer"
+happy = "bool"
