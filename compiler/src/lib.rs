@@ -1,3 +1,4 @@
+use cuentitos_common::Database;
 use crate::parser::Parser;
 use cuentitos_common::Config;
 use cuentitos_common::Result;
@@ -46,7 +47,19 @@ where
   let mut buf: Vec<u8> = Vec::new();
   let mut serializer = Serializer::new(&mut buf);
 
-  parser.serialize(&mut serializer).unwrap();
+  let mut db = Database::default();
+
+  db.config = parser.config.clone();
+
+  for (id, event) in &parser.events {
+    if let Ok(event) = event {
+      let mut event = event.clone();
+      event.id = id.clone();
+      db.events.push(event)
+    }
+  }
+
+  db.serialize(&mut serializer).unwrap();
 
   let destination_path = destination_path.as_ref().to_path_buf();
 
