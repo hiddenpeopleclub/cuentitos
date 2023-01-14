@@ -6,7 +6,6 @@ use std::io::Read;
 use crate::Result;
 use rmp_serde::encode::*;
 
-#[cfg(test)]
 pub fn load_mp_fixture<U>(fixture: U) -> Result<Vec<u8>>
 where
   U: AsRef<str>,
@@ -20,7 +19,6 @@ where
   Ok(buffer)
 }
 
-#[cfg(test)]
 pub fn serialize<U>(element: U) -> Result<Vec<u8>>
 where
   U: Serialize,

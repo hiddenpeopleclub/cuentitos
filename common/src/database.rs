@@ -12,7 +12,7 @@ pub struct Database {
 }
 
 impl Database {
-  fn from_u8(bytes: &[u8]) -> Result<Database> {
+  pub fn from_u8(bytes: &[u8]) -> Result<Database> {
     let mut de = Deserializer::new(bytes);
     let db: std::result::Result<Database,rmp_serde::decode::Error> = Deserialize::deserialize(&mut de);
     match db {

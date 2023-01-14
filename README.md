@@ -11,9 +11,9 @@ A game narrative engine with probabily at its core.
   - [ ] I18n -> xls export/load
 
 ### Runtime
-  - [ ] Instances
-  - [ ] Configuration
-  - [ ] Database
+  - [x] Instances
+  - [x] Configuration
+  - [x] Database
   - [ ] State Save/Load
   - [ ] Public Interface
     - [ ] Get Random Event
