@@ -1,3 +1,5 @@
+use rand::Rng;
+use rand::SeedableRng;
 use cuentitos_common::Condition;
 use cuentitos_common::Event;
 use cuentitos_common::EventRequirement;
@@ -7,7 +9,6 @@ use crate::GameState;
 use crate::RuntimeState;
 use cuentitos_common::Database;
 use cuentitos_common::EventId;
-use rand::Rng;
 use rand_pcg::Pcg32;
 
 use rmp_serde::Deserializer;
@@ -22,10 +23,14 @@ use std::path::Path;
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone, Eq)]
 pub struct Runtime {
-  database: Database,
+  pub database: Database,
   id_to_index: HashMap<EventId, usize>,
   state: RuntimeState,
   game_state: GameState,
+  #[serde(skip)]
+  rng: Option<Pcg32>,
+  seed: u64
+
 }
 
 impl Runtime {
@@ -41,18 +46,34 @@ impl Runtime {
     runtime
   }
 
-  pub fn random_event(&mut self, rng: &mut Pcg32) -> Option<EventId> {
+  pub fn get(&self, event_id: EventId) -> Option<&Event> {
+    match self.id_to_index.get(&event_id) {
+      Some(index) => self.database.events.get(*index),
+      None => None
+    }
+  }
+
+  pub fn set_seed(&mut self, seed: u64) {
+    self.seed = seed;
+    self.rng = Some(Pcg32::seed_from_u64(1));
+  }
+
+  pub fn random_event(&mut self) -> Option<EventId> {
+    if self.rng == None {
+      self.rng = Some(Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7))
+    }
+
     // Update previous event frequencies
     for value in self.state.previous_event_cooldown.values_mut() {
       *value += self.database.config.runtime.event_frequency_cooldown;
     }
 
-    // Remove elements that don't meet current state requirements
-    // Calculate frequency of each event given current state
-    //  - Augment frequency if conditions met
-    let frequencies = self.event_frequency_sum(self.event_frequencies(&GameState::default()));
+    // Use frequency of each event given current state for the random selection
+    let frequencies = self.event_frequency_sum(self.event_frequencies());
     if let Some(max) = frequencies.last() {
+      let mut rng = self.rng.as_ref()?.clone();
       let num = rng.gen_range(0..*max);
+      self.rng = Some(rng);
       let mut index = 0;
 
       for freq in frequencies {
@@ -86,12 +107,6 @@ impl Runtime {
     } else {
       None
     }
-
-    // match self.available_events().choose(rng) {
-    //   Some(event_id) => {
-    //   }
-    //   None => None,
-    // }
   }
 
   fn available_events(&self) -> Vec<EventId> {
@@ -112,119 +127,133 @@ impl Runtime {
   }
 
   fn resource_requirements_met(&self, event: &Event) -> bool {
-    for requirement in &event.requirements {
-      match requirement {
-        EventRequirement::Resource {
-          resource,
-          condition,
-          amount,
-        } => {
-          let current_value = self.game_state.resources[&resource.id].clone();
-          match resource.kind {
-            ResourceKind::Integer => {
-              let cv = current_value.parse::<i32>().unwrap_or(0);
-              let a = amount.parse::<i32>().unwrap_or(0);
-              match condition {
-                Condition::Equals => return cv == a,
-                Condition::HigherThan => return cv > a,
-                Condition::LessThan => return cv < a,
-                _ => {}
-              }
-            }
-            ResourceKind::Float => {
-              let cv = current_value.parse::<f32>().unwrap_or(0.0);
-              let a = amount.parse::<f32>().unwrap_or(0.0);
-              match condition {
-                Condition::Equals => return cv == a,
-                Condition::HigherThan => return cv > a,
-                Condition::LessThan => return cv < a,
-                _ => {}
-              }
-            }
-            ResourceKind::Bool => {
-              let cv = current_value.parse::<bool>().unwrap_or(false);
-              let a = amount.parse::<bool>().unwrap_or(false);
+    let mut result = true;
 
-              if condition == &Condition::Equals {
-                return cv == a;
-              }
-            }
-          }
-        }
-        EventRequirement::Item {
-          id,
-          condition,
-          amount,
-        } => {
-          let cv = self
-            .game_state
-            .items
-            .get(id)
-            .unwrap_or(&"0".to_string())
-            .parse::<i32>()
-            .unwrap_or(0);
-          let a = amount.parse::<i32>().unwrap_or(0);
-          match condition {
-            Condition::Equals => return cv == a,
-            Condition::HigherThan => return cv > a,
-            Condition::LessThan => return cv < a,
-            _ => {}
-          }
-        }
-        EventRequirement::Reputation {
-          id,
-          condition,
-          amount,
-        } => {
-          let cv = self
-            .game_state
-            .reputations
-            .get(id)
-            .unwrap_or(&"0".to_string())
-            .parse::<i32>()
-            .unwrap_or(0);
-          let a = amount.parse::<i32>().unwrap_or(0);
-          match condition {
-            Condition::Equals => return cv == a,
-            Condition::HigherThan => return cv > a,
-            Condition::LessThan => return cv < a,
-            _ => return false,
-          }
-        }
-        EventRequirement::TimeOfDay { id, condition } => {
-          let cv = self.game_state.time_of_day.clone();
-          match condition {
-            Condition::Equals => return cv == *id,
-            Condition::MutEx => return cv != *id,
-            _ => return false,
-          }
-        }
-        EventRequirement::Decision { id, condition } => match condition {
-          Condition::Depends => return self.game_state.decisions.contains(id),
-          Condition::MutEx => return !self.game_state.decisions.contains(id),
-          _ => return false,
-        },
-        EventRequirement::Event { id, condition } => match condition {
-          Condition::Depends => return self.state.previous_events.contains(id),
-          Condition::MutEx => return !self.state.previous_events.contains(id),
-          _ => return false,
-        },
-        EventRequirement::Tile { id, condition } => match condition {
-          Condition::Equals => return self.game_state.tile == *id,
-          Condition::MutEx => return self.game_state.tile != *id,
-          _ => return false,
-        }
-        EventRequirement::Empty => {}
-      }
+    for requirement in &event.requirements {
+      result = result && self.requirement_met(requirement)
     }
-    true
+
+    result
   }
 
-  fn event_frequencies(&self, _game_state: &GameState) -> Vec<i32> {
+  fn requirement_met(&self, requirement: &EventRequirement) -> bool {
+    match requirement {
+      EventRequirement::Resource {
+        resource,
+        condition,
+        amount,
+      } => {
+        let current_value = self.game_state.resources.get(&resource.id).unwrap_or(&"0".to_string()).clone();
+        match resource.kind {
+          ResourceKind::Integer => {
+            let cv = current_value.parse::<i32>().unwrap_or(0);
+            let a = amount.parse::<i32>().unwrap_or(0);
+            match condition {
+              Condition::Equals => return cv == a,
+              Condition::HigherThan => return cv > a,
+              Condition::LessThan => return cv < a,
+              _ => return true,
+            }
+          }
+          ResourceKind::Float => {
+            let cv = current_value.parse::<f32>().unwrap_or(0.0);
+            let a = amount.parse::<f32>().unwrap_or(0.0);
+            match condition {
+              Condition::Equals => return cv == a,
+              Condition::HigherThan => return cv > a,
+              Condition::LessThan => return cv < a,
+              _ => return true,
+            }
+          }
+          ResourceKind::Bool => {
+            let cv = current_value.parse::<bool>().unwrap_or(false);
+            let a = amount.parse::<bool>().unwrap_or(false);
+
+            if condition == &Condition::Equals {
+              return cv == a;
+            }
+            return true;
+          }
+        }
+      }
+      EventRequirement::Item {
+        id,
+        condition,
+        amount,
+      } => {
+        let cv = self
+          .game_state
+          .items
+          .get(id)
+          .unwrap_or(&"0".to_string())
+          .parse::<i32>()
+          .unwrap_or(0);
+        let a = amount.parse::<i32>().unwrap_or(0);
+        match condition {
+          Condition::Equals => return cv == a,
+          Condition::HigherThan => return cv > a,
+          Condition::LessThan => return cv < a,
+          _ => return true,
+        }
+      }
+      EventRequirement::Reputation {
+        id,
+        condition,
+        amount,
+      } => {
+        let cv = self
+          .game_state
+          .reputations
+          .get(id)
+          .unwrap_or(&"0".to_string())
+          .parse::<i32>()
+          .unwrap_or(0);
+        let a = amount.parse::<i32>().unwrap_or(0);
+        match condition {
+          Condition::Equals => return cv == a,
+          Condition::HigherThan => return cv > a,
+          Condition::LessThan => return cv < a,
+          _ => return true,
+        }
+      }
+      EventRequirement::TimeOfDay { id, condition } => {
+        let cv = self.game_state.time_of_day.clone();
+        match condition {
+          Condition::Equals => return cv == *id,
+          Condition::MutEx => return cv != *id,
+          _ => return true,
+        }
+      }
+      EventRequirement::Decision { id, condition } => match condition {
+        Condition::Depends => return self.game_state.decisions.contains(id),
+        Condition::MutEx => return !self.game_state.decisions.contains(id),
+        _ => return true,
+      },
+      EventRequirement::Event { id, condition } => match condition {
+        Condition::Depends => return self.state.previous_events.contains(id),
+        Condition::MutEx => return !self.state.previous_events.contains(id),
+        _ => return true,
+      },
+      EventRequirement::Tile { id, condition } => match condition {
+        Condition::Equals => return self.game_state.tile == *id,
+        Condition::MutEx => return self.game_state.tile != *id,
+        _ => return true,
+      },
+      EventRequirement::Empty => true,
+    }
+  }
+
+  fn event_frequencies(&self) -> Vec<i32> {
     let mut result = vec![];
 
-    for _idx in self.available_events() {
-      result.push(50);
+    for idx in self.available_events() {
+      let mut freq = 50;
+      for requirement in &self.database.events[self.id_to_index[&idx]].requirements {
+        if self.requirement_met(&requirement) {
+          freq += self.database.config.runtime.met_requirement_frequency_boost;
+        }
+      }
+      result.push(freq);
     }
 
     result
@@ -296,7 +325,7 @@ mod test {
   //   let database = Database::from_u8(&db).unwrap();
   //   let mut runtime = Runtime::new(database.clone());
   //   let mut rng = Pcg32::seed_from_u64(1);
-  //   let event = runtime.random_event(&mut rng).unwrap();
+  //   let event = runtime.random_event().unwrap();
   //   assert_eq!(event, "choices");
   // }
 
@@ -333,14 +362,14 @@ mod test {
     };
 
     let mut runtime = Runtime::new(db);
-    let mut rng = Pcg32::seed_from_u64(1);
+    runtime.set_seed(1);
 
-    runtime.random_event(&mut rng).unwrap();
+    runtime.random_event().unwrap();
     assert!(runtime
       .state
       .previous_event_cooldown
       .contains_key("event-1"));
-    runtime.random_event(&mut rng).unwrap();
+    runtime.random_event().unwrap();
     assert!(runtime
       .state
       .previous_event_cooldown
@@ -366,7 +395,7 @@ mod test {
     let mut runtime = Runtime::new(db);
     let mut rng = Pcg32::seed_from_u64(1);
 
-    runtime.random_event(&mut rng).unwrap();
+    runtime.random_event().unwrap();
     assert_eq!(runtime.state.disabled_events, ["event-1"]);
     assert_eq!(runtime.available_events(), ["event-2"]);
   }
@@ -390,28 +419,29 @@ mod test {
     let mut rng = Pcg32::seed_from_u64(1);
 
     let game_state = GameState::default();
+    runtime.game_state = game_state;
 
     assert_eq!(runtime.available_events(), ["event-1", "event-2"]);
-    assert_eq!(runtime.event_frequencies(&game_state), [50, 50]);
+    assert_eq!(runtime.event_frequencies(), [50, 50]);
 
-    runtime.random_event(&mut rng).unwrap();
+    runtime.random_event().unwrap();
     assert_eq!(runtime.available_events(), ["event-2"]);
-    assert_eq!(runtime.event_frequencies(&game_state), [50]);
+    assert_eq!(runtime.event_frequencies(), [50]);
 
-    runtime.random_event(&mut rng).unwrap();
+    runtime.random_event().unwrap();
     assert!(runtime.available_events().is_empty());
-    assert!(runtime.event_frequencies(&game_state).is_empty());
-    assert_eq!(runtime.random_event(&mut rng), None);
+    assert!(runtime.event_frequencies().is_empty());
+    assert_eq!(runtime.random_event(), None);
 
     // Make sure that after a while it shows up again
     for _ in 0..7 {
-      runtime.random_event(&mut rng);
+      runtime.random_event();
     }
 
-    let event = runtime.random_event(&mut rng).unwrap();
+    let event = runtime.random_event().unwrap();
     assert_eq!(event, "event-1");
     assert!(runtime.available_events().is_empty());
-    assert!(runtime.event_frequencies(&game_state).is_empty());
+    assert!(runtime.event_frequencies().is_empty());
   }
 
   #[test]
@@ -471,6 +501,8 @@ mod test {
       ["event-resource-integer-less-than"]
     );
 
+    assert_eq!(runtime.event_frequencies(), [100]);
+
     runtime
       .game_state
       .resources
@@ -480,6 +512,8 @@ mod test {
       ["event-resource-integer-higher-than"]
     );
 
+    assert_eq!(runtime.event_frequencies(), [100]);
+
     runtime
       .game_state
       .resources
@@ -488,6 +522,8 @@ mod test {
       runtime.available_events(),
       ["event-resource-integer-equals"]
     );
+
+    assert_eq!(runtime.event_frequencies(), [100]);
   }
 
   #[test]
@@ -546,6 +582,7 @@ mod test {
       runtime.available_events(),
       ["event-resource-float-less-than"]
     );
+    assert_eq!(runtime.event_frequencies(), [100]);
 
     runtime
       .game_state
@@ -556,11 +593,15 @@ mod test {
       ["event-resource-float-higher-than"]
     );
 
+    assert_eq!(runtime.event_frequencies(), [100]);
+
     runtime
       .game_state
       .resources
       .insert(resource, "10.5".to_string());
     assert_eq!(runtime.available_events(), ["event-resource-float-equals"]);
+
+    assert_eq!(runtime.event_frequencies(), [100]);
   }
 
   #[test]
@@ -607,6 +648,7 @@ mod test {
       runtime.available_events(),
       ["event-resource-bool-equals-true"]
     );
+    assert_eq!(runtime.event_frequencies(), [100]);
 
     runtime
       .game_state
@@ -616,6 +658,7 @@ mod test {
       runtime.available_events(),
       ["event-resource-bool-equals-false"]
     );
+    assert_eq!(runtime.event_frequencies(), [100]);
   }
 
   #[test]
@@ -682,6 +725,7 @@ mod test {
       runtime.available_events(),
       ["event-item-less-than", "event-item-missing-less"]
     );
+    assert_eq!(runtime.event_frequencies(), [100,100]);
 
     runtime
       .game_state
@@ -691,6 +735,7 @@ mod test {
       runtime.available_events(),
       ["event-item-higher-than", "event-item-missing-less"]
     );
+    assert_eq!(runtime.event_frequencies(), [100,100]);
 
     runtime
       .game_state
@@ -700,6 +745,7 @@ mod test {
       runtime.available_events(),
       ["event-item-equals", "event-item-missing-less"]
     );
+    assert_eq!(runtime.event_frequencies(), [100,100]);
   }
 
   #[test]
@@ -769,6 +815,7 @@ mod test {
         "event-reputation-missing-less"
       ]
     );
+    assert_eq!(runtime.event_frequencies(), [100, 100]);
 
     runtime
       .game_state
@@ -781,6 +828,7 @@ mod test {
         "event-reputation-missing-less"
       ]
     );
+    assert_eq!(runtime.event_frequencies(), [100, 100]);
 
     runtime
       .game_state
@@ -790,6 +838,7 @@ mod test {
       runtime.available_events(),
       ["event-reputation-equals", "event-reputation-missing-less"]
     );
+    assert_eq!(runtime.event_frequencies(), [100, 100]);
   }
 
   #[test]
@@ -823,9 +872,11 @@ mod test {
       runtime.available_events(),
       ["event-tod-morning", "event-tod-mutex-night"]
     );
+    assert_eq!(runtime.event_frequencies(), [100, 100]);
 
     runtime.game_state.time_of_day = TimeOfDay::Evening;
     assert_eq!(runtime.available_events(), ["event-tod-mutex-night"]);
+    assert_eq!(runtime.event_frequencies(), [100]);
 
     runtime.game_state.time_of_day = TimeOfDay::Night;
     assert!(runtime.available_events().is_empty());
@@ -859,15 +910,18 @@ mod test {
 
     runtime.game_state.decisions = vec![];
     assert_eq!(runtime.available_events(), ["event-decision-2"]);
+    assert_eq!(runtime.event_frequencies(), [100]);
 
     runtime.game_state.decisions = vec!["decision".to_string()];
     assert_eq!(
       runtime.available_events(),
       ["event-decision", "event-decision-2"]
     );
+    assert_eq!(runtime.event_frequencies(), [100, 100]);
 
     runtime.game_state.decisions = vec!["decision".to_string(), "decision-2".to_string()];
     assert_eq!(runtime.available_events(), ["event-decision"]);
+    assert_eq!(runtime.event_frequencies(), [100]);
   }
 
   #[test]
@@ -898,12 +952,15 @@ mod test {
 
     runtime.state.previous_events = vec![];
     assert_eq!(runtime.available_events(), ["event-mutex"]);
+    assert_eq!(runtime.event_frequencies(), [100]);
 
     runtime.state.previous_events = vec!["event-1".to_string()];
     assert_eq!(runtime.available_events(), ["event-depends", "event-mutex"]);
+    assert_eq!(runtime.event_frequencies(), [100, 100]);
 
     runtime.state.previous_events = vec!["event-1".to_string(), "event-2".to_string()];
     assert_eq!(runtime.available_events(), ["event-depends"]);
+    assert_eq!(runtime.event_frequencies(), [100]);
   }
 
   #[test]
@@ -933,13 +990,11 @@ mod test {
     let mut runtime = Runtime::new(db);
 
     runtime.game_state.tile = "plain".to_string();
-    assert_eq!(
-      runtime.available_events(),
-      ["event-tile-not-forest"]
-    );
+    assert_eq!(runtime.available_events(), ["event-tile-not-forest"]);
+    assert_eq!(runtime.event_frequencies(), [100]);
 
     runtime.game_state.tile = "forest".to_string();
     assert_eq!(runtime.available_events(), ["event-tile-forest"]);
+    assert_eq!(runtime.event_frequencies(), [100]);
   }
-
 }

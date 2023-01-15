@@ -14,12 +14,16 @@ A game narrative engine with probabily at its core.
   - [x] Instances
   - [x] Configuration
   - [x] Database
-  - [ ] State Machine
-    - [ ] Current Event
+  - [-] State Machine
+    - [x] Current Event
     - [ ] Current Choice
     - [ ] Result
-    - [ ] Probability mods
+    - [x] Probability mods
   - [x] State Save/Load
+  - [ ] Interactive Shell
+    - [ ] Set Game State -> from json
+    - [ ] Choices
+    - [ ] Modifiers
   - [ ] Public Interface
     - [ ] Get Random Event
     - [ ] Set Choice

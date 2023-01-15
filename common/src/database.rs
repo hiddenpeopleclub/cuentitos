@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 pub struct Database {
   pub config: Config,
   pub events: Vec<Event>,
-  // event_id_index: HashMap<String, usize>
 }
 
 impl Database {

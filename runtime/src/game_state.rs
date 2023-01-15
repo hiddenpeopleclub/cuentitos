@@ -12,5 +12,5 @@ pub struct GameState {
   pub reputations: HashMap<ReputationId, String>,
   pub time_of_day: TimeOfDay,
   pub decisions: Vec<String>,
-  pub tile: String
+  pub tile: String,
 }

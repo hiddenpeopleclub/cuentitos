@@ -27,6 +27,8 @@ pub struct RuntimeConfig {
   pub chosen_event_frequency_penalty: i32,
   #[serde(default)]
   pub event_frequency_cooldown: i32,
+  #[serde(default)]
+  pub met_requirement_frequency_boost: i32,
 }
 
 impl Default for RuntimeConfig {
@@ -34,6 +36,7 @@ impl Default for RuntimeConfig {
     RuntimeConfig {
       chosen_event_frequency_penalty: -100,
       event_frequency_cooldown: 10,
+      met_requirement_frequency_boost: 50,
     }
   }
 }

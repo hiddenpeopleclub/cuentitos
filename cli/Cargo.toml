@@ -1,0 +1,16 @@
+[package]
+name = "cuentitos-cli"
+version = "0.0.0"
+edition = "2021"
+
+[[bin]]
+name = "cuentitos"
+path = "src/main.rs"
+
+[dependencies]
+# serde = { version = "1.0.144", features = ["derive"] }
+# rmp-serde = "1.1.1"
+clap = { version = "4.0.17", features = ["derive"] }
+cuentitos-compiler = { path = "../compiler" }
+cuentitos-runtime = { path = "../runtime" }
+regex = "1.7.0"
