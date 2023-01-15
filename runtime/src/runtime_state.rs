@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone, Eq)]
 pub struct RuntimeState {
-  pub previous_events: HashMap<EventId, i32>,
+  pub previous_events: Vec<EventId>,
+  pub previous_event_cooldown: HashMap<EventId, i32>,
   pub disabled_events: Vec<EventId>,
 }
