@@ -1,8 +1,8 @@
-use rmp_serde::Deserializer;
 use crate::Config;
 use crate::Event;
-use serde::{Deserialize, Serialize};
 use crate::Result;
+use rmp_serde::Deserializer;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Database {
@@ -14,7 +14,8 @@ pub struct Database {
 impl Database {
   pub fn from_u8(bytes: &[u8]) -> Result<Database> {
     let mut de = Deserializer::new(bytes);
-    let db: std::result::Result<Database,rmp_serde::decode::Error> = Deserialize::deserialize(&mut de);
+    let db: std::result::Result<Database, rmp_serde::decode::Error> =
+      Deserialize::deserialize(&mut de);
     match db {
       Ok(database) => Ok(database),
       Err(error) => Err(Box::new(error)),
@@ -24,8 +25,8 @@ impl Database {
 
 #[cfg(test)]
 mod test {
-  use crate::Database;
   use crate::test_utils::load_mp_fixture;
+  use crate::Database;
 
   #[test]
   fn load_binary_db() {

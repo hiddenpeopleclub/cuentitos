@@ -1,6 +1,6 @@
-use cuentitos_common::Database;
 use crate::parser::Parser;
 use cuentitos_common::Config;
+use cuentitos_common::Database;
 use cuentitos_common::Result;
 use rmp_serde::Serializer;
 use serde::Serialize;

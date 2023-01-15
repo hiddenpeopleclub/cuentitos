@@ -17,6 +17,25 @@ pub struct Config {
   pub resources: HashMap<String, ResourceKind>,
   pub reputations: Vec<String>,
   pub tiles: Vec<String>,
+  #[serde(default)]
+  pub runtime: RuntimeConfig,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Eq)]
+pub struct RuntimeConfig {
+  #[serde(default)]
+  pub chosen_event_frequency_penalty: i32,
+  #[serde(default)]
+  pub event_frequency_cooldown: i32,
+}
+
+impl Default for RuntimeConfig {
+  fn default() -> RuntimeConfig {
+    RuntimeConfig {
+      chosen_event_frequency_penalty: -100,
+      event_frequency_cooldown: 10,
+    }
+  }
 }
 
 impl Config {

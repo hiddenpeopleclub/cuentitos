@@ -25,14 +25,14 @@ impl Parser {
       .unwrap()
       .map(|r| r.unwrap())
       .collect();
-    
+
     paths.sort_by_key(|dir| dir.path());
 
     for path in paths {
       let id = &path.file_name();
       let id = id.to_str().unwrap()[3..].split('.').next().unwrap();
       let id = String::from_str(id).unwrap();
-      
+
       if !id.is_empty() {
         let content = match fs::read(path.path()) {
           Ok(data) => data,
