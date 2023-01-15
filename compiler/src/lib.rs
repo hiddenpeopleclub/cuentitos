@@ -47,9 +47,10 @@ where
   let mut buf: Vec<u8> = Vec::new();
   let mut serializer = Serializer::new(&mut buf);
 
-  let mut db = Database::default();
-
-  db.config = parser.config.clone();
+  let mut db = Database {
+    config: parser.config.clone(),
+    ..Default::default()
+  };
 
   for (id, event) in &parser.events {
     if let Ok(event) = event {

@@ -136,10 +136,7 @@ impl Event {
     let regexp = Regex::new(r"^\s+require (.+)").unwrap();
 
     if let Some(result) = regexp.captures_iter(line).next() {
-      return Some(crate::parsers::EventRequirement::parse(
-        result[1].to_string(),
-        config,
-      ));
+      return Some(crate::parsers::EventRequirement::parse(&result[1], config));
     }
     None
   }
@@ -148,10 +145,7 @@ impl Event {
     let regexp = Regex::new(r"^\s+mod (.+)").unwrap();
 
     if let Some(result) = regexp.captures_iter(line).next() {
-      return Some(crate::parsers::Modifier::parse(
-        result[1].to_string(),
-        config,
-      ));
+      return Some(crate::parsers::Modifier::parse(&result[1], config));
     }
 
     None

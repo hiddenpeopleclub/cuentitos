@@ -32,15 +32,13 @@ impl Modifier {
                 };
                 Ok(cuentitos_common::Modifier::Resource { resource, amount })
               }
-              Err(error) => return Err(format!("{} for resource '{}'", error, resource)),
+              Err(error) => Err(format!("{} for resource '{}'", error, resource)),
             }
           }
-          None => {
-            return Err(format!(
-              "\"{}\" is not defined as a valid resource",
-              resource
-            ))
-          }
+          None => Err(format!(
+            "\"{}\" is not defined as a valid resource",
+            resource
+          )),
         }
       }
       "item" => {
@@ -57,17 +55,17 @@ impl Modifier {
         if config.reputations.contains(&id) {
           match Self::parse_amount::<&str, i32>(params[2]) {
             Ok(amount) => Ok(cuentitos_common::Modifier::Reputation { id, amount }),
-            Err(error) => return Err(format!("{} for reputation '{}'", error, id)),
+            Err(error) => Err(format!("{} for reputation '{}'", error, id)),
           }
         } else {
-          return Err(format!("'{}' is not a valid reputation", id));
+          Err(format!("'{}' is not a valid reputation", id))
         }
       }
       "decision" => Ok(cuentitos_common::Modifier::Decision(params[1].to_string())),
       "achievement" => Ok(cuentitos_common::Modifier::Achievement(
         params[1].to_string(),
       )),
-      _ => return Err(format!("\"{}\" is not a valid requirement", params[0])),
+      _ => Err(format!("\"{}\" is not a valid requirement", params[0])),
     }
   }
 

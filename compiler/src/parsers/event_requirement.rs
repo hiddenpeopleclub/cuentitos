@@ -40,15 +40,13 @@ impl EventRequirement {
                   condition,
                 })
               }
-              Err(error) => return Err(format!("{} for resource '{}'", error, resource)),
+              Err(error) => Err(format!("{} for resource '{}'", error, resource)),
             }
           }
-          None => {
-            return Err(format!(
-              "\"{}\" is not defined as a valid resource",
-              resource
-            ))
-          }
+          None => Err(format!(
+            "\"{}\" is not defined as a valid resource",
+            resource
+          )),
         }
       }
       "item" => {
@@ -76,10 +74,10 @@ impl EventRequirement {
               amount,
               condition,
             }),
-            Err(error) => return Err(format!("{} for reputation '{}'", error, id)),
+            Err(error) => Err(format!("{} for reputation '{}'", error, id)),
           }
         } else {
-          return Err(format!("'{}' is not a valid reputation", id));
+          Err(format!("'{}' is not a valid reputation", id))
         }
       }
       "time_of_day" => {
@@ -113,7 +111,7 @@ impl EventRequirement {
           Err(format!("'{}' is not a valid tile", id))
         }
       }
-      _ => return Err(format!("\"{}\" is not a valid requirement", params[0])),
+      _ => Err(format!("\"{}\" is not a valid requirement", params[0])),
     }
   }
 

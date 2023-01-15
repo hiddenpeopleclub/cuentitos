@@ -1,10 +1,10 @@
 use crate::GameState;
 use crate::RuntimeState;
 use cuentitos_common::Database;
-use cuentitos_common::Event;
 use cuentitos_common::EventId;
-use rand::seq::SliceRandom;
-use rand_pcg::Lcg64Xsh32;
+use rand::Rng;
+use rand_pcg::Pcg32;
+
 use rmp_serde::Deserializer;
 use rmp_serde::Serializer;
 use serde::{Deserialize, Serialize};
@@ -36,36 +36,52 @@ impl Runtime {
     runtime
   }
 
-  pub fn random_event(&mut self, rng: &mut Lcg64Xsh32) -> Option<Event> {
+  pub fn random_event(&mut self, rng: &mut Pcg32) -> Option<EventId> {
     // Update previous event frequencies
-    for (_, value) in &mut self.state.previous_events {
+    for value in self.state.previous_events.values_mut() {
       *value += self.database.config.runtime.event_frequency_cooldown;
     }
 
     // Remove elements that don't meet current state requirements
     // Calculate frequency of each event given current state
     //  - Augment frequency if conditions met
+    let frequencies = self.event_frequency_sum(self.event_frequencies(&GameState::default()));
+    if let Some(max) = frequencies.last() {
+      let num = rng.gen_range(0..*max);
+      let mut index = 0;
 
-    match self.available_events().choose(rng) {
-      Some(event_id) => {
-        let index = self.id_to_index[event_id];
-        let event = &self.database.events[index];
+      for freq in frequencies {
+        if num <= freq {
+          let event_id = self.available_events()[index].clone();
+          let index = self.id_to_index[&event_id];
+          let event = &self.database.events[index];
 
-        // Disable event if unique
-        if event.unique {
-          self.state.disabled_events.push(event_id.clone())
-        }
+          // Disable event if unique
+          if event.unique {
+            self.state.disabled_events.push(event_id.clone())
+          }
 
-        // Add new frequency penalty for current event
-        self.state.previous_events.insert(
-          event.id.clone(),
-          self.database.config.runtime.chosen_event_frequency_penalty,
-        );
+          // Add new frequency penalty for current event
+          self.state.previous_events.insert(
+            event.id.clone(),
+            self.database.config.runtime.chosen_event_frequency_penalty,
+          );
 
-        Some(event.clone())
+          return Some(event_id);
+        } else {
+          index += 1;
+        };
       }
-      None => None,
+      None
+    } else {
+      None
     }
+
+    // match self.available_events().choose(rng) {
+    //   Some(event_id) => {
+    //   }
+    //   None => None,
+    // }
   }
 
   fn available_events(&self) -> Vec<EventId> {
@@ -82,11 +98,22 @@ impl Runtime {
     result
   }
 
-  fn event_frequencies(&self, game_state: &GameState) -> Vec<i32> {
+  fn event_frequencies(&self, _game_state: &GameState) -> Vec<i32> {
     let mut result = vec![];
 
-    for idx in self.available_events() {
+    for _idx in self.available_events() {
       result.push(50);
+    }
+
+    result
+  }
+
+  fn event_frequency_sum(&self, frequencies: Vec<i32>) -> Vec<i32> {
+    let mut result = vec![];
+
+    for freq in frequencies {
+      let prev = result.last().unwrap_or(&0);
+      result.push(prev + freq)
     }
 
     result
@@ -145,9 +172,9 @@ mod test {
     let db = load_mp_fixture("database").unwrap();
     let database = Database::from_u8(&db).unwrap();
     let mut runtime = Runtime::new(database.clone());
-    let mut rng = Pcg32::seed_from_u64(42);
+    let mut rng = Pcg32::seed_from_u64(1);
     let event = runtime.random_event(&mut rng).unwrap();
-    assert_eq!(event, database.events[0]);
+    assert_eq!(event, "choices");
   }
 
   #[test]
@@ -183,7 +210,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(db);
-    let mut rng = Pcg32::seed_from_u64(42);
+    let mut rng = Pcg32::seed_from_u64(1);
 
     runtime.random_event(&mut rng).unwrap();
     assert!(runtime.state.previous_events.contains_key("event-1"));
@@ -208,7 +235,7 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(db);
-    let mut rng = Pcg32::seed_from_u64(42);
+    let mut rng = Pcg32::seed_from_u64(1);
 
     runtime.random_event(&mut rng).unwrap();
     assert_eq!(runtime.state.disabled_events, ["event-1"]);
@@ -231,7 +258,7 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(db);
-    let mut rng = Pcg32::seed_from_u64(42);
+    let mut rng = Pcg32::seed_from_u64(1);
 
     let game_state = GameState::default();
 
@@ -253,7 +280,7 @@ mod test {
     }
 
     let event = runtime.random_event(&mut rng).unwrap();
-    assert_eq!(event.id, "event-1");
+    assert_eq!(event, "event-1");
     assert!(runtime.available_events().is_empty());
     assert!(runtime.event_frequencies(&game_state).is_empty());
   }
