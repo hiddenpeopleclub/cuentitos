@@ -4,5 +4,6 @@ members = [
   "common",
   "compiler",
   "runtime",
+  "runtime-c",
   "cli"
 ]

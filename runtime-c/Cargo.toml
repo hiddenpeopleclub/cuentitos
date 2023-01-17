@@ -1,11 +1,10 @@
 [package]
-name = "cuentitos-runtime"
+name = "cuentitos-runtime-c"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
-crate-type = ["rlib"]
+crate-type = ["cdylib", "rlib", "staticlib"]
 
 [dependencies]
 cuentitos-common = { path = "../common" }

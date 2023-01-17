@@ -55,7 +55,7 @@ impl Runtime {
 
   pub fn set_seed(&mut self, seed: u64) {
     self.seed = seed;
-    self.rng = Some(Pcg32::seed_from_u64(1));
+    self.rng = Some(Pcg32::seed_from_u64(seed));
   }
 
   pub fn random_event(&mut self) -> Option<EventId> {
@@ -393,8 +393,7 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(db);
-    let mut rng = Pcg32::seed_from_u64(1);
-
+    runtime.set_seed(1);
     runtime.random_event().unwrap();
     assert_eq!(runtime.state.disabled_events, ["event-1"]);
     assert_eq!(runtime.available_events(), ["event-2"]);
@@ -416,7 +415,7 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(db);
-    let mut rng = Pcg32::seed_from_u64(1);
+    runtime.set_seed(1);
 
     let game_state = GameState::default();
     runtime.game_state = game_state;
