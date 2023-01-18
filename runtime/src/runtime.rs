@@ -1,3 +1,5 @@
+use cuentitos_common::test_utils::serialize;
+use crate::EventChoice;
 use rand::Rng;
 use rand::SeedableRng;
 use cuentitos_common::Condition;
@@ -105,6 +107,38 @@ impl Runtime {
       }
       None
     } else {
+      None
+    }
+  }
+
+  pub fn serialized_random_event(&mut self) -> Option<Vec<u8>> {
+
+    if let Some(event_id) = self.random_event() {
+      let db_event = self.database.events[self.id_to_index[&event_id]].clone();
+
+      let mut choices = vec![];
+      
+      for choice in db_event.choices {
+        choices.push(crate::EventChoice {
+          text: choice.text,
+        })
+      }
+
+      let runtime_event = crate::Event {
+        title: db_event.title,
+        description: db_event.description,
+        choices
+      };
+      
+      if let Ok(event) = serialize(runtime_event) {
+        Some(event)  
+      }else{
+        None
+      }
+      
+    }
+    else
+    {
       None
     }
   }
@@ -305,7 +339,9 @@ impl Runtime {
 mod test {
   use crate::runtime::Runtime;
   use crate::GameState;
+  use crate::runtime_datatypes;
   use cuentitos_common::test_utils::load_mp_fixture;
+  use crate::runtime::test::test_utils::serialize;
   use cuentitos_common::Database;
   use cuentitos_common::Event;
   use cuentitos_common::*;
@@ -319,15 +355,30 @@ mod test {
     assert_eq!(runtime.database, database)
   }
 
-  // #[test]
-  // fn gets_random_event() {
-  //   let db = load_mp_fixture("database").unwrap();
-  //   let database = Database::from_u8(&db).unwrap();
-  //   let mut runtime = Runtime::new(database.clone());
-  //   let mut rng = Pcg32::seed_from_u64(1);
-  //   let event = runtime.random_event().unwrap();
-  //   assert_eq!(event, "choices");
-  // }
+  #[test]
+  fn serialized_random_event_returns_the_random_event_serialized() {
+    let db = load_mp_fixture("database").unwrap();
+    let database = Database::from_u8(&db).unwrap();
+    let mut runtime = Runtime::new(database.clone());
+    runtime.set_seed(1);
+    
+    let actual = runtime.serialized_random_event().unwrap();
+
+    let expected = serialize(runtime_datatypes::Event {
+      title: "A Basic Event".to_string(),
+      description: "This event has options".to_string(),
+      choices: vec![
+        runtime_datatypes::EventChoice {
+          text: "An Option without requirements".to_string()
+        },
+        runtime_datatypes::EventChoice {
+          text: "Another option without requirements".to_string()
+        },
+      ]
+    }).unwrap();
+
+    assert_eq!(actual, expected);
+  }
 
   #[test]
   fn runtime_can_be_saved_and_loaded() {

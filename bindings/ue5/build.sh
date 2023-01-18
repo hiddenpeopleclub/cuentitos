@@ -1,1 +1,1 @@
-g++ cuentitos.cpp -o cuentitos
+g++ cuentitos.c mpack/mpack.c -o cuentitos

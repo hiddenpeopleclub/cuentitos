@@ -1,9 +1,10 @@
+use cuentitos_runtime::Runtime;
 use cuentitos_common::Database;
 use std::slice;
 
 
 static mut DATABASES: Vec<Database> = vec![]; 
-// static RUNTIMES: Vec<Runtime> = vec![];
+static mut RUNTIMES: Vec<Runtime> = vec![];
 
 #[no_mangle]
 pub extern "C" fn load_database(buffer: *const u8, length: usize) -> usize {
@@ -15,8 +16,9 @@ pub extern "C" fn load_database(buffer: *const u8, length: usize) -> usize {
   match db {
     Ok(db) => {
       unsafe {
+        let id = DATABASES.len();
         DATABASES.push(db);
-        return DATABASES.len() - 1;
+        return id;
       }
     },
     Err(err) => {
@@ -34,3 +36,45 @@ pub extern "C" fn debug_db(id: usize) {
     }    
   }
 }
+
+#[no_mangle]
+pub extern "C" fn new_runtime(id: usize) -> usize {
+  unsafe {
+    if DATABASES.len() > id {
+      let runtime = Runtime::new(DATABASES[id].clone());
+      let id = RUNTIMES.len();
+      RUNTIMES.push(runtime);
+      return id;
+
+    } else {
+      panic!("Database {} does not exist.", id)
+    }
+  }
+}
+
+#[no_mangle]
+pub extern "C" fn debug_runtime(id: usize) {
+  unsafe {
+    if RUNTIMES.len() > id {
+      println!("{:?}", RUNTIMES[id]);
+    }    
+  }
+}
+
+#[no_mangle]
+pub extern "C" fn get_event(runtime_id: usize, buffer: *mut u8, length: *mut usize) {
+  unsafe {
+    if RUNTIMES.len() > runtime_id {
+      if let Some(event) = RUNTIMES[runtime_id].serialized_random_event() {
+        *length = event.len();
+        std::ptr::copy_nonoverlapping(event.as_ptr(), buffer, event.len());
+      } else {
+        *length = 0
+      }
+    }else{
+      *length = 0;
+    }
+  }
+}
+
+
