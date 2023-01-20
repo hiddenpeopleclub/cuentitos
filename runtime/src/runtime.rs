@@ -62,7 +62,7 @@ impl Runtime {
 
   pub fn random_event(&mut self) -> Option<EventId> {
     if self.rng == None {
-      self.rng = Some(Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7))
+      self.rng = Some(Pcg32::from_entropy())
     }
 
     // Update previous event frequencies
@@ -84,6 +84,8 @@ impl Runtime {
           let index = self.id_to_index[&event_id];
           let event = &self.database.events[index];
 
+          self.state.current_event = Some(event_id.clone());
+
           // Disable event if unique
           if event.unique {
             self.state.disabled_events.push(event_id.clone())
@@ -99,6 +101,7 @@ impl Runtime {
             event.id.clone(),
             self.database.config.runtime.chosen_event_frequency_penalty,
           );
+
 
           return Some(event_id);
         } else {
@@ -117,10 +120,11 @@ impl Runtime {
       let db_event = self.database.events[self.id_to_index[&event_id]].clone();
 
       let mut choices = vec![];
-      
-      for choice in db_event.choices {
+
+      for (id, choice) in db_event.choices.iter().enumerate() {
         choices.push(crate::EventChoice {
-          text: choice.text,
+          id,
+          text: choice.text.clone(),
         })
       }
 
@@ -140,6 +144,37 @@ impl Runtime {
     else
     {
       None
+    }
+  }
+
+  pub fn set_choice(&mut self, choice_id: usize) -> Result<(), String> {
+    if let Some(current_event) = &self.state.current_event {
+      let id = self.id_to_index[current_event];
+      let event = &self.database.events[id];
+      if event.choices.len() > choice_id {
+        let choice = &event.choices[choice_id];
+
+        let mut available = true;
+
+        for requirement in &choice.requirements {
+          available = available && self.requirement_met(&requirement);
+        };
+
+        if available {
+          self.state.current_choice = Some(choice_id);
+          return Ok(());
+        } else {
+          self.state.current_event = None;
+          return Err("Requirements for choice not met".to_string())
+        }
+      } else {
+        self.state.current_choice = None;
+      }
+      Err("Invalid choice".to_string())
+    }
+    else {
+      self.state.current_event = None;
+      Err("No event has been drawn".to_string())
     }
   }
 
@@ -337,7 +372,8 @@ impl Runtime {
 
 #[cfg(test)]
 mod test {
-  use crate::runtime::Runtime;
+  use crate::EventChoice;
+use crate::runtime::Runtime;
   use crate::GameState;
   use crate::runtime_datatypes;
   use cuentitos_common::test_utils::load_mp_fixture;
@@ -345,8 +381,6 @@ mod test {
   use cuentitos_common::Database;
   use cuentitos_common::Event;
   use cuentitos_common::*;
-  use rand::SeedableRng;
-  use rand_pcg::Pcg32;
 
   #[test]
   fn new_runtime_accepts_database() {
@@ -369,14 +403,15 @@ mod test {
       description: "This event has options".to_string(),
       choices: vec![
         runtime_datatypes::EventChoice {
+          id: 0,
           text: "An Option without requirements".to_string()
         },
         runtime_datatypes::EventChoice {
+          id: 1,
           text: "Another option without requirements".to_string()
         },
       ]
     }).unwrap();
-
     assert_eq!(actual, expected);
   }
 
@@ -397,7 +432,7 @@ mod test {
   }
 
   #[test]
-  fn choosing_event_stores_it_in_previous_events() {
+  fn random_event_stores_it_in_current_and_previous_events() {
     let db = Database {
       events: vec![
         Event {
@@ -416,6 +451,9 @@ mod test {
     runtime.set_seed(1);
 
     runtime.random_event().unwrap();
+    
+    assert_eq!(runtime.state.current_event.clone().unwrap(), "event-1");
+
     assert!(runtime
       .state
       .previous_event_cooldown
@@ -1047,4 +1085,77 @@ mod test {
     assert_eq!(runtime.available_events(), ["event-tile-forest"]);
     assert_eq!(runtime.event_frequencies(), [100]);
   }
+
+  #[test]
+  fn set_choice_with_valid_choice_works() {
+    let db = Database {
+      events: vec![
+        Event {
+          id: "event-1".to_string(),
+          choices: vec![ cuentitos_common::EventChoice::default() ],
+          ..Default::default()
+        },
+      ],
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime::new(db);
+    let event = runtime.random_event().unwrap();
+
+    assert_eq!(runtime.state.current_event.clone().unwrap(), event);
+
+    let _result = runtime.set_choice(0).unwrap();
+    assert_eq!(runtime.state.current_choice.unwrap(), 0);
+  }
+
+  #[test]
+  fn set_choice_when_requirements_not_met_choice_does_not_work() {
+    let db = Database {
+      events: vec![
+        Event {
+          id: "event-1".to_string(),
+          choices: vec![ cuentitos_common::EventChoice {
+            requirements: vec![
+              cuentitos_common::EventRequirement::Item {
+                id: "my-item".to_string(),
+                condition: cuentitos_common::Condition::Equals,
+                amount: 1.to_string()
+              }
+            ],
+            ..Default::default() 
+          }],
+          ..Default::default()
+        },
+      ],
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime::new(db);
+    match runtime.set_choice(0) {
+      Ok(_) => assert!(false),
+      Err(string) => {
+        assert_eq!(string, "No event has been drawn");
+        assert_eq!(runtime.state.current_choice, None)
+      }
+    }
+
+    runtime.random_event().unwrap();
+
+    match runtime.set_choice(10) {
+      Ok(_) => assert!(false),
+      Err(string) => {
+        assert_eq!(string, "Invalid choice");
+        assert_eq!(runtime.state.current_choice, None)
+      }
+    }
+
+    match runtime.set_choice(0) {
+      Ok(_) => assert!(false),
+      Err(string) => {
+        assert_eq!(string, "Requirements for choice not met");
+        assert_eq!(runtime.state.current_choice, None)
+      }
+    }
+  }
+
 }

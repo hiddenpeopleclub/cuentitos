@@ -11,7 +11,8 @@ DebugDbFn debug_db;
 NewRuntimeFn new_runtime;
 DebugRuntimeFn debug_runtime;
 GetEventFn get_event;
-
+SetSeedFn set_seed;
+SetChoiceFn set_choice;
 
 int main() {
   void* handle = dlopen("../../target/debug/libcuentitos_runtime_c.so", RTLD_LAZY);
@@ -21,6 +22,8 @@ int main() {
   new_runtime = (NewRuntimeFn) dlsym(handle, "new_runtime");
   debug_runtime = (DebugRuntimeFn) dlsym(handle, "debug_runtime");
   get_event = (GetEventFn) dlsym(handle, "get_event");
+  set_seed = (SetSeedFn) dlsym(handle, "set_seed");
+  set_choice = (SetChoiceFn) dlsym(handle, "set_choice");
 
   FILE * fp;
   fp = fopen ("../../../mr-nuggets-events/cuentitos.db", "r");
@@ -38,10 +41,20 @@ int main() {
 
   DatabaseId db_id = load_database(buffer, size);
   RuntimeId runtime_id = new_runtime(db_id);
-  // debug_runtime(runtime_id);
+
+  set_seed(runtime_id, 42);
 
   // Read next event
   uint8_t *event_buffer = (uint8_t*)malloc(10000 * sizeof(uint8_t));
   size_t* length = (size_t*)malloc(1 * sizeof(size_t));
   get_event(runtime_id, event_buffer, length);
+
+  // set choice
+  bool result = set_choice(runtime_id, 0);
+  if(result){
+    printf("Choice 0 selected\n");
+  }else{
+    printf("Error selecting choice\n");
+  }
 }
+

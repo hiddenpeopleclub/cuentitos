@@ -62,6 +62,16 @@ pub extern "C" fn debug_runtime(id: usize) {
 }
 
 #[no_mangle]
+pub extern "C" fn set_seed(runtime_id: usize, seed: u64) {
+  unsafe {
+    if RUNTIMES.len() > runtime_id {
+      RUNTIMES[runtime_id].set_seed(seed);
+    }    
+  }
+}
+
+
+#[no_mangle]
 pub extern "C" fn get_event(runtime_id: usize, buffer: *mut u8, length: *mut usize) {
   unsafe {
     if RUNTIMES.len() > runtime_id {
@@ -74,6 +84,19 @@ pub extern "C" fn get_event(runtime_id: usize, buffer: *mut u8, length: *mut usi
     }else{
       *length = 0;
     }
+  }
+}
+
+#[no_mangle]
+pub extern "C" fn set_choice(runtime_id: usize, choice_id: usize) -> bool {
+  unsafe {
+    if RUNTIMES.len() > runtime_id {
+      match RUNTIMES[runtime_id].set_choice(choice_id) {
+        Ok(_) => return true,
+        Err(_) => return false,
+      }
+    }
+    return false;
   }
 }
 

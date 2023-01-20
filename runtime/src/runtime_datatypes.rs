@@ -12,6 +12,7 @@ pub struct Event {
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct EventChoice {
+  pub id: usize,
   pub text: String,
 }
 

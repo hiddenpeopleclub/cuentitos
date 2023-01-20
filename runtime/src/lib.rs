@@ -11,6 +11,4 @@ mod runtime_datatypes;
 pub use runtime_datatypes::Event;
 pub use runtime_datatypes::EventChoice;
 pub use runtime_datatypes::EventResult;
-
-
 pub use cuentitos_common::Database;
