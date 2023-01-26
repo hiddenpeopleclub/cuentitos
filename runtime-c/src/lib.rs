@@ -100,4 +100,8 @@ pub extern "C" fn set_choice(runtime_id: usize, choice_id: usize) -> bool {
   }
 }
 
+// set_resource
+// set_time_of_day
+
+
 

@@ -1,5 +1,8 @@
+use cuentitos_common::ReputationId;
+use cuentitos_common::ResourceId;
+use cuentitos_common::TimeOfDay;
 use cuentitos_common::test_utils::serialize;
-use crate::EventChoice;
+
 use rand::Rng;
 use rand::SeedableRng;
 use cuentitos_common::Condition;
@@ -17,6 +20,7 @@ use rmp_serde::Deserializer;
 use rmp_serde::Serializer;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::fs;
 use std::fs::File;
 use std::io::Read;
@@ -32,7 +36,6 @@ pub struct Runtime {
   #[serde(skip)]
   rng: Option<Pcg32>,
   seed: u64
-
 }
 
 impl Runtime {
@@ -270,13 +273,7 @@ impl Runtime {
         condition,
         amount,
       } => {
-        let cv = self
-          .game_state
-          .reputations
-          .get(id)
-          .unwrap_or(&"0".to_string())
-          .parse::<i32>()
-          .unwrap_or(0);
+        let cv = *self.game_state.reputations.get(id).unwrap_or(&0);
         let a = amount.parse::<i32>().unwrap_or(0);
         match condition {
           Condition::Equals => return cv == a,
@@ -368,12 +365,66 @@ impl Runtime {
       Err(error) => Err(Box::new(error)),
     }
   }
+
+  pub fn set_resource<T>(&mut self, resource: ResourceId, value: T) -> Result<(), String>
+  where
+    T: Display
+  {
+    if self.database.config.resources.contains_key(&resource) {
+      let t = std::any::type_name::<T>();
+      
+      if (t == "i32" && self.database.config.resources[&resource] == ResourceKind::Integer) ||
+         (t == "f64" && self.database.config.resources[&resource] == ResourceKind::Float) ||
+         (t == "bool" && self.database.config.resources[&resource] == ResourceKind::Bool) {
+        self.game_state.resources.insert(resource, value.to_string());
+      } else {
+        return Err("Invalid Resource Type".to_string())
+      }
+    }
+    else{
+      return Err("Invalid Resource".to_string())
+    }
+    Ok(())
+  }
+
+  pub fn set_time_of_day(&mut self, time_of_day: TimeOfDay) {
+    self.game_state.time_of_day = time_of_day;
+  }
+
+  pub fn get_reputation(&self, reputation_id: &ReputationId) -> Result<i32, String> {
+    let reputation = self.game_state.reputations.get(reputation_id);
+    match reputation {
+        Some(reputation) => Ok(*reputation),
+        None => {
+          self.validate_reputation(reputation_id)?;
+          Ok(0)
+      }
+    }
+  }
+
+  pub fn add_reputation(&mut self, reputation_id: &ReputationId, amount: i32) -> Result<(), String> {
+    self.validate_reputation(reputation_id)?;
+
+    let reputation = self.game_state.reputations.get(reputation_id);
+    match reputation {
+      Some(reputation) => self.game_state.reputations.insert(reputation_id.to_string(), reputation + amount),
+      None => self.game_state.reputations.insert(reputation_id.to_string(), amount),
+    };
+    Ok(())
+  }
+
+  fn validate_reputation(&self, reputation_id: &ReputationId) -> Result<(), String> {
+    if self.database.config.reputations.iter().any(|rep| rep == reputation_id) {
+      Ok(())
+    } else {
+      Err("Invalid Reputation".to_string())
+    }
+  }
 }
 
 #[cfg(test)]
 mod test {
-  use crate::EventChoice;
-use crate::runtime::Runtime;
+  use crate::runtime::Runtime;
   use crate::GameState;
   use crate::runtime_datatypes;
   use cuentitos_common::test_utils::load_mp_fixture;
@@ -895,7 +946,7 @@ use crate::runtime::Runtime;
     runtime
       .game_state
       .reputations
-      .insert(reputation.clone(), "1".to_string());
+      .insert(reputation.clone(), 1);
     assert_eq!(
       runtime.available_events(),
       [
@@ -908,7 +959,7 @@ use crate::runtime::Runtime;
     runtime
       .game_state
       .reputations
-      .insert(reputation.clone(), "15".to_string());
+      .insert(reputation.clone(), 15);
     assert_eq!(
       runtime.available_events(),
       [
@@ -921,7 +972,7 @@ use crate::runtime::Runtime;
     runtime
       .game_state
       .reputations
-      .insert(reputation.clone(), "10".to_string());
+      .insert(reputation.clone(), 10);
     assert_eq!(
       runtime.available_events(),
       ["event-reputation-equals", "event-reputation-missing-less"]
@@ -1158,4 +1209,88 @@ use crate::runtime::Runtime;
     }
   }
 
+  #[test]
+  fn set_game_state_resource() {
+    let mut db = Database::default();
+    db.config.resources.insert("resource-int".to_string(), ResourceKind::Integer);
+    db.config.resources.insert("resource-float".to_string(), ResourceKind::Float);
+    db.config.resources.insert("resource-bool".to_string(), ResourceKind::Bool);
+
+    let mut runtime = Runtime::new(db);
+
+    assert_eq!(runtime.set_resource("invalid".to_string(), 1), Err("Invalid Resource".to_string()));
+    
+    assert_eq!(runtime.set_resource("resource-int".to_string(), 10.5), Err("Invalid Resource Type".to_string()));
+    assert_eq!(runtime.set_resource("resource-float".to_string(), true), Err("Invalid Resource Type".to_string()));
+    assert_eq!(runtime.set_resource("resource-bool".to_string(), 10), Err("Invalid Resource Type".to_string()));
+
+    runtime.set_resource("resource-int".to_string(), 10).unwrap();
+    runtime.set_resource("resource-float".to_string(), 10.5).unwrap();
+    runtime.set_resource("resource-bool".to_string(), true).unwrap();
+
+    assert_eq!(runtime.game_state.resources["resource-int"], "10");
+    assert_eq!(runtime.game_state.resources["resource-float"], "10.5");
+    assert_eq!(runtime.game_state.resources["resource-bool"], "true");
+  }
+
+  #[test]
+  fn set_time_of_day() {
+    let db = Database::default();
+    let mut runtime = Runtime::new(db);
+
+    runtime.set_time_of_day(TimeOfDay::Night);
+    assert_eq!(runtime.game_state.time_of_day, TimeOfDay::Night);
+
+    runtime.set_time_of_day(TimeOfDay::Noon);
+    assert_eq!(runtime.game_state.time_of_day, TimeOfDay::Noon);
+
+    runtime.set_time_of_day(TimeOfDay::Morning);
+    assert_eq!(runtime.game_state.time_of_day, TimeOfDay::Morning);
+
+    runtime.set_time_of_day(TimeOfDay::Evening);
+    assert_eq!(runtime.game_state.time_of_day, TimeOfDay::Evening);
+  }
+
+  #[test]
+  fn add_reputation() {
+    let mut db = Database::default();
+    db.config.reputations.push("reputation-1".to_string());
+
+    let mut runtime = Runtime::new(db);
+
+    match runtime.get_reputation(&"no-reputation".to_string()) {
+      Ok(_) => assert!(false),
+      Err(string) => {
+        assert_eq!(string, "Invalid Reputation");
+      }
+    }
+
+    match runtime.add_reputation(&"no-reputation".to_string(), 1) {
+      Ok(_) => assert!(false),
+      Err(string) => {
+        assert_eq!(string, "Invalid Reputation");
+      }
+    }
+
+    assert_eq!(runtime.get_reputation(&"reputation-1".to_string()).unwrap(), 0);
+
+    assert_eq!(runtime.add_reputation(&"reputation-1".to_string(), 1), Ok(()));
+    assert_eq!(runtime.get_reputation(&"reputation-1".to_string()).unwrap(), 1);
+
+    assert_eq!(runtime.add_reputation(&"reputation-1".to_string(), -1), Ok(()));
+    assert_eq!(runtime.get_reputation(&"reputation-1".to_string()).unwrap(), 0);
+
+    assert_eq!(runtime.add_reputation(&"reputation-1".to_string(), -1), Ok(()));
+    assert_eq!(runtime.get_reputation(&"reputation-1".to_string()).unwrap(), -1);
+  }
+
+  #[test]
+  fn when_choice_has_results_they_are_computed() {
+    todo!()
+  }
+
+  #[test]
+  fn modifications_after_choice() {
+    todo!()
+  }
 }

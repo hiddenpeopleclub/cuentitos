@@ -9,7 +9,7 @@ use std::collections::HashMap;
 pub struct GameState {
   pub resources: HashMap<ResourceId, String>,
   pub items: HashMap<ItemId, String>,
-  pub reputations: HashMap<ReputationId, String>,
+  pub reputations: HashMap<ReputationId, i32>,
   pub time_of_day: TimeOfDay,
   pub decisions: Vec<String>,
   pub tile: String,
