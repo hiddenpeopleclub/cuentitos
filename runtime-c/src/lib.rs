@@ -23,9 +23,7 @@ static mut RUNTIMES: Vec<Runtime> = vec![];
 
 #[no_mangle]
 pub extern "C" fn cuentitos_load_db(buffer: *const u8, length: usize) -> DatabaseId {
-  if buffer.is_null() {
-    return 0;
-  }
+  if buffer.is_null() { return 0; }
 
   let rust_buffer: &[u8] = unsafe { slice::from_raw_parts(buffer, length as usize) };
   let db = Database::from_u8(rust_buffer);
@@ -34,13 +32,13 @@ pub extern "C" fn cuentitos_load_db(buffer: *const u8, length: usize) -> Databas
     Ok(db) => unsafe {
       let id = DATABASES.len();
       DATABASES.push(db);
-      return id;
+      id
     },
     Err(err) => {
-      println!("Error Loading DB: {}", err.to_string());
-      return 0;
+      println!("Error Loading DB: {}", err);
+      0
     }
-  };
+  }
 }
 
 #[no_mangle]
@@ -50,7 +48,7 @@ pub extern "C" fn cuentitos_new_runtime(id: DatabaseId) -> RuntimeId {
       let runtime = Runtime::new(DATABASES[id].clone());
       let id = RUNTIMES.len();
       RUNTIMES.push(runtime);
-      return id;
+      id
     } else {
       panic!("Database {} does not exist.", id)
     }
@@ -67,7 +65,7 @@ pub extern "C" fn cuentitos_set_seed(id: RuntimeId, seed: u64) {
 
 #[no_mangle]
 pub extern "C" fn cuentitos_set_int_resource(id: RuntimeId, resource: Cstring, value: i32) -> bool {
-  return set_resource(id, resource, value);
+  set_resource(id, resource, value)
 }
 
 #[no_mangle]
@@ -76,7 +74,7 @@ pub extern "C" fn cuentitos_set_float_resource(
   resource: Cstring,
   value: f32,
 ) -> bool {
-  return set_resource(id, resource, value);
+  set_resource(id, resource, value)
 }
 
 #[no_mangle]
@@ -85,7 +83,7 @@ pub extern "C" fn cuentitos_set_bool_resource(
   resource: Cstring,
   value: bool,
 ) -> bool {
-  return set_resource(id, resource, value);
+  set_resource(id, resource, value)
 }
 
 #[no_mangle]
@@ -94,7 +92,7 @@ pub extern "C" fn cuentitos_get_int_resource(
   resource: Cstring,
   value: *mut i32,
 ) -> bool {
-  return get_resource(id, resource, value);
+  get_resource(id, resource, value)
 }
 
 #[no_mangle]
@@ -103,7 +101,7 @@ pub extern "C" fn cuentitos_get_float_resource(
   resource: Cstring,
   value: *mut f32,
 ) -> bool {
-  return get_resource(id, resource, value);
+  get_resource(id, resource, value)
 }
 
 #[no_mangle]
@@ -112,7 +110,7 @@ pub extern "C" fn cuentitos_get_bool_resource(
   resource: Cstring,
   value: *mut bool,
 ) -> bool {
-  return get_resource(id, resource, value);
+  get_resource(id, resource, value)
 }
 
 #[no_mangle]
