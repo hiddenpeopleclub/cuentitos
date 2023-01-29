@@ -1,6 +1,6 @@
-use crate::Item;
 use crate::Config;
 use crate::Event;
+use crate::Item;
 use crate::Result;
 use rmp_serde::Deserializer;
 use serde::{Deserialize, Serialize};
@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 pub struct Database {
   pub config: Config,
   pub events: Vec<Event>,
-  pub items: Vec<Item>
+  pub items: Vec<Item>,
 }
 
 impl Database {

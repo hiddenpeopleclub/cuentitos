@@ -24,9 +24,10 @@ impl Modifier {
             };
 
             match result {
-              Ok(amount) => {
-                Ok(cuentitos_common::Modifier::Resource { id: resource.to_string(), amount })
-              }
+              Ok(amount) => Ok(cuentitos_common::Modifier::Resource {
+                id: resource.to_string(),
+                amount,
+              }),
               Err(error) => Err(format!("{} for resource '{}'", error, resource)),
             }
           }

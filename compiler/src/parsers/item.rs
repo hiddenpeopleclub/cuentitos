@@ -1,9 +1,9 @@
-use regex::Regex;
-use cuentitos_common::ItemKind;
-use core::str::Lines;
-use cuentitos_common::ItemBuilder;
-use cuentitos_common::Config;
 use crate::parsable::Parsable;
+use core::str::Lines;
+use cuentitos_common::Config;
+use cuentitos_common::ItemBuilder;
+use cuentitos_common::ItemKind;
+use regex::Regex;
 
 #[derive(Default)]
 pub struct Item;
@@ -20,7 +20,7 @@ impl Parsable<cuentitos_common::Item> for Item {
     builder.description(lines.next().unwrap());
 
     let (kind, count) = parse_kind_and_count(lines);
-    
+
     builder.kind(kind);
     builder.max_stack_count(count);
 
@@ -40,35 +40,36 @@ fn parse_kind_and_count(mut lines: Lines) -> (ItemKind, u8) {
       if let Some(second) = lines.next() {
         if let Some(count) = count_regexp.captures_iter(second).next() {
           result.1 = count[1].parse::<u8>().unwrap();
-        }        
+        }
       }
     } else {
       if let Some(count) = count_regexp.captures_iter(first).next() {
         result.1 = count[1].parse::<u8>().unwrap();
-      }    
+      }
     }
 
     if ingredient_regexp.is_match(first) {
       result.0 = ItemKind::Ingredient;
     }
-
   }
-  
 
   result
 }
 
 #[cfg(test)]
 mod test {
+  use crate::{parsable::Parsable, parsers::Item};
   use cuentitos_common::{Config, ItemKind};
-  use crate::{parsers::Item, parsable::Parsable};
 
   #[test]
   fn parses_title_and_description() {
     let content = include_str!("../../fixtures/items/00-moon-wolf.item");
     let item = Item::parse(content, &Config::default()).unwrap();
     assert_eq!(item.name, "Moon Wolf");
-    assert_eq!(item.description, "A woolf with blue eyes that shine at night");
+    assert_eq!(
+      item.description,
+      "A woolf with blue eyes that shine at night"
+    );
   }
 
   #[test]
@@ -94,5 +95,4 @@ mod test {
     assert_eq!(item.kind, ItemKind::Other);
     assert_eq!(item.max_stack_count, 6)
   }
-
 }

@@ -26,9 +26,8 @@ pub struct EventResult {
 pub struct Modifier {
   pub kind: String,
   pub id: String,
-  pub amount: String
+  pub amount: String,
 }
-
 
 impl Event {
   pub fn from_cuentitos(event: &cuentitos_common::Event) -> crate::Event {
@@ -44,7 +43,7 @@ impl Event {
     crate::Event {
       title: event.title.clone(),
       description: event.description.clone(),
-      choices
+      choices,
     }
   }
 }

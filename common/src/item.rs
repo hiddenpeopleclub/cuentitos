@@ -1,11 +1,12 @@
-use strum_macros::EnumIter;
-use serde::{Deserialize, Serialize};
 use crate::ItemId;
+use serde::{Deserialize, Serialize};
+use strum_macros::EnumIter;
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone, EnumIter)]
 pub enum ItemKind {
   Ingredient,
-  #[default] Other
+  #[default]
+  Other,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone)]
@@ -14,7 +15,7 @@ pub struct Item {
   pub kind: ItemKind,
   pub name: String,
   pub description: String,
-  pub max_stack_count: u8
+  pub max_stack_count: u8,
 }
 
 #[derive(Default)]
@@ -66,7 +67,6 @@ impl ItemBuilder {
   pub fn build(&mut self) -> Item {
     self.item.clone()
   }
-
 }
 
 #[cfg(test)]
@@ -99,7 +99,10 @@ mod test {
     assert_eq!(item.name, "");
     assert_eq!(item.description, "");
 
-    let item = ItemBuilder::new().name("my-item").description("my description").build();
+    let item = ItemBuilder::new()
+      .name("my-item")
+      .description("my description")
+      .build();
 
     assert_eq!(item.name, "my-item");
     assert_eq!(item.description, "my description");
@@ -114,5 +117,4 @@ mod test {
 
     assert_eq!(item.max_stack_count, 6);
   }
-
 }

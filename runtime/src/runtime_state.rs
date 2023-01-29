@@ -9,5 +9,5 @@ pub struct RuntimeState {
   pub disabled_events: Vec<EventId>,
   pub current_event: Option<usize>,
   pub current_choice: Option<usize>,
-  pub current_result: Option<usize>
+  pub current_result: Option<usize>,
 }

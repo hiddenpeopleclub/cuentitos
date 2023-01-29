@@ -1,22 +1,23 @@
-use std::io::Write;
-use std::io::Read;
+use cuentitos_runtime::*;
 use std::fs;
 use std::fs::File;
-use cuentitos_runtime::*;
+use std::io::Read;
+use std::io::Write;
 
 use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct Console {}
 impl Console {
-
-  fn prompt(name:&str) -> String {
+  fn prompt(name: &str) -> String {
     let mut line = String::new();
     print!("{}", name);
     std::io::stdout().flush().unwrap();
-    std::io::stdin().read_line(&mut line).expect("Error: Could not read a line");
- 
-    return line.trim().to_string()
+    std::io::stdin()
+      .read_line(&mut line)
+      .expect("Error: Could not read a line");
+
+    return line.trim().to_string();
   }
 
   pub fn start(path: PathBuf) {
@@ -39,13 +40,13 @@ impl Console {
             Some(event) => {
               println!("{}", event.title);
               println!("---");
-              println!("{}", event.description);                
-            },
-            None => {},
+              println!("{}", event.description);
+            }
+            None => {}
           }
-        },
+        }
         Some("q") => break,
-        Some(&_) => {},
+        Some(&_) => {}
         None => {}
       }
     }
