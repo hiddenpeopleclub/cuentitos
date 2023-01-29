@@ -1,3 +1,4 @@
+use crate::parsable::Parsable;
 use crate::Config;
 use cuentitos_common::EventRequirement;
 use cuentitos_common::Modifier;
@@ -11,10 +12,10 @@ use cuentitos_common::EventResult;
 #[derive(Default)]
 pub struct Event;
 
-impl Event {
-  pub fn parse<T>(content: T, config: &Config) -> Result<cuentitos_common::Event, String>
+impl Parsable<cuentitos_common::Event> for Event {
+  fn parse<S>(content: S, config: &Config) -> Result<cuentitos_common::Event, String>
   where
-    T: AsRef<str>,
+    S: AsRef<str>,
   {
     let mut builder = EventBuilder::new();
     let mut lines = content.as_ref().lines();
@@ -31,7 +32,7 @@ impl Event {
     let mut line_number = 2;
 
     for line in lines {
-      if let Some(choice) = Self::parse_choice(line) {
+      if let Some(choice) = parse_choice(line) {
         // We found a new choice, we add the current one...
         if in_choice {
           // If we were inside a result, we need to add it to the choice
@@ -48,7 +49,7 @@ impl Event {
         in_result = false;
       }
 
-      if let Some(result) = Self::parse_result(line) {
+      if let Some(result) = parse_result(line) {
         // We found a new result, we add the current one...
         if in_choice && in_result {
           current_choice.results.push(current_result);
@@ -58,7 +59,7 @@ impl Event {
         in_result = true;
       }
 
-      if let Some(requirement) = Self::parse_requirement(line, config) {
+      if let Some(requirement) = parse_requirement(line, config) {
         match requirement {
           Ok(requirement) => {
             if in_choice {
@@ -75,7 +76,7 @@ impl Event {
         }
       }
 
-      if let Some(modifier) = Self::parse_modifier(line, config) {
+      if let Some(modifier) = parse_modifier(line, config) {
         match modifier {
           Ok(modifier) => {
             if in_choice && in_result {
@@ -103,57 +104,57 @@ impl Event {
 
     Ok(builder.build())
   }
-
-  fn parse_choice(line: &str) -> Option<EventChoice> {
-    let regexp = Regex::new(r"^\s+\* (.+)").unwrap();
-
-    if let Some(result) = regexp.captures_iter(line).next() {
-      return Some(EventChoice {
-        text: result[1].to_string(),
-        ..Default::default()
-      });
-    }
-    None
-  }
-
-  fn parse_result(line: &str) -> Option<EventResult> {
-    let regexp = Regex::new(r"^\s+\((\d+)\) (.+)").unwrap();
-
-    if let Some(result) = regexp.captures_iter(line).next() {
-      return Some(EventResult {
-        chance: u8::from_str(&result[1]).unwrap(),
-        text: result[2].to_string(),
-        ..Default::default()
-      });
-    }
-    None
-  }
-
-  fn parse_requirement(
-    line: &str,
-    config: &Config,
-  ) -> Option<core::result::Result<EventRequirement, String>> {
-    let regexp = Regex::new(r"^\s+require (.+)").unwrap();
-
-    if let Some(result) = regexp.captures_iter(line).next() {
-      return Some(crate::parsers::EventRequirement::parse(&result[1], config));
-    }
-    None
-  }
-
-  fn parse_modifier(line: &str, config: &Config) -> Option<core::result::Result<Modifier, String>> {
-    let regexp = Regex::new(r"^\s+mod (.+)").unwrap();
-
-    if let Some(result) = regexp.captures_iter(line).next() {
-      return Some(crate::parsers::Modifier::parse(&result[1], config));
-    }
-
-    None
-  }
 }
 
+fn parse_choice(line: &str) -> Option<EventChoice> {
+  let regexp = Regex::new(r"^\s+\* (.+)").unwrap();
+
+  if let Some(result) = regexp.captures_iter(line).next() {
+    return Some(EventChoice {
+      text: result[1].to_string(),
+      ..Default::default()
+    });
+  }
+  None
+}
+
+fn parse_result(line: &str) -> Option<EventResult> {
+  let regexp = Regex::new(r"^\s+\((\d+)\) (.+)").unwrap();
+
+  if let Some(result) = regexp.captures_iter(line).next() {
+    return Some(EventResult {
+      chance: u32::from_str(&result[1]).unwrap(),
+      text: result[2].to_string(),
+      ..Default::default()
+    });
+  }
+  None
+}
+
+fn parse_requirement(
+  line: &str,
+  config: &Config,
+) -> Option<core::result::Result<EventRequirement, String>> {
+  let regexp = Regex::new(r"^\s+require (.+)").unwrap();
+
+  if let Some(result) = regexp.captures_iter(line).next() {
+    return Some(crate::parsers::EventRequirement::parse(&result[1], config));
+  }
+  None
+}
+
+fn parse_modifier(line: &str, config: &Config) -> Option<core::result::Result<Modifier, String>> {
+  let regexp = Regex::new(r"^\s+mod (.+)").unwrap();
+
+  if let Some(result) = regexp.captures_iter(line).next() {
+    return Some(crate::parsers::Modifier::parse(&result[1], config));
+  }
+
+  None
+}
 #[cfg(test)]
 mod test {
+  use crate::parsable::Parsable;
   use crate::Config;
 
   use cuentitos_common::Condition;
@@ -319,31 +320,19 @@ mod test {
           amount: (-1).to_string()
         },
         Modifier::Resource {
-          resource: Resource {
-            id: "health".to_string(),
-            kind: Integer
-          },
+          id: "health".to_string(),
           amount: (-2).to_string()
         },
         Modifier::Resource {
-          resource: Resource {
-            id: "health".to_string(),
-            kind: Integer
-          },
+          id: "health".to_string(),
           amount: 5.to_string()
         },
         Modifier::Resource {
-          resource: Resource {
-            id: "happy".to_string(),
-            kind: Bool
-          },
+          id: "happy".to_string(),
           amount: true.to_string()
         },
         Modifier::Resource {
-          resource: Resource {
-            id: "happy".to_string(),
-            kind: Bool
-          },
+          id: "happy".to_string(),
           amount: false.to_string()
         },
         Modifier::Reputation {

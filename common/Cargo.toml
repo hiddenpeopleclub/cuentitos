@@ -8,3 +8,5 @@ serde = { version = "1.0.144", features = ["derive"] }
 rmp-serde = "1.1.1"
 rmp = "^0.8"
 toml = "0.5.9"
+strum = "0.24.1"
+strum_macros = "0.24.1"

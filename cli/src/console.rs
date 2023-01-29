@@ -34,14 +34,12 @@ impl Console {
 
       match args.next() {
         Some("n") => {
-          let event = runtime.random_event();
+          let event = runtime.next_event();
           match event {
             Some(event) => {
-              if let Some(event) = runtime.get(event) {
-                println!("{}", event.title);
-                println!("---");
-                println!("{}", event.description);                
-              }
+              println!("{}", event.title);
+              println!("---");
+              println!("{}", event.description);                
             },
             None => {},
           }

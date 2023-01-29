@@ -1,5 +1,8 @@
+use cuentitos_common::EventResult;
+use cuentitos_common::EventChoice;
+use cuentitos_common::Modifier;
 use cuentitos_common::ReputationId;
-use cuentitos_common::ResourceId;
+
 use cuentitos_common::TimeOfDay;
 use cuentitos_common::test_utils::serialize;
 
@@ -12,6 +15,7 @@ use cuentitos_common::ResourceKind;
 
 use crate::GameState;
 use crate::RuntimeState;
+
 use cuentitos_common::Database;
 use cuentitos_common::EventId;
 use rand_pcg::Pcg32;
@@ -58,58 +62,48 @@ impl Runtime {
     }
   }
 
-  pub fn set_seed(&mut self, seed: u64) {
-    self.seed = seed;
-    self.rng = Some(Pcg32::seed_from_u64(seed));
-  }
-
-  pub fn random_event(&mut self) -> Option<EventId> {
-    if self.rng == None {
-      self.rng = Some(Pcg32::from_entropy())
-    }
-
+  pub fn next_event(&mut self) -> Option<crate::Event> {
     // Update previous event frequencies
     for value in self.state.previous_event_cooldown.values_mut() {
-      *value += self.database.config.runtime.event_frequency_cooldown;
+      *value += self.database.config.runtime.event_frequency_cooldown as i32;
     }
 
     // Use frequency of each event given current state for the random selection
-    let frequencies = self.event_frequency_sum(self.event_frequencies());
+    let frequencies = frequency_sum(self.event_frequencies());
+
     if let Some(max) = frequencies.last() {
-      let mut rng = self.rng.as_ref()?.clone();
-      let num = rng.gen_range(0..*max);
-      self.rng = Some(rng);
-      let mut index = 0;
+      if let Some(num) = random_with_max(self, *max) {
+        let mut index = 0;
 
-      for freq in frequencies {
-        if num <= freq {
-          let event_id = self.available_events()[index].clone();
-          let index = self.id_to_index[&event_id];
-          let event = &self.database.events[index];
+        for freq in frequencies {
+          if num <= freq {
+            let event_id = self.available_events()[index].clone();
+            let index = self.id_to_index[&event_id];
+            let event = &self.database.events[index];
 
-          self.state.current_event = Some(event_id.clone());
+            self.state.current_event = Some(index);
 
-          // Disable event if unique
-          if event.unique {
-            self.state.disabled_events.push(event_id.clone())
-          }
+            // Disable event if unique
+            if event.unique {
+              self.state.disabled_events.push(event_id.clone())
+            }
 
-          // Add current event to previous events list
-          if !self.state.previous_events.contains(&event_id) {
-            self.state.previous_events.push(event_id.clone())
+            // Add current event to previous events list
+            if !self.state.previous_events.contains(&event_id) {
+              self.state.previous_events.push(event_id.clone())
+            };
+
+            // Add new frequency penalty for current event
+            self.state.previous_event_cooldown.insert(
+              event.id.clone(),
+              self.database.config.runtime.chosen_event_frequency_penalty,
+            );
+
+            return Some(crate::Event::from_cuentitos(event));
+          } else {
+            index += 1;
           };
-
-          // Add new frequency penalty for current event
-          self.state.previous_event_cooldown.insert(
-            event.id.clone(),
-            self.database.config.runtime.chosen_event_frequency_penalty,
-          );
-
-
-          return Some(event_id);
-        } else {
-          index += 1;
-        };
+        }
       }
       None
     } else {
@@ -117,43 +111,13 @@ impl Runtime {
     }
   }
 
-  pub fn serialized_random_event(&mut self) -> Option<Vec<u8>> {
-
-    if let Some(event_id) = self.random_event() {
-      let db_event = self.database.events[self.id_to_index[&event_id]].clone();
-
-      let mut choices = vec![];
-
-      for (id, choice) in db_event.choices.iter().enumerate() {
-        choices.push(crate::EventChoice {
-          id,
-          text: choice.text.clone(),
-        })
-      }
-
-      let runtime_event = crate::Event {
-        title: db_event.title,
-        description: db_event.description,
-        choices
-      };
-      
-      if let Ok(event) = serialize(runtime_event) {
-        Some(event)  
-      }else{
-        None
-      }
-      
-    }
-    else
-    {
-      None
-    }
+  pub fn set_seed(&mut self, seed: u64) {
+    self.seed = seed;
+    self.rng = Some(Pcg32::seed_from_u64(seed));
   }
 
   pub fn set_choice(&mut self, choice_id: usize) -> Result<(), String> {
-    if let Some(current_event) = &self.state.current_event {
-      let id = self.id_to_index[current_event];
-      let event = &self.database.events[id];
+    if let Some(event) = current_event(self) {
       if event.choices.len() > choice_id {
         let choice = &event.choices[choice_id];
 
@@ -165,6 +129,7 @@ impl Runtime {
 
         if available {
           self.state.current_choice = Some(choice_id);
+          self.random_result();
           return Ok(());
         } else {
           self.state.current_event = None;
@@ -178,6 +143,200 @@ impl Runtime {
     else {
       self.state.current_event = None;
       Err("No event has been drawn".to_string())
+    }
+  }
+
+  pub fn set_resource<R, T>(&mut self, resource: R, value: T) -> Result<(), String>
+  where
+    T: Display,
+    R: AsRef<str>
+  {
+    let resource = resource.as_ref().to_string();
+    if self.database.config.resources.contains_key(&resource) {
+      let t = std::any::type_name::<T>();
+      println!("Setting Resource: {} - Value: {} - Type: {}", resource, value, t);
+      
+      if (t == "i32" && self.database.config.resources[&resource] == ResourceKind::Integer) ||
+         (t == "f32" && self.database.config.resources[&resource] == ResourceKind::Float) ||
+         (t == "bool" && self.database.config.resources[&resource] == ResourceKind::Bool) {
+        self.game_state.resources.insert(resource, value.to_string());
+      } else {
+        return Err("Invalid Resource Type".to_string())
+      }
+    }
+    else{
+      return Err("Invalid Resource".to_string())
+    }
+    Ok(())
+  }
+  pub fn get_resource_kind<R>(&self, resource: R) -> Option<ResourceKind> 
+  where
+    R: AsRef<str>
+  {
+    let resource = resource.as_ref();
+    
+    if self.database.config.resources.contains_key(resource) {
+      Some(self.database.config.resources[resource].clone())
+    }else{
+      None  
+    }
+  }
+
+  pub fn get_resource<R, T>(&self, resource: R) -> Result<T, String>
+  where
+    T: Display + std::str::FromStr + Default,
+    R: AsRef<str>
+  {
+    let resource = resource.as_ref().to_string();
+    if self.database.config.resources.contains_key(&resource) {
+      let t = std::any::type_name::<T>();
+      
+      if (t == "i32" && self.database.config.resources[&resource] == ResourceKind::Integer) ||
+         (t == "f32" && self.database.config.resources[&resource] == ResourceKind::Float) ||
+         (t == "bool" && self.database.config.resources[&resource] == ResourceKind::Bool) {
+        
+        let value = match self.game_state.resources.get(&resource) {
+          Some(value) => value.clone(),
+          None => T::default().to_string()
+        };
+
+        if let Ok(value) = value.parse::<T>() {
+          return Ok(value)
+        } else {
+          return Err("Unknown Parsing Error".to_string())  
+        }
+      }
+    } else{
+      return Err("Invalid Resource".to_string())
+    }
+    return Err("Invalid Resource".to_string())
+  }
+
+  pub fn set_time_of_day(&mut self, time_of_day: TimeOfDay) {
+    self.game_state.time_of_day = time_of_day;
+  }
+
+  pub fn get_reputation<T>(&self, reputation_id: T) -> Result<i32, String> 
+  where
+    T: AsRef<str>
+  {
+    let reputation = self.game_state.reputations.get(reputation_id.as_ref());
+    match reputation {
+        Some(reputation) => Ok(*reputation),
+        None => {
+          validate_reputation(&self.database.config.reputations, reputation_id)?;
+          Ok(0)
+      }
+    }
+  }
+
+  fn add_reputation<T>(&mut self, reputation_id: T, amount: i32) -> Result<(), String> 
+  where
+    T: AsRef<str>
+  {
+    validate_reputation(&self.database.config.reputations, &reputation_id)?;
+    let reputation_id = reputation_id.as_ref();
+    let reputation = self.game_state.reputations.get(reputation_id);
+    match reputation {
+      Some(reputation) => self.game_state.reputations.insert(reputation_id.to_string(), reputation + amount),
+      None => self.game_state.reputations.insert(reputation_id.to_string(), amount),
+    };
+    Ok(())
+  }
+
+  fn set_decision<T>(&mut self, decision_id: T) 
+  where
+    T: AsRef<str>
+  {
+    self.game_state.decisions.push(decision_id.as_ref().to_string());
+  }
+
+  pub fn decision_taken<T>(&self, decision_id: T) -> bool
+  where
+    T: AsRef<str>
+  {
+    self.game_state.decisions.contains(&decision_id.as_ref().to_string())
+  }
+
+  fn random_result(&mut self) -> Option<()> {
+    self.state.current_result = None;
+    
+    let choice = current_choice(self)?.clone();
+    let frequencies = choice.results.iter().map(|r| r.chance).collect();
+    let frequencies = frequency_sum(frequencies);
+    let max = frequencies.last()?;
+    let num = random_with_max(self,*max)?;
+
+    let index = index_for_freq(num, frequencies);
+    let result = choice.results.get(index)?;
+
+    for modifier in &result.modifiers {
+      self.apply_modifier(modifier);
+    }
+
+    self.state.current_result = Some(index);
+    Some(())
+  }
+
+  fn current_modifiers(&self) -> Option<Vec<crate::Modifier>> {
+    let mut v = vec![];
+
+    let result = current_result(self)?;
+    for modifier in &result.modifiers {
+      let modifier = modifier.clone();
+      match modifier {
+        Modifier::Resource { id, amount } => {
+          v.push(crate::Modifier {
+            kind: "resource".to_string(),
+            id,
+            amount
+          })
+        },
+        Modifier::Item { id, amount } => {
+          v.push(crate::Modifier {
+            kind: "item".to_string(),
+            id,
+            amount
+          })
+        },
+        Modifier::Reputation { id, amount } => {
+          v.push(crate::Modifier {
+            kind: "reputation".to_string(),
+            id,
+            amount
+          })
+        },
+        Modifier::Decision(id) => {
+          v.push(crate::Modifier {
+            kind: "decision".to_string(),
+            id,
+            amount: String::default()
+          })
+        },
+        Modifier::Achievement(id) => {
+          v.push(crate::Modifier {
+            kind: "achievement".to_string(),
+            id,
+            amount: String::default()
+          })
+        },
+        _ => {}
+      }
+    }
+
+    Some(v)
+  }
+
+  fn apply_modifier(&mut self, modifier: &cuentitos_common::Modifier) -> Result<(), String> {
+    match modifier {
+      Modifier::Reputation { id, amount } => {
+        match amount.parse::<i32>() {
+          Ok(amount) => self.add_reputation(id, amount),
+          Err(error) => Err(format!("Couldn't parse amount: {}", error))
+        }
+      },
+      Modifier::Decision(id) => Ok(self.set_decision(id)),
+      _ => Ok(())
     }
   }
 
@@ -309,28 +468,17 @@ impl Runtime {
     }
   }
 
-  fn event_frequencies(&self) -> Vec<i32> {
+  fn event_frequencies(&self) -> Vec<u32> {
     let mut result = vec![];
 
     for idx in self.available_events() {
-      let mut freq = 50;
+      let mut freq : u32 = 50;
       for requirement in &self.database.events[self.id_to_index[&idx]].requirements {
         if self.requirement_met(&requirement) {
           freq += self.database.config.runtime.met_requirement_frequency_boost;
         }
       }
       result.push(freq);
-    }
-
-    result
-  }
-
-  fn event_frequency_sum(&self, frequencies: Vec<i32>) -> Vec<i32> {
-    let mut result = vec![];
-
-    for freq in frequencies {
-      let prev = result.last().unwrap_or(&0);
-      result.push(prev + freq)
     }
 
     result
@@ -366,60 +514,70 @@ impl Runtime {
     }
   }
 
-  pub fn set_resource<T>(&mut self, resource: ResourceId, value: T) -> Result<(), String>
-  where
-    T: Display
-  {
-    if self.database.config.resources.contains_key(&resource) {
-      let t = std::any::type_name::<T>();
-      
-      if (t == "i32" && self.database.config.resources[&resource] == ResourceKind::Integer) ||
-         (t == "f64" && self.database.config.resources[&resource] == ResourceKind::Float) ||
-         (t == "bool" && self.database.config.resources[&resource] == ResourceKind::Bool) {
-        self.game_state.resources.insert(resource, value.to_string());
-      } else {
-        return Err("Invalid Resource Type".to_string())
-      }
-    }
-    else{
-      return Err("Invalid Resource".to_string())
-    }
+}
+
+fn validate_reputation<T>(reputations: &Vec<ReputationId>, reputation_id: T) -> Result<(), String> 
+where
+  T: AsRef<str>
+{
+  if reputations.iter().any(|rep| rep == reputation_id.as_ref()) {
     Ok(())
+  } else {
+    Err("Invalid Reputation".to_string())
+  }
+}
+
+fn random_with_max(runtime: &mut Runtime, max: u32) -> Option<u32> {
+  if runtime.rng == None {
+    runtime.rng = Some(Pcg32::from_entropy())
   }
 
-  pub fn set_time_of_day(&mut self, time_of_day: TimeOfDay) {
-    self.game_state.time_of_day = time_of_day;
+  let mut rng = runtime.rng.as_ref()?.clone();
+  let num = rng.gen_range(0..max);
+
+  runtime.rng = Some(rng);  
+  Some(num)
+}
+
+fn frequency_sum(frequencies: Vec<u32>) -> Vec<u32> {
+  let mut result = vec![];
+
+  for freq in frequencies {
+    let prev = result.last().unwrap_or(&0);
+    result.push(prev + freq)
   }
 
-  pub fn get_reputation(&self, reputation_id: &ReputationId) -> Result<i32, String> {
-    let reputation = self.game_state.reputations.get(reputation_id);
-    match reputation {
-        Some(reputation) => Ok(*reputation),
-        None => {
-          self.validate_reputation(reputation_id)?;
-          Ok(0)
-      }
-    }
-  }
+  result
+}
 
-  pub fn add_reputation(&mut self, reputation_id: &ReputationId, amount: i32) -> Result<(), String> {
-    self.validate_reputation(reputation_id)?;
-
-    let reputation = self.game_state.reputations.get(reputation_id);
-    match reputation {
-      Some(reputation) => self.game_state.reputations.insert(reputation_id.to_string(), reputation + amount),
-      None => self.game_state.reputations.insert(reputation_id.to_string(), amount),
-    };
-    Ok(())
-  }
-
-  fn validate_reputation(&self, reputation_id: &ReputationId) -> Result<(), String> {
-    if self.database.config.reputations.iter().any(|rep| rep == reputation_id) {
-      Ok(())
+fn index_for_freq(num: u32, frequencies: Vec<u32>) -> usize {
+  let mut index = 0;
+  for freq in frequencies {
+    if num <= freq {
+      return index;
     } else {
-      Err("Invalid Reputation".to_string())
+      index += 1;
     }
   }
+  return index;
+}
+
+
+fn current_event(runtime: &Runtime) -> Option<&Event> {
+  let current_event = runtime.state.current_event?;
+  runtime.database.events.get(current_event)
+}
+
+fn current_choice(runtime: &Runtime) -> Option<&EventChoice> {
+  let event = current_event(runtime)?;
+  let choice_id = runtime.state.current_choice?;
+  event.choices.get(choice_id)
+}
+
+fn current_result(runtime: &Runtime) -> Option<&EventResult> {
+  let choice = current_choice(runtime)?;
+  let result_id = runtime.state.current_result?;
+  choice.results.get(result_id)
 }
 
 #[cfg(test)]
@@ -438,32 +596,6 @@ mod test {
     let database = Database::default();
     let runtime = Runtime::new(database.clone());
     assert_eq!(runtime.database, database)
-  }
-
-  #[test]
-  fn serialized_random_event_returns_the_random_event_serialized() {
-    let db = load_mp_fixture("database").unwrap();
-    let database = Database::from_u8(&db).unwrap();
-    let mut runtime = Runtime::new(database.clone());
-    runtime.set_seed(1);
-    
-    let actual = runtime.serialized_random_event().unwrap();
-
-    let expected = serialize(runtime_datatypes::Event {
-      title: "A Basic Event".to_string(),
-      description: "This event has options".to_string(),
-      choices: vec![
-        runtime_datatypes::EventChoice {
-          id: 0,
-          text: "An Option without requirements".to_string()
-        },
-        runtime_datatypes::EventChoice {
-          id: 1,
-          text: "Another option without requirements".to_string()
-        },
-      ]
-    }).unwrap();
-    assert_eq!(actual, expected);
   }
 
   #[test]
@@ -501,15 +633,15 @@ mod test {
     let mut runtime = Runtime::new(db);
     runtime.set_seed(1);
 
-    runtime.random_event().unwrap();
+    runtime.next_event().unwrap();
     
-    assert_eq!(runtime.state.current_event.clone().unwrap(), "event-1");
+    assert_eq!(runtime.state.current_event, Some(0));
 
     assert!(runtime
       .state
       .previous_event_cooldown
       .contains_key("event-1"));
-    runtime.random_event().unwrap();
+    runtime.next_event().unwrap();
     assert!(runtime
       .state
       .previous_event_cooldown
@@ -534,7 +666,7 @@ mod test {
     };
     let mut runtime = Runtime::new(db);
     runtime.set_seed(1);
-    runtime.random_event().unwrap();
+    runtime.next_event().unwrap();
     assert_eq!(runtime.state.disabled_events, ["event-1"]);
     assert_eq!(runtime.available_events(), ["event-2"]);
   }
@@ -563,22 +695,22 @@ mod test {
     assert_eq!(runtime.available_events(), ["event-1", "event-2"]);
     assert_eq!(runtime.event_frequencies(), [50, 50]);
 
-    runtime.random_event().unwrap();
+    runtime.next_event().unwrap();
     assert_eq!(runtime.available_events(), ["event-2"]);
     assert_eq!(runtime.event_frequencies(), [50]);
 
-    runtime.random_event().unwrap();
+    runtime.next_event().unwrap();
     assert!(runtime.available_events().is_empty());
     assert!(runtime.event_frequencies().is_empty());
-    assert_eq!(runtime.random_event(), None);
+    assert_eq!(runtime.next_event(), None);
 
     // Make sure that after a while it shows up again
     for _ in 0..7 {
-      runtime.random_event();
+      runtime.next_event();
     }
 
-    let event = runtime.random_event().unwrap();
-    assert_eq!(event, "event-1");
+    let event = runtime.next_event().unwrap();
+    assert_eq!(event, crate::Event::from_cuentitos(&runtime.database.events[0]));
     assert!(runtime.available_events().is_empty());
     assert!(runtime.event_frequencies().is_empty());
   }
@@ -1151,12 +1283,17 @@ mod test {
     };
 
     let mut runtime = Runtime::new(db);
-    let event = runtime.random_event().unwrap();
 
-    assert_eq!(runtime.state.current_event.clone().unwrap(), event);
+    assert_eq!(runtime.state.current_event, None);
+    
+    runtime.next_event().unwrap();
 
-    let _result = runtime.set_choice(0).unwrap();
-    assert_eq!(runtime.state.current_choice.unwrap(), 0);
+    assert_eq!(runtime.state.current_event, Some(0));
+    assert_eq!(runtime.state.current_choice, None);
+    
+    runtime.set_choice(0).unwrap();
+
+    assert_eq!(runtime.state.current_choice, Some(0));
   }
 
   #[test]
@@ -1190,7 +1327,7 @@ mod test {
       }
     }
 
-    runtime.random_event().unwrap();
+    runtime.next_event().unwrap();
 
     match runtime.set_choice(10) {
       Ok(_) => assert!(false),
@@ -1224,13 +1361,13 @@ mod test {
     assert_eq!(runtime.set_resource("resource-float".to_string(), true), Err("Invalid Resource Type".to_string()));
     assert_eq!(runtime.set_resource("resource-bool".to_string(), 10), Err("Invalid Resource Type".to_string()));
 
-    runtime.set_resource("resource-int".to_string(), 10).unwrap();
-    runtime.set_resource("resource-float".to_string(), 10.5).unwrap();
-    runtime.set_resource("resource-bool".to_string(), true).unwrap();
+    runtime.set_resource("resource-int", 10).unwrap();
+    runtime.set_resource("resource-float", 10.5).unwrap();
+    runtime.set_resource("resource-bool", true).unwrap();
 
-    assert_eq!(runtime.game_state.resources["resource-int"], "10");
-    assert_eq!(runtime.game_state.resources["resource-float"], "10.5");
-    assert_eq!(runtime.game_state.resources["resource-bool"], "true");
+    assert_eq!(runtime.get_resource::<&str, i32>("resource-int").unwrap(), 10);
+    assert_eq!(runtime.get_resource::<&str, f32>("resource-float").unwrap(), 10.5);
+    assert_eq!(runtime.get_resource::<&str, bool>("resource-bool").unwrap(), true);
   }
 
   #[test]
@@ -1285,12 +1422,251 @@ mod test {
   }
 
   #[test]
-  fn when_choice_has_results_they_are_computed() {
-    todo!()
+  fn current_modifiers_returns_modifiers_correctly() {
+    let mut db = Database {
+      events: vec![
+        Event {
+          id: "event-1".to_string(),
+          choices: vec![ cuentitos_common::EventChoice {
+            results: vec![
+              cuentitos_common::EventResult {
+                chance: 100,
+                modifiers: vec![
+                  Modifier::Resource {
+                    id: "resource-1".to_string(),
+                    amount: "1".to_string()
+                  },
+                  Modifier::Resource {
+                    id: "resource-2".to_string(),
+                    amount: "-1".to_string()
+                  },
+                  Modifier::Resource {
+                    id: "resource-3".to_string(),
+                    amount: "1.5".to_string()
+                  },
+                  Modifier::Resource {
+                    id: "resource-4".to_string(),
+                    amount: "-1.5".to_string()
+                  },
+                  Modifier::Resource {
+                    id: "resource-5".to_string(),
+                    amount: "true".to_string()
+                  },
+                  Modifier::Resource {
+                    id: "resource-6".to_string(),
+                    amount: "false".to_string()
+                  },
+                  Modifier::Item {
+                    id: "item-1".to_string(),
+                    amount: "1".to_string()
+                  },
+                  Modifier::Item {
+                    id: "item-2".to_string(),
+                    amount: "-1".to_string()
+                  },
+                  Modifier::Reputation {
+                    id: "reputation-1".to_string(),
+                    amount: "1".to_string()
+                  },
+                  Modifier::Reputation {
+                    id: "reputation-2".to_string(),
+                    amount: "-1".to_string()
+                  },
+                  Modifier::Decision("decision-1".to_string()),
+                  Modifier::Achievement("achievement-1".to_string())
+                ],
+                ..Default::default()
+              },
+            ],
+            ..Default::default() 
+          }],
+          ..Default::default()
+        },
+      ],
+      ..Default::default()
+    };
+
+    db.config.resources.insert("resource-1".to_string(), ResourceKind::Integer);
+    db.config.resources.insert("resource-2".to_string(), ResourceKind::Integer);
+    db.config.resources.insert("resource-3".to_string(), ResourceKind::Float);
+    db.config.resources.insert("resource-4".to_string(), ResourceKind::Float);
+    db.config.resources.insert("resource-5".to_string(), ResourceKind::Bool);
+    db.config.resources.insert("resource-6".to_string(), ResourceKind::Bool);
+    db.config.reputations.push("reputation-1".to_string());
+    db.config.reputations.push("reputation-2".to_string());
+
+    db.items.push(Item { id: "item-1".to_string(), ..Default::default()});
+    db.items.push(Item { id: "item-2".to_string(), ..Default::default()});
+    
+    let mut runtime = Runtime::new(db);
+    
+    assert_eq!(
+      runtime.next_event().unwrap(), 
+      crate::Event::from_cuentitos(&runtime.database.events[0])
+    );
+    
+    runtime.set_choice(0).unwrap();
+    let modifiers = runtime.current_modifiers().unwrap();
+
+    assert_eq!(
+      modifiers[0], 
+      crate::Modifier { 
+        kind: "resource".to_string(),
+        id: "resource-1".to_string(), 
+        amount: "1".to_string(), 
+      }
+    );
+
+    assert_eq!(
+      modifiers[1], 
+      crate::Modifier { 
+        kind: "resource".to_string(),
+        id: "resource-2".to_string(), 
+        amount: "-1".to_string(), 
+      }
+    );
+
+    assert_eq!(
+      modifiers[2], 
+      crate::Modifier { 
+        kind: "resource".to_string(),
+        id: "resource-3".to_string(), 
+        amount: "1.5".to_string(), 
+      }
+    );
+
+    assert_eq!(
+      modifiers[3], 
+      crate::Modifier { 
+        kind: "resource".to_string(),
+        id: "resource-4".to_string(), 
+        amount: "-1.5".to_string(), 
+      }
+    );
+
+    assert_eq!(
+      modifiers[4], 
+      crate::Modifier { 
+        kind: "resource".to_string(),
+        id: "resource-5".to_string(), 
+        amount: "true".to_string(), 
+      }
+    );
+
+    assert_eq!(
+      modifiers[5], 
+      crate::Modifier { 
+        kind: "resource".to_string(),
+        id: "resource-6".to_string(), 
+        amount: "false".to_string(), 
+      }
+    );
+
+    assert_eq!(
+      modifiers[6], 
+      crate::Modifier { 
+        kind: "item".to_string(),
+        id: "item-1".to_string(), 
+        amount: "1".to_string(), 
+      }
+    );
+
+    assert_eq!(
+      modifiers[7], 
+      crate::Modifier { 
+        kind: "item".to_string(),
+        id: "item-2".to_string(), 
+        amount: "-1".to_string(), 
+      }
+    );
+
+    assert_eq!(
+      modifiers[8], 
+      crate::Modifier { 
+        kind: "reputation".to_string(),
+        id: "reputation-1".to_string(), 
+        amount: "1".to_string(), 
+      }
+    );
+
+    assert_eq!(
+      modifiers[9], 
+      crate::Modifier { 
+        kind: "reputation".to_string(),
+        id: "reputation-2".to_string(), 
+        amount: "-1".to_string(), 
+      }
+    );
+    
+    assert_eq!(
+      modifiers[10], 
+      crate::Modifier { 
+        kind: "decision".to_string(),
+        id: "decision-1".to_string(), 
+        amount: "".to_string(), 
+      }
+    );
+
+    assert_eq!(
+      modifiers[11], 
+      crate::Modifier { 
+        kind: "achievement".to_string(),
+        id: "achievement-1".to_string(), 
+        amount: "".to_string(), 
+      }
+    );
   }
 
   #[test]
-  fn modifications_after_choice() {
-    todo!()
+  fn when_choice_has_modifications_on_reputation_and_decisions_they_are_computed() {
+    let mut db = Database {
+      events: vec![
+        Event {
+          id: "event-1".to_string(),
+          choices: vec![ cuentitos_common::EventChoice {
+            results: vec![
+              cuentitos_common::EventResult {
+                chance: 100,
+                modifiers: vec![
+                  Modifier::Reputation {
+                    id: "reputation-1".to_string(),
+                    amount: "1".to_string()
+                  },
+                  Modifier::Reputation {
+                    id: "reputation-2".to_string(),
+                    amount: "-1".to_string()
+                  },
+                  Modifier::Decision("decision-1".to_string()),
+                ],
+                ..Default::default()
+              },
+            ],
+            ..Default::default() 
+          }],
+          ..Default::default()
+        },
+      ],
+      ..Default::default()
+    };
+
+    db.config.reputations.push("reputation-1".to_string());
+    db.config.reputations.push("reputation-2".to_string());
+
+    let mut runtime = Runtime::new(db);
+
+    assert_eq!(runtime.get_reputation("reputation-1"), Ok(0));
+    assert_eq!(runtime.get_reputation("reputation-2"), Ok(0));
+    assert_eq!(runtime.decision_taken("decision-1"), false);
+    
+    assert_eq!(
+      runtime.next_event().unwrap(), 
+      crate::Event::from_cuentitos(&runtime.database.events[0])
+    );
+    
+    runtime.set_choice(0).unwrap();
+    assert_eq!(runtime.get_reputation("reputation-1"), Ok(1));
+    assert_eq!(runtime.get_reputation("reputation-2"), Ok(-1));
+    assert_eq!(runtime.decision_taken("decision-1"), true);
   }
+
 }

@@ -1,7 +1,6 @@
 use crate::Config;
 use core::fmt::Display;
 use core::str::FromStr;
-use cuentitos_common::Resource;
 use cuentitos_common::ResourceKind::*;
 
 pub struct Modifier;
@@ -26,11 +25,7 @@ impl Modifier {
 
             match result {
               Ok(amount) => {
-                let resource = Resource {
-                  id: resource.to_string(),
-                  kind: kind.clone(),
-                };
-                Ok(cuentitos_common::Modifier::Resource { resource, amount })
+                Ok(cuentitos_common::Modifier::Resource { id: resource.to_string(), amount })
               }
               Err(error) => Err(format!("{} for resource '{}'", error, resource)),
             }
@@ -116,7 +111,7 @@ mod test {
     assert_eq!(
       result,
       cuentitos_common::Modifier::Resource {
-        resource: resource.clone(),
+        id: resource.id.clone(),
         amount: 100.to_string()
       }
     );
@@ -125,7 +120,7 @@ mod test {
     assert_eq!(
       result,
       cuentitos_common::Modifier::Resource {
-        resource: resource.clone(),
+        id: resource.id.clone(),
         amount: (-100).to_string()
       }
     );
@@ -146,7 +141,7 @@ mod test {
     assert_eq!(
       result,
       cuentitos_common::Modifier::Resource {
-        resource: resource.clone(),
+        id: resource.id.clone(),
         amount: 0.9.to_string()
       }
     );
@@ -155,7 +150,7 @@ mod test {
     assert_eq!(
       result,
       cuentitos_common::Modifier::Resource {
-        resource: resource.clone(),
+        id: resource.id.clone(),
         amount: (-0.9).to_string()
       }
     );
@@ -176,7 +171,7 @@ mod test {
     assert_eq!(
       result,
       cuentitos_common::Modifier::Resource {
-        resource: resource.clone(),
+        id: resource.id.clone(),
         amount: "true".to_string()
       }
     );
@@ -185,7 +180,7 @@ mod test {
     assert_eq!(
       result,
       cuentitos_common::Modifier::Resource {
-        resource: resource.clone(),
+        id: resource.id.clone(),
         amount: "false".to_string()
       }
     );

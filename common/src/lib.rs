@@ -11,6 +11,9 @@ pub use event_choice::*;
 mod event_requirement;
 pub use event_requirement::*;
 
+mod item;
+pub use item::*;
+
 mod modifier;
 pub use modifier::*;
 

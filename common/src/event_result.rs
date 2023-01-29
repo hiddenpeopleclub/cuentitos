@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct EventResult {
-  pub chance: u8,
+  pub chance: u32,
   pub text: String,
   pub requirements: Vec<EventRequirement>,
   pub modifiers: Vec<Modifier>,

@@ -27,6 +27,8 @@ impl fmt::Display for CompileError {
   }
 }
 
+mod parsable;
+
 mod parser;
 pub mod parsers;
 
