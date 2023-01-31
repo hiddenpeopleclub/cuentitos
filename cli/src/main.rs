@@ -49,6 +49,22 @@ fn main() {
           Err(error) => println!("  ❌  {}: {}", id, error),
         }
       }
+
+
+      println!();
+      println!(
+        "Parse result for items in '{}/items'",
+        source_path.display()
+      );
+      println!();
+
+      for (id, item) in result.items {
+        match item {
+          Ok(_) => println!("  ✔️  {}", id),
+          Err(error) => println!("  ❌  {}: {}", id, error),
+        }
+      }
+
     }
     Some(Commands::Run { source_path }) => {
       Console::start(source_path);

@@ -14,26 +14,25 @@ A game narrative engine with probabily at its core.
   - [x] Instances
   - [x] Configuration
   - [x] Database
-  - [-] State Machine
+  - [x] State Machine
     - [x] Current Event
-    - [ ] Current Choice
-    - [ ] Result
+    - [x] Current Choice
+    - [x] Result
     - [x] Probability mods
-  - [x] State Save/Load
+  - [ ] State Save/Load
   - [ ] Interactive Shell
     - [ ] Set Game State -> from json
     - [ ] Choices
     - [ ] Modifiers
-  - [ ] Public Interface
-    - [ ] Get Random Event
-    - [ ] Set Choice
+  - [x] Public Interface
+    - [x] Get Random Event
+    - [x] Set Choice
     - [ ] Get Result for Choice
     - [ ] CRUD Events
     - [ ] CRUD Resources
-    - [ ] CRUD Inventories
     - [ ] CRUD Items
-  - [ ] C interface
-  - [ ] UE4 Bindings
+  - [o] C++ interface
+  - [ ] UE4 Plugin
   - [ ] Balancing Interface
   - [ ] C# Interface
   - [ ] Unity Bindings
