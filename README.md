@@ -20,6 +20,7 @@ A game narrative engine with probabily at its core.
     - [x] Result
     - [x] Probability mods
   - [ ] State Save/Load
+  - [ ] Add watch to `cuentitos-cli`
   - [ ] Interactive Shell
     - [ ] Set Game State -> from json
     - [ ] Choices
