@@ -49,7 +49,7 @@ bool cuentitos_get_decision(RuntimeId id, Cstring decision, bool *value);
 
 void cuentitos_next_event(uintptr_t id, uint8_t *buffer, uintptr_t *length);
 
-bool cuentitos_set_choice(uintptr_t id, uintptr_t choice_id);
+bool cuentitos_set_choice(uintptr_t id, int32_t choice_id, uint8_t *buffer, uintptr_t *length);
 
 bool cuentitos_current_modifiers(uintptr_t id, uint8_t *buffer, uintptr_t *length);
 

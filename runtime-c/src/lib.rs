@@ -217,11 +217,27 @@ pub extern "C" fn cuentitos_next_event(id: usize, buffer: *mut u8, length: *mut 
 }
 
 #[no_mangle]
-pub extern "C" fn cuentitos_set_choice(id: usize, choice_id: usize) -> bool {
+pub extern "C" fn cuentitos_set_choice(id: usize, choice_id: usize, buffer: *mut u8, length: *mut usize) -> bool {
+  if buffer.is_null() {
+    return false;
+  }
+  if length.is_null() {
+    return false;
+  }
   if invalid_runtime(id) {
     return false;
   }
-  Ok(()) == get_runtime(id).set_choice(choice_id)
+
+  match get_runtime(id).set_choice(choice_id)
+  {
+    Ok(modifiers) =>{
+      serialize_to_buffer(modifiers, buffer, length);
+      true
+    }
+    Err(_) =>{
+      false
+    }
+  }
 }
 
 #[no_mangle]
