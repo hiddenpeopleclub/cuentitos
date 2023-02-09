@@ -115,8 +115,7 @@ impl Runtime {
     self.seed = seed;
     self.rng = Some(Pcg32::seed_from_u64(seed));
   }
-
-  pub fn set_choice(&mut self, choice_id: usize) -> Result<(), String> {
+  pub fn set_choice(&mut self, choice_id: usize) -> Result<crate::EventResult, String> {
     if let Some(event) = current_event(self) {
       if event.choices.len() > choice_id {
         let choice = &event.choices[choice_id];
@@ -129,8 +128,23 @@ impl Runtime {
 
         if available {
           self.state.current_choice = Some(choice_id);
-          self.random_result();
-          return Ok(());
+         if let Some(result) = self.random_result()
+         {
+          if let Some(modifiers) = self.current_modifiers()
+          {
+            let event_result = crate::EventResult
+            {
+                text: result.text.clone(),
+                modifiers,
+            };
+            return Ok(event_result);
+          } else {
+            return Err("Invalid modifiers".to_string());
+          }
+         } else {
+          return Err("Invalid results".to_string());
+         }
+   
         } else {
           self.state.current_event = None;
           return Err("Requirements for choice not met".to_string());
@@ -374,7 +388,8 @@ impl Runtime {
       .push(decision_id.as_ref().to_string());
   }
 
-  fn random_result(&mut self) -> Option<()> {
+  fn random_result(&mut self) -> Option<EventResult> {
+
     self.state.current_result = None;
 
     let choice = current_choice(self)?.clone();
@@ -385,13 +400,12 @@ impl Runtime {
 
     let index = index_for_freq(num, frequencies);
     let result = choice.results.get(index)?;
-
     for modifier in &result.modifiers {
       if let Ok(()) = self.apply_modifier(modifier) {}
     }
 
     self.state.current_result = Some(index);
-    Some(())
+    Some(result.clone())
   }
 
   fn apply_modifier(&mut self, modifier: &cuentitos_common::Modifier) -> Result<(), String> {
@@ -614,7 +628,9 @@ fn current_result(runtime: &Runtime) -> Option<&EventResult> {
 
 #[cfg(test)]
 mod test {
-  use crate::runtime::test::test_utils::serialize;
+  use std::default;
+
+use crate::runtime::test::test_utils::serialize;
   use crate::runtime::Runtime;
   use crate::runtime_datatypes;
   use crate::GameState;
@@ -1298,7 +1314,13 @@ mod test {
     let db = Database {
       events: vec![Event {
         id: "event-1".to_string(),
-        choices: vec![cuentitos_common::EventChoice::default()],
+        choices: vec![cuentitos_common::EventChoice {
+         results: vec![cuentitos_common::EventResult{
+          chance:1,
+          ..Default::default()
+         }],
+         ..Default::default()
+          }],
         ..Default::default()
       }],
       ..Default::default()
