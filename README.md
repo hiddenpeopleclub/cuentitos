@@ -2,6 +2,10 @@
 A game narrative engine with probabily at its core.
 
 ## TODO
+
+### Next
+  - [ ] I18n
+
 ### Compiler
   - [x] Parse events
   - [ ] Error on missing events
@@ -39,6 +43,8 @@ A game narrative engine with probabily at its core.
   - [ ] Unity Bindings
 
 ### Editor
+  - [ ] Show Modifiers
+  - [ ] Game State Debugging
   - [ ] Writing (using Visual Studio Code & Sublime Text?)
   - [ ] Testing
   - [ ] Database Querying

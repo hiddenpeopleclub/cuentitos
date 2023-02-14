@@ -6,9 +6,6 @@ edition = "2021"
 [lib]
 crate-type = ["staticlib"]
 
-
-build = "build.rs"
-
 [build-dependencies]
 cbindgen = "0.1.29"
 

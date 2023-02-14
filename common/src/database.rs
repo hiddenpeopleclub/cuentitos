@@ -1,3 +1,4 @@
+use crate::I18n;
 use crate::Config;
 use crate::Event;
 use crate::Item;
@@ -10,6 +11,7 @@ pub struct Database {
   pub config: Config,
   pub events: Vec<Event>,
   pub items: Vec<Item>,
+  pub i18n: I18n
 }
 
 impl Database {
@@ -26,8 +28,8 @@ impl Database {
 
 #[cfg(test)]
 mod test {
-  use crate::test_utils::load_mp_fixture;
-  use crate::Database;
+  // use crate::test_utils::load_mp_fixture;
+  // use crate::Database;
 
   // #[test]
   // fn load_binary_db() {

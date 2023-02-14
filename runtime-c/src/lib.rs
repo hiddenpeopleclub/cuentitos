@@ -55,6 +55,14 @@ pub extern "C" fn cuentitos_new_runtime(id: DatabaseId) -> RuntimeId {
   }
 }
 
+pub extern "C" fn cuentitos_set_locale(id: RuntimeId, locale: Cstring) -> bool {
+  if invalid_runtime(id) {
+    return false;
+  }
+  
+  get_runtime(id).set_locale(rust_string(locale)) == Ok(())
+}
+
 #[no_mangle]
 pub extern "C" fn cuentitos_set_seed(id: RuntimeId, seed: u64) {
   if invalid_runtime(id) {
@@ -198,6 +206,22 @@ pub extern "C" fn cuentitos_get_decision(
 }
 
 #[no_mangle]
+pub extern "C" fn cuentitos_get_items(id: usize, buffer: *mut u8, length: *mut usize) {
+  if buffer.is_null() {
+    return;
+  }
+  if length.is_null() {
+    return;
+  }
+  if invalid_runtime(id) {
+    return;
+  }
+  
+  serialize_to_buffer(&get_runtime(id).database.items, buffer, length);  
+}
+
+
+#[no_mangle]
 pub extern "C" fn cuentitos_next_event(id: usize, buffer: *mut u8, length: *mut usize) {
   if buffer.is_null() {
     return;
@@ -210,7 +234,7 @@ pub extern "C" fn cuentitos_next_event(id: usize, buffer: *mut u8, length: *mut 
   }
 
   if let Some(event) = get_runtime(id).next_event() {
-    serialize_to_buffer(event, buffer, length);
+    serialize_to_buffer(&event, buffer, length);
   } else {
     zero(length)
   }
@@ -231,7 +255,7 @@ pub extern "C" fn cuentitos_set_choice(id: usize, choice_id: usize, buffer: *mut
   match get_runtime(id).set_choice(choice_id)
   {
     Ok(modifiers) =>{
-      serialize_to_buffer(modifiers, buffer, length);
+      serialize_to_buffer(&modifiers, buffer, length);
       true
     }
     Err(_) =>{
@@ -257,7 +281,7 @@ pub extern "C" fn cuentitos_current_modifiers(
   }
 
   if let Some(modifiers) = get_runtime(id).current_modifiers() {
-    serialize_to_buffer(modifiers, buffer, length);
+    serialize_to_buffer(&modifiers, buffer, length);
     return true;
   }
 
@@ -327,7 +351,7 @@ where
   Ok(result)
 }
 
-fn serialize_to_buffer<U>(element: U, buffer: *mut u8, length: *mut usize)
+fn serialize_to_buffer<U>(element: &U, buffer: *mut u8, length: *mut usize)
 where
   U: Serialize,
 {

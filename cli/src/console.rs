@@ -26,7 +26,7 @@ impl Console {
     let mut buffer = vec![0; metadata.len() as usize];
     f.read_exact(&mut buffer).expect("buffer overflow");
     let database = Database::from_u8(&buffer).unwrap();
-
+    
     let mut runtime = Runtime::new(database);
 
     loop {

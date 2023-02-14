@@ -14,3 +14,4 @@ clap = { version = "4.0.17", features = ["derive"] }
 cuentitos-compiler = { path = "../compiler" }
 cuentitos-runtime = { path = "../runtime" }
 regex = "1.7.0"
+notify = "5.1.0"

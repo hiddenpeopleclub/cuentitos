@@ -19,6 +19,8 @@ pub struct Config {
   pub tiles: Vec<String>,
   #[serde(default)]
   pub runtime: RuntimeConfig,
+  pub locales: Vec<String>,
+  pub default_locale: String
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Eq)]
@@ -73,7 +75,7 @@ impl Config {
 
 #[cfg(test)]
 mod test {
-  use crate::config::*;
+  // use crate::config::*;
 
   #[test]
   fn loads_config_from_toml() {

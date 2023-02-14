@@ -2,8 +2,6 @@ use cuentitos_common::EventChoice;
 use cuentitos_common::EventResult;
 use cuentitos_common::Modifier;
 use cuentitos_common::ReputationId;
-use cuentitos_common::TileId;
-
 use cuentitos_common::TimeOfDay;
 
 use cuentitos_common::Condition;
@@ -48,10 +46,14 @@ impl Runtime {
       database,
       ..Default::default()
     };
+
     for index in 0..runtime.database.events.len() {
       let id = &runtime.database.events[index].id;
       runtime.id_to_index.insert(id.clone(), index);
     }
+
+    runtime.state.current_locale = runtime.database.i18n.default_locale.clone();
+
     runtime
   }
 
@@ -98,8 +100,7 @@ impl Runtime {
               event.id.clone(),
               self.database.config.runtime.chosen_event_frequency_penalty,
             );
-
-            return Some(crate::Event::from_cuentitos(event));
+            return Some(crate::Event::from_cuentitos(event, &self.database.i18n, &self.state.current_locale));
           } else {
             index += 1;
           };
@@ -115,6 +116,21 @@ impl Runtime {
     self.seed = seed;
     self.rng = Some(Pcg32::seed_from_u64(seed));
   }
+
+  pub fn set_locale<T>(&mut self, locale: T) -> Result<(), String>
+  where
+    T: AsRef<str>,
+  {
+    let locale = locale.as_ref().to_string();
+    if self.database.i18n.has_locale(&locale) {
+      self.state.current_locale = locale;  
+      return Ok(());
+    }
+    else {
+      return Err("Missing Locale".to_string());
+    } 
+  }
+  
   pub fn set_choice(&mut self, choice_id: usize) -> Result<crate::EventResult, String> {
     if let Some(event) = current_event(self) {
       if event.choices.len() > choice_id {
@@ -132,11 +148,7 @@ impl Runtime {
          {
           if let Some(modifiers) = self.current_modifiers()
           {
-            let event_result = crate::EventResult
-            {
-                text: result.text.clone(),
-                modifiers,
-            };
+            let event_result = crate::EventResult::from_cuentitos(&result, &self.database.i18n, &self.state.current_locale, modifiers);
             return Ok(event_result);
           } else {
             return Err("Invalid modifiers".to_string());
@@ -197,6 +209,7 @@ impl Runtime {
 
     Some(v)
   }
+
 
   pub fn set_resource<R, T>(&mut self, resource: R, value: T) -> Result<(), String>
   where
@@ -628,13 +641,9 @@ fn current_result(runtime: &Runtime) -> Option<&EventResult> {
 
 #[cfg(test)]
 mod test {
-  use std::default;
-
-use crate::runtime::test::test_utils::serialize;
+  use std::collections::HashMap;
   use crate::runtime::Runtime;
-  use crate::runtime_datatypes;
   use crate::GameState;
-  use cuentitos_common::test_utils::load_mp_fixture;
   use cuentitos_common::Database;
   use cuentitos_common::Event;
   use cuentitos_common::*;
@@ -682,7 +691,7 @@ use crate::runtime::test::test_utils::serialize;
     let mut runtime = Runtime::new(db);
     runtime.set_seed(1);
 
-    runtime.next_event().unwrap();
+    let event = runtime.next_event().unwrap();
 
     assert_eq!(runtime.state.current_event, Some(0));
 
@@ -761,7 +770,7 @@ use crate::runtime::test::test_utils::serialize;
     let event = runtime.next_event().unwrap();
     assert_eq!(
       event,
-      crate::Event::from_cuentitos(&runtime.database.events[0])
+      crate::Event::from_cuentitos(&runtime.database.events[0], &runtime.database.i18n, &runtime.state.current_locale)
     );
     assert!(runtime.available_events().is_empty());
     assert!(runtime.event_frequencies().is_empty());
@@ -1652,7 +1661,7 @@ use crate::runtime::test::test_utils::serialize;
 
     assert_eq!(
       runtime.next_event().unwrap(),
-      crate::Event::from_cuentitos(&runtime.database.events[0])
+      crate::Event::from_cuentitos(&runtime.database.events[0], &runtime.database.i18n, &runtime.state.current_locale)
     );
 
     runtime.set_choice(0).unwrap();
@@ -1806,12 +1815,101 @@ use crate::runtime::test::test_utils::serialize;
 
     assert_eq!(
       runtime.next_event().unwrap(),
-      crate::Event::from_cuentitos(&runtime.database.events[0])
+      crate::Event::from_cuentitos(&runtime.database.events[0], &runtime.database.i18n, &runtime.state.current_locale)
     );
 
     runtime.set_choice(0).unwrap();
     assert_eq!(runtime.get_reputation("reputation-1"), Ok(1));
     assert_eq!(runtime.get_reputation("reputation-2"), Ok(-1));
     assert_eq!(runtime.decision_taken("decision-1"), true);
+  }
+
+  #[test]
+  fn set_locale_with_existing_locale_works() {
+    let database = Database {
+      i18n: I18n {
+        locales: vec!["en".to_string(), "es".to_string()],
+        default_locale: "en".to_string(),
+        ..Default::default()
+      },
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime::new(database.clone());
+
+    assert_eq!(runtime.state.current_locale,"en".to_string());
+    runtime.set_locale("es").unwrap();
+    assert_eq!(runtime.state.current_locale,"es".to_string());
+  }
+
+  #[test]
+  fn set_locale_with_wrong_locale_fails() {
+    let database = Database {
+      i18n: I18n {
+        locales: vec!["en".to_string(), "es".to_string()],
+        default_locale: "en".to_string(),
+        ..Default::default()
+      },
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime::new(database.clone());
+
+    assert_eq!(runtime.set_locale("missing"), Err("Missing Locale".to_string()));
+  }
+
+
+  #[test]
+  fn event_workflow_supports_i18n() {
+    let mut event_strings : LanguageDb = HashMap::new();
+    event_strings.insert("event-1-title".to_string(), "a title".to_string());
+    event_strings.insert("event-1-description".to_string(), "a description".to_string());
+    event_strings.insert("event-1-choice-0".to_string(), "a choice".to_string());
+    event_strings.insert("event-1-choice-0-result-0-text".to_string(), "a result".to_string());
+    
+    let mut strings : HashMap<LanguageId, LanguageDb> = HashMap::new();
+    strings.insert("en".to_string(), event_strings);
+
+    let db = Database {
+      events: vec![
+        Event {
+          id: "1".to_string(),
+          title: "event-1-title".to_string(),
+          description: "event-1-description".to_string(),
+          choices: vec![
+            EventChoice {
+              text: "event-1-choice-0".to_string(),
+              results: vec![
+                EventResult {
+                  chance: 100,
+                  text: "event-1-choice-0-result-0-text".to_string(),
+                  ..Default::default()
+                }
+              ],
+              ..Default::default()
+            }
+          ],
+          ..Default::default()
+        }
+      ],
+      i18n: I18n {
+        locales: vec!["en".to_string()],
+        default_locale: "en".to_string(),
+        strings
+      },
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime::new(db);
+    runtime.set_seed(1);
+
+    let event = runtime.next_event().unwrap();
+
+    assert_eq!(event.title, "a title");
+    assert_eq!(event.description, "a description");
+    assert_eq!(event.choices[0].text, "a choice");
+
+    let result = runtime.set_choice(0).unwrap();
+    assert_eq!(result.text, "a result");
   }
 }

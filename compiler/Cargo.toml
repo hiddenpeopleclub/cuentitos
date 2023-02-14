@@ -13,3 +13,4 @@ clap = { version = "4.0.17", features = ["derive"] }
 cuentitos-common = { path = "../common" }
 regex = "1.7.0"
 strum = "0.24.1"
+csv = "1.1"
