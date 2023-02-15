@@ -1,14 +1,6 @@
 const { invoke } = window.__TAURI__.tauri;
 
-let greetInputEl;
-let greetMsgEl;
-
 let current_event;
-
-async function greet() {
-  // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
-  greetMsgEl.textContent = await invoke("greet", { name: greetInputEl.value });
-}
 
 async function get_event_list() {
   const events = await invoke("get_event_list"); 
@@ -34,7 +26,7 @@ async function generate_state() {
   // Create locales
   if(config.locales.length > 0){
     let li = document.createElement("li");
-    li.innerHTML = '<label for="current_locale">Locale: <select name="current_locale" id="current_locale" data-method="set_locale"></select></label>';
+    li.innerHTML = '<label for="current_locale">Locale: <select name="current_locale" id="current_locale" data-method="set_locale" data-params-locale="++"></select></label>';
     let select = li.querySelector("select");
     for(let i in config.locales) {
       let option = document.createElement("option");
@@ -78,34 +70,35 @@ async function generate_state() {
     let li = document.createElement("li");
     switch (resource) {
       case "bool":
-        li.innerHTML = "<label for='resource_"+name+"'>"+name+":<input id='resource_"+name+"' type='checkbox' data-method='set_resource'/></label>"
+        li.innerHTML = "<label for='resource_"+name+"'>"+name+":<input id='resource_"+name+"' type='checkbox' data-method='set_resource_bool' data-id='"+name+"' data-kind='"+resource+"'/></label>"
         break;
       case "integer":
-        li.innerHTML = "<label for='resource_"+name+"'>"+name+":<input id='resource_"+name+"' type='number' value=0 data-method='set_resource'/></label>"
+        li.innerHTML = "<label for='resource_"+name+"'>"+name+":<input id='resource_"+name+"' type='number' value=0 data-method='set_resource_int' data-id='"+name+"' data-kind='"+resource+"'/></label>"
         break;
       case "float":
-        li.innerHTML = "<label for='resource_"+name+"'>"+name+":<input id='resource_"+name+"' type='number' step='0.1' value=0.0 data-method='set_resource'/></label>"
+        li.innerHTML = "<label for='resource_"+name+"'>"+name+":<input id='resource_"+name+"' type='number' step='0.1' value=0.0 data-method='set_resource_float' data-id='"+name+"' data-kind='"+resource+"'/></label>"
         break;
     }
     resources_ul.appendChild(li);
   }
 
+  // Add Items
+  const items = await invoke("get_items"); 
+  let items_ul = document.querySelector("#state-items ul");
 
-
-
-  // for(let resource in config.resources) {
-  //   console.log(resource, config.resources[resource]);
-  // }
-
-  // for(let reputation in config.reputations) {
-  //   console.log(config.reputations[reputation]);
-  // }
+  for(let i in items) {
+    const item = items[i];
+    const name = item.name;
+    const max = item.max_stack_count;
+    let li = document.createElement("li");
+    li.innerHTML = "<label for='resource_"+name+"'>"+name+":<input id='resource_"+name+"' type='number' min=0 max="+max+" data-method='set_item' data-id='"+item.id+"' value=0 /></label>"
+    items_ul.appendChild(li);
+  }
 }
 
 async function next_event() {
   current_event = await invoke("next_event"); 
   render_event(current_event);
-  event_dom.classList.remove("hidden");
 }
 
 function render_event(event) {
@@ -160,15 +153,16 @@ function hide(element) {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
-  // greetInputEl = document.querySelector("#greet-input");
-  // greetMsgEl = document.querySelector("#greet-msg");
-  // document
-  //   .querySelector("#greet-button")
-  //   .addEventListener("click", () => greet());
-
   document
     .querySelector("#next-event")
     .addEventListener("click", () => next_event());
+
+  document
+  .querySelector("#reload-db")
+  .addEventListener("click", async () => {
+    await invoke("reload_db")
+    location = location;
+  });
 
   window.addEventListener("load", () => {
     get_event_list();
@@ -192,6 +186,38 @@ window.addEventListener("DOMContentLoaded", () => {
   });
 
   document.querySelector("#state").addEventListener("change", async (event) => {
-    console.log(event.target.value);
+    let target = event.target;
+    let method = target.dataset.method;
+    let params = {};
+
+    switch (method) {
+      case 'set_locale':
+        params["locale"] = target.value;
+        break;
+      case 'set_tile':
+        params["tile"] = target.value;
+        break;
+      case 'set_resource_bool':
+        params["resource"] = target.dataset.id;
+        params["value"] = target.value == "on" ? true : false;
+        break;
+      case 'set_resource_float':
+        params["resource"] = target.dataset.id;
+        params["value"] = parseFloat(target.value);
+        break;
+      case 'set_resource_int':
+        params["resource"] = target.dataset.id;
+        params["value"] = parseInt(target.value);
+        break;
+      case 'set_item':
+        params["item"] = target.dataset.id;
+        params["count"] = parseInt(target.value);
+        break;
+            
+      default:
+        break;
+    }
+    let result = await invoke(method, params);
+    console.log(result);
   });
 });

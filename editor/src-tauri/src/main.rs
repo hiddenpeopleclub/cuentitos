@@ -4,6 +4,7 @@
 )]
 
 use cuentitos_common::EventId;
+use cuentitos_common::Item;
 use std::sync::Mutex;
 use tauri::State;
 use cuentitos_common::Database;
@@ -15,11 +16,6 @@ use std::path::PathBuf;
 use cuentitos_runtime::Runtime;
 use std::collections::HashMap;
 
-// Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
 
 #[tauri::command]
 fn next_event(state: State<'_, EditorState>) -> Option<cuentitos_runtime::Event> {
@@ -28,7 +24,7 @@ fn next_event(state: State<'_, EditorState>) -> Option<cuentitos_runtime::Event>
 
 #[tauri::command]
 fn get_event_list(state: State<'_, EditorState>) -> HashMap<String, Result<cuentitos_common::Event, String>> {
-  state.parser.events.clone()
+  state.parser.lock().unwrap().events.clone()
 }
 
 #[tauri::command]
@@ -46,12 +42,77 @@ fn get_config(state: State<'_, EditorState>) -> cuentitos_common::Config {
   state.runtime.lock().unwrap().database.config.clone()
 }
 
+#[tauri::command]
+fn get_items(state: State<'_, EditorState>) -> Vec<Item> {
+  state.runtime.lock().unwrap().database.items.clone()
+}
+
+#[tauri::command]
+fn set_locale(state: State<'_, EditorState>, locale: String) -> Result<(), String> {
+  state.runtime.lock().unwrap().set_locale(locale)
+}
+
+#[tauri::command]
+fn set_tile(state: State<'_, EditorState>, tile: String) -> Result<(), String> {
+  state.runtime.lock().unwrap().set_tile(tile)
+}
+
+#[tauri::command]
+fn set_resource_bool(state: State<'_, EditorState>, resource: String, value: bool) -> Result<(), String>
+{
+  state.runtime.lock().unwrap().set_resource(resource, value)
+}
+
+#[tauri::command]
+fn set_resource_int(state: State<'_, EditorState>, resource: String, value: i32) -> Result<(), String>
+{
+  state.runtime.lock().unwrap().set_resource(resource, value)
+}
+
+#[tauri::command]
+fn set_resource_float(state: State<'_, EditorState>, resource: String, value: f32) -> Result<(), String>
+{
+  state.runtime.lock().unwrap().set_resource(resource, value)
+}
+
+#[tauri::command]
+fn set_item(state: State<'_, EditorState>, item: String, count: u8) -> Result<(), String>
+{
+  state.runtime.lock().unwrap().set_item(item, count)
+}
+
+#[tauri::command]
+fn reload_db(state: State<'_, EditorState>) -> Result<(), String>
+{
+  if let Ok(parser) = cuentitos_compiler::compile(&state.source_path, &state.destination_path) {
+    let mut f = File::open(&state.destination_path).expect("no file found");
+    let metadata = std::fs::metadata(&state.destination_path).expect("unable to read metadata");
+    let mut buffer = vec![0; metadata.len() as usize];
+    f.read_exact(&mut buffer).expect("buffer overflow");
+    let database = Database::from_u8(&buffer).unwrap();
+    
+    let mut p = state.parser.lock().unwrap();
+
+    p.events = parser.events;
+    p.items = parser.items;
+    p.config = parser.config;
+    p.i18n = parser.i18n;
+    
+    state.runtime.lock().unwrap().database = database;
+    Ok(())
+  } else {
+    Err("Compilation Failed".to_string())
+  }
+  
+}
+
+
 #[derive(Debug, Default)]
 struct EditorState {
   source_path: PathBuf,
   destination_path: PathBuf,
   database_name: String,
-  parser: cuentitos_compiler::parser::Parser,
+  parser: Mutex<cuentitos_compiler::parser::Parser>,
   runtime: Mutex<Runtime>
 }
 
@@ -85,7 +146,7 @@ fn main() {
                     source_path: source,
                     destination_path: destination,
                     database_name: db.to_string(),
-                    parser,
+                    parser: parser.into(),
                     runtime: runtime.into()
                   });
                 }
@@ -94,7 +155,12 @@ fn main() {
                           
               Ok(())                    
         })
-        .invoke_handler(tauri::generate_handler![greet, next_event, get_event_list, load_event, set_choice, get_config])
+        .invoke_handler(tauri::generate_handler![
+          reload_db, next_event, get_event_list, 
+          load_event, set_choice, get_config, get_items,
+          set_locale, set_tile, set_resource_bool, 
+          set_resource_float, set_resource_int, set_item
+          ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
