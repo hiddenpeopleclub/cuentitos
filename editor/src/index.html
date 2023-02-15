@@ -5,6 +5,7 @@
     <link rel="stylesheet" href="style.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Cuentitos Editor</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.3.0/css/all.min.css" integrity="sha512-SzlrxWUlpfuzQ+pcUCosxcglQRNAq/DZjVsC0lE40xsADsfeQoEypE+enwcOiGjk/bSuGGKHEyjSoQ1zVisanQ==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <script type="module" src="/main.js" defer></script>
     <style>
       .logo.vanilla:hover {
@@ -15,14 +16,48 @@
 
   <body>
     <div id="container">
-      <div id="content">
-        <button id="next-event" type="button">Next Event</button>
-        <div id="current_event" class="event hidden">
-          <h1 class="event-title">Event Title</h1>
-          <p class="event-description">This is the event description, what do you think?</p>
-          <ul class="event-choices"></ul>
-        </div>        
+      <div id="sidebar">
+        <h1>cuentitos📚</h1>
+        <hr>
+        <button id="next-event" type="button">Random Event</button>
+        <hr>
+        <input type="search" placeholder="search event" />
+        <ul id="event-list">  
+        </ul>
       </div>
+      <div id="content">
+        <div id="test">
+          <div id="current_event" class="event hidden">
+            <h1 class="event-title">...</h1>
+            <p class="event-description">...</p>
+            <ul class="event-choices"></ul>
+          </div>
+          <div id="current_result" class="event hidden">
+            <h1 class="result-title">Result</h1>
+            <p class="result-text">Result Text</p>
+            <ul class="result-modifiers"></ul>
+          </div>
+        </div>
+        <div id="state">
+          <div id="state-base" class="state-column">
+            <h2>State</h2>
+            <ul>
+            </ul>
+          </div>
+          <div id="state-reputations" class="state-column">
+            <h2>Reputations</h2>
+            <ul></ul>
+          </div>
+          <div id="state-resources" class="state-column">
+            <h2>Resources</h2>
+            <ul></ul>
+          </div>
+          <div id="state-items" class="state-column">
+            <h2>Items</h2>
+            <ul></ul>
+          </div>
+        </div>
+    </div>
 
       <!-- <h1>Welcome to Tauri!</h1>
       <div class="row">

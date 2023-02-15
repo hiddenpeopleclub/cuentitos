@@ -80,27 +80,7 @@ impl Runtime {
         for freq in frequencies {
           if num <= freq {
             let event_id = self.available_events()[index].clone();
-            let index = self.id_to_index[&event_id];
-            let event = &self.database.events[index];
-
-            self.state.current_event = Some(index);
-
-            // Disable event if unique
-            if event.unique {
-              self.state.disabled_events.push(event_id.clone())
-            }
-
-            // Add current event to previous events list
-            if !self.state.previous_events.contains(&event_id) {
-              self.state.previous_events.push(event_id.clone())
-            };
-
-            // Add new frequency penalty for current event
-            self.state.previous_event_cooldown.insert(
-              event.id.clone(),
-              self.database.config.runtime.chosen_event_frequency_penalty,
-            );
-            return Some(crate::Event::from_cuentitos(event, &self.database.i18n, &self.state.current_locale));
+            return self.load_event(event_id)
           } else {
             index += 1;
           };
@@ -111,6 +91,36 @@ impl Runtime {
       None
     }
   }
+
+  pub fn load_event<T>(&mut self, event_id: T) -> Option<crate::Event> 
+  where T: AsRef<str>
+  {
+    let event_id = event_id.as_ref().to_string();
+
+    let index = *self.id_to_index.get(&event_id)?;
+    let event = &self.database.events[index];
+
+    self.state.current_event = Some(index);
+
+    // Disable event if unique
+    if event.unique {
+      self.state.disabled_events.push(event_id.clone())
+    }
+
+    // Add current event to previous events list
+    if !self.state.previous_events.contains(&event_id) {
+      self.state.previous_events.push(event_id.clone())
+    };
+
+    // Add new frequency penalty for current event
+    self.state.previous_event_cooldown.insert(
+      event.id.clone(),
+      self.database.config.runtime.chosen_event_frequency_penalty,
+    );
+
+    Some(crate::Event::from_cuentitos(event, &self.database.i18n, &self.state.current_locale))
+  }
+
 
   pub fn set_seed(&mut self, seed: u64) {
     self.seed = seed;
@@ -1911,5 +1921,22 @@ mod test {
 
     let result = runtime.set_choice(0).unwrap();
     assert_eq!(result.text, "a result");
+  }
+
+  #[test]
+  fn load_event_works() {
+    let db = Database {
+      events: vec![Event {
+        id: "event-1".to_string(),
+        ..Default::default()
+      }],
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime::new(db);
+    runtime.load_event("event-1");
+
+    assert_eq!(runtime.state.current_event.unwrap(), 0);
+
   }
 }

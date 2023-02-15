@@ -3,6 +3,7 @@
     windows_subsystem = "windows"
 )]
 
+use cuentitos_common::EventId;
 use std::sync::Mutex;
 use tauri::State;
 use cuentitos_common::Database;
@@ -12,6 +13,7 @@ use tauri::Manager;
 use std::str::FromStr;
 use std::path::PathBuf;
 use cuentitos_runtime::Runtime;
+use std::collections::HashMap;
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
@@ -20,12 +22,35 @@ fn greet(name: &str) -> String {
 }
 
 #[tauri::command]
-fn next_event(state: State<'_, EditorState>) -> cuentitos_runtime::Event {
-  state.runtime.lock().unwrap().next_event().unwrap()
+fn next_event(state: State<'_, EditorState>) -> Option<cuentitos_runtime::Event> {
+  state.runtime.lock().unwrap().next_event()
+}
+
+#[tauri::command]
+fn get_event_list(state: State<'_, EditorState>) -> HashMap<String, Result<cuentitos_common::Event, String>> {
+  state.parser.events.clone()
+}
+
+#[tauri::command]
+fn load_event(state: State<'_, EditorState>, event_id: EventId) -> Option<cuentitos_runtime::Event> {
+  state.runtime.lock().unwrap().load_event(event_id)
+}
+
+#[tauri::command]
+fn set_choice(state: State<'_, EditorState>, choice_id: usize) -> Result<cuentitos_runtime::EventResult, String> {
+  state.runtime.lock().unwrap().set_choice(choice_id)
+}
+
+#[tauri::command]
+fn get_config(state: State<'_, EditorState>) -> cuentitos_common::Config {
+  state.runtime.lock().unwrap().database.config.clone()
 }
 
 #[derive(Debug, Default)]
 struct EditorState {
+  source_path: PathBuf,
+  destination_path: PathBuf,
+  database_name: String,
   parser: cuentitos_compiler::parser::Parser,
   runtime: Mutex<Runtime>
 }
@@ -57,20 +82,19 @@ fn main() {
                   let runtime = Runtime::new(database);
 
                   app.manage(EditorState {
+                    source_path: source,
+                    destination_path: destination,
+                    database_name: db.to_string(),
                     parser,
                     runtime: runtime.into()
                   });
-                  // if let (String(source), String(destination), String(database)) = (matches.args["source"].value, matches.args["source"].value, matches.args["source"].value) {
-                  //   println!("HERE")  
-                  // }
-                  
                 }
                 Err(_) => {}
               }
                           
               Ok(())                    
         })
-        .invoke_handler(tauri::generate_handler![greet, next_event])
+        .invoke_handler(tauri::generate_handler![greet, next_event, get_event_list, load_event, set_choice, get_config])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
