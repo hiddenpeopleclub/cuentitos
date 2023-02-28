@@ -84,6 +84,9 @@ jobs:
           override: true
       - name: run coverage
         uses: actions-rs/tarpaulin@v0.1
+        with:
+          version: '0.15.0'
+          args: '-- --test-threads 1'
 
       - name: upload to codecov.io
         uses: codecov/codecov-action@v2
