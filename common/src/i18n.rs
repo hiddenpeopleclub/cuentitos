@@ -19,11 +19,11 @@ impl I18n {
   pub fn get_translation(&self, locale: &str, text: &str) -> String {
     if let Some(strings) = self.strings.get(locale) {
       match strings.get(text) {
-        Some(t) => return t.to_string(),
-        None => return format!("MISSING TRANSLATION `{}` in locale `{}`", text, locale),
-      };
+        Some(t) => t.to_string(),
+        None => format!("MISSING TRANSLATION `{}` in locale `{}`", text, locale),
+      }
     } else {
-      return format!("MISSING LOCALE `{}`", locale);
+      format!("MISSING LOCALE `{}`", locale)
     }
   }
 }
