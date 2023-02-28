@@ -2,6 +2,10 @@
 A game narrative engine with probabily at its core.
 
 ## TODO
+
+### Next
+  - [ ] I18n
+
 ### Compiler
   - [x] Parse events
   - [ ] Error on missing events
@@ -11,25 +15,36 @@ A game narrative engine with probabily at its core.
   - [ ] I18n -> xls export/load
 
 ### Runtime
-  - [ ] Instances
-  - [ ] Configuration
-  - [ ] Database
+  - [x] Instances
+  - [x] Configuration
+  - [x] Database
+  - [x] State Machine
+    - [x] Current Event
+    - [x] Current Choice
+    - [x] Result
+    - [x] Probability mods
   - [ ] State Save/Load
-  - [ ] Public Interface
-    - [ ] Get Random Event
-    - [ ] Set Choice
+  - [ ] Add watch to `cuentitos-cli`
+  - [ ] Interactive Shell
+    - [ ] Set Game State -> from json
+    - [ ] Choices
+    - [ ] Modifiers
+  - [x] Public Interface
+    - [x] Get Random Event
+    - [x] Set Choice
     - [ ] Get Result for Choice
     - [ ] CRUD Events
     - [ ] CRUD Resources
-    - [ ] CRUD Inventories
     - [ ] CRUD Items
-  - [ ] C interface
-  - [ ] UE4 Bindings
+  - [o] C++ interface
+  - [ ] UE4 Plugin
   - [ ] Balancing Interface
   - [ ] C# Interface
   - [ ] Unity Bindings
 
 ### Editor
+  - [ ] Show Modifiers
+  - [ ] Game State Debugging
   - [ ] Writing (using Visual Studio Code & Sublime Text?)
   - [ ] Testing
   - [ ] Database Querying

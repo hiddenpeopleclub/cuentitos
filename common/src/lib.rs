@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[cfg(test)]
-mod test_utils;
+pub mod test_utils;
 
 mod event;
 pub use event::*;
@@ -11,6 +10,9 @@ pub use event_choice::*;
 
 mod event_requirement;
 pub use event_requirement::*;
+
+mod item;
+pub use item::*;
 
 mod modifier;
 pub use modifier::*;
@@ -26,6 +28,9 @@ pub use config::Config;
 
 mod database;
 pub use database::Database;
+
+mod i18n;
+pub use i18n::*;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 

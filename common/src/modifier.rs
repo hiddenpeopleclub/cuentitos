@@ -2,7 +2,7 @@ use crate::AchievementId;
 use crate::DecisionId;
 use crate::ItemId;
 use crate::ReputationId;
-use crate::Resource;
+use crate::ResourceId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -10,7 +10,7 @@ pub enum Modifier {
   #[default]
   Empty,
   Resource {
-    resource: Resource,
+    id: ResourceId,
     amount: String,
   },
   Item {

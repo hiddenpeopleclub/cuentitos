@@ -1,0 +1,98 @@
+{
+  "build": {
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "",
+    "devPath": "../src",
+    "distDir": "../src",
+    "withGlobalTauri": true
+  },
+  "package": {
+    "productName": "cuentitos-editor",
+    "version": "0.0.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "shell": {
+        "all": false,
+        "open": true
+      }
+    },
+    "cli" : {
+      "description": "asd",
+      "longDescription": "asd",
+      "beforeHelp": "asd",
+      "afterHelp": "asd", 
+      "args": [
+        {
+          "name": "source",
+          "index": 1,
+          "takesValue": true,
+          "required": true
+        },
+        {
+          "name": "destination",
+          "index": 2,
+          "takesValue": true,
+          "required": true
+        },
+        {
+          "name": "db",
+          "index": 3,
+          "takesValue": true,
+          "required": true
+        }
+      ],
+      "subcommands": {}
+   },
+    "bundle": {
+      "active": true,
+      "category": "DeveloperTool",
+      "copyright": "",
+      "deb": {
+        "depends": []
+      },
+      "externalBin": [],
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.icns",
+        "icons/icon.ico"
+      ],
+      "identifier": "com.cuentitos.editor",
+      "longDescription": "",
+      "macOS": {
+        "entitlements": null,
+        "exceptionDomain": "",
+        "frameworks": [],
+        "providerShortName": null,
+        "signingIdentity": null
+      },
+      "resources": [],
+      "shortDescription": "",
+      "targets": "all",
+      "windows": {
+        "certificateThumbprint": null,
+        "digestAlgorithm": "sha256",
+        "timestampUrl": ""
+      }
+    },
+    "security": {
+      "csp": null
+    },
+    "updater": {
+      "active": false
+    },
+    "windows": [
+      {
+        "fullscreen": false,
+        "maximized" : true,
+        "resizable": true,
+        "title": "Cuentitos Editor",
+        "height": 600,
+        "width": 800
+      }
+    ]
+  }
+}

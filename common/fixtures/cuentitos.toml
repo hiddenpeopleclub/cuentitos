@@ -1,0 +1,9 @@
+reputations = [ "rep-1", "rep-2" ]
+tiles = [ "forest" ]
+
+locales = ["en"]
+default_locale = "en"
+
+[resources]
+health = "integer"
+happy = "bool"

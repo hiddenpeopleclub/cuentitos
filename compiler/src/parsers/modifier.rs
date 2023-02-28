@@ -1,7 +1,6 @@
 use crate::Config;
 use core::fmt::Display;
 use core::str::FromStr;
-use cuentitos_common::Resource;
 use cuentitos_common::ResourceKind::*;
 
 pub struct Modifier;
@@ -25,22 +24,17 @@ impl Modifier {
             };
 
             match result {
-              Ok(amount) => {
-                let resource = Resource {
-                  id: resource.to_string(),
-                  kind: kind.clone(),
-                };
-                Ok(cuentitos_common::Modifier::Resource { resource, amount })
-              }
-              Err(error) => return Err(format!("{} for resource '{}'", error, resource)),
+              Ok(amount) => Ok(cuentitos_common::Modifier::Resource {
+                id: resource.to_string(),
+                amount,
+              }),
+              Err(error) => Err(format!("{} for resource '{}'", error, resource)),
             }
           }
-          None => {
-            return Err(format!(
-              "\"{}\" is not defined as a valid resource",
-              resource
-            ))
-          }
+          None => Err(format!(
+            "\"{}\" is not defined as a valid resource",
+            resource
+          )),
         }
       }
       "item" => {
@@ -57,17 +51,17 @@ impl Modifier {
         if config.reputations.contains(&id) {
           match Self::parse_amount::<&str, i32>(params[2]) {
             Ok(amount) => Ok(cuentitos_common::Modifier::Reputation { id, amount }),
-            Err(error) => return Err(format!("{} for reputation '{}'", error, id)),
+            Err(error) => Err(format!("{} for reputation '{}'", error, id)),
           }
         } else {
-          return Err(format!("'{}' is not a valid reputation", id));
+          Err(format!("'{}' is not a valid reputation", id))
         }
       }
       "decision" => Ok(cuentitos_common::Modifier::Decision(params[1].to_string())),
       "achievement" => Ok(cuentitos_common::Modifier::Achievement(
         params[1].to_string(),
       )),
-      _ => return Err(format!("\"{}\" is not a valid requirement", params[0])),
+      _ => Err(format!("\"{}\" is not a valid requirement", params[0])),
     }
   }
 
@@ -118,7 +112,7 @@ mod test {
     assert_eq!(
       result,
       cuentitos_common::Modifier::Resource {
-        resource: resource.clone(),
+        id: resource.id.clone(),
         amount: 100.to_string()
       }
     );
@@ -127,7 +121,7 @@ mod test {
     assert_eq!(
       result,
       cuentitos_common::Modifier::Resource {
-        resource: resource.clone(),
+        id: resource.id.clone(),
         amount: (-100).to_string()
       }
     );
@@ -148,7 +142,7 @@ mod test {
     assert_eq!(
       result,
       cuentitos_common::Modifier::Resource {
-        resource: resource.clone(),
+        id: resource.id.clone(),
         amount: 0.9.to_string()
       }
     );
@@ -157,7 +151,7 @@ mod test {
     assert_eq!(
       result,
       cuentitos_common::Modifier::Resource {
-        resource: resource.clone(),
+        id: resource.id.clone(),
         amount: (-0.9).to_string()
       }
     );
@@ -178,7 +172,7 @@ mod test {
     assert_eq!(
       result,
       cuentitos_common::Modifier::Resource {
-        resource: resource.clone(),
+        id: resource.id.clone(),
         amount: "true".to_string()
       }
     );
@@ -187,7 +181,7 @@ mod test {
     assert_eq!(
       result,
       cuentitos_common::Modifier::Resource {
-        resource: resource.clone(),
+        id: resource.id.clone(),
         amount: "false".to_string()
       }
     );

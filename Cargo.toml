@@ -4,4 +4,7 @@ members = [
   "common",
   "compiler",
   "runtime",
+  "runtime-c",
+  "cli",
+  "editor/src-tauri"
 ]
