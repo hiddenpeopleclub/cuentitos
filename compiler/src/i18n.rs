@@ -1,5 +1,5 @@
+use crate::Parser;
 use cuentitos_common::LanguageDb;
-use crate::{Parser};
 
 type Record = (String, String);
 
@@ -12,43 +12,33 @@ impl I18n {
     i18n.locales = parser.config.locales.clone();
 
     for locale in &i18n.locales {
-      i18n.strings.insert(locale.to_string(), LanguageDb::default());
+      i18n
+        .strings
+        .insert(locale.to_string(), LanguageDb::default());
     }
 
     // Setup default locale
     for (id, event) in &mut parser.events {
       if let Ok(event) = event {
         let base = format!("event-{}", id);
-        
+
         if let Some(db) = i18n.strings.get_mut(&i18n.default_locale) {
           let key = format!("{}-title", base);
-          db.insert(
-            key.clone(), 
-            event.title.clone()
-          );
+          db.insert(key.clone(), event.title.clone());
           event.title = key;
 
           let key = format!("{}-description", base);
-          db.insert(
-            key.clone(), 
-            event.description.clone()
-          );
+          db.insert(key.clone(), event.description.clone());
           event.description = key;
-          
+
           for (c_idx, choice) in event.choices.iter_mut().enumerate() {
-            let key = format!("{}-choice-{}",base, c_idx);
-            db.insert(
-              key.clone(), 
-              choice.text.clone()
-            );
+            let key = format!("{}-choice-{}", base, c_idx);
+            db.insert(key.clone(), choice.text.clone());
             choice.text = key;
 
             for (r_idx, result) in choice.results.iter_mut().enumerate() {
-              let key = format!("{}-choice-{}-result-{}",base, c_idx, r_idx);
-              db.insert(
-                key.clone(),
-                result.text.clone()
-              );
+              let key = format!("{}-choice-{}-result-{}", base, c_idx, r_idx);
+              db.insert(key.clone(), result.text.clone());
               result.text = key;
             }
           }
@@ -70,13 +60,12 @@ impl I18n {
 
           if let Some(db) = i18n.strings.get_mut(locale) {
             for result in reader.deserialize() {
-                let record: Record = result?;
-                if record.0 != "" && record.1 != "" {
-                  db.insert(record.0, record.1);  
-                }
+              let record: Record = result?;
+              if record.0 != "" && record.1 != "" {
+                db.insert(record.0, record.1);
+              }
             }
           }
-          
         }
       }
     }
@@ -105,37 +94,60 @@ impl I18n {
 
 #[cfg(test)]
 mod test {
-  use std::path::Path;
+  use crate::Config;
   use crate::I18n;
   use crate::Parser;
-  use crate::Config;
+  use std::path::Path;
 
   #[test]
   fn process_creates_i18n_file_if_not_present() {
     let config = Config::load("fixtures", "/tmp/fixtures-build").unwrap();
     let mut parser = Parser::new(config);
     parser.parse().unwrap();
-    
+
     let i18n = I18n::process(&mut parser).unwrap();
-    
+
     // Default Locale sets values
-    assert_eq!(i18n.get_translation("en", "event-05-modifiers-title"), "A Basic Event with mods".to_string());
-    assert_eq!(i18n.get_translation("en", "event-05-modifiers-description"), "This event has options with results and mods".to_string());
-    assert_eq!(i18n.get_translation("en", "event-05-modifiers-choice-0"), "An Option".to_string());
-    assert_eq!(i18n.get_translation("en", "event-05-modifiers-choice-0-result-0"), "One Result".to_string());
+    assert_eq!(
+      i18n.get_translation("en", "event-05-modifiers-title"),
+      "A Basic Event with mods".to_string()
+    );
+    assert_eq!(
+      i18n.get_translation("en", "event-05-modifiers-description"),
+      "This event has options with results and mods".to_string()
+    );
+    assert_eq!(
+      i18n.get_translation("en", "event-05-modifiers-choice-0"),
+      "An Option".to_string()
+    );
+    assert_eq!(
+      i18n.get_translation("en", "event-05-modifiers-choice-0-result-0"),
+      "One Result".to_string()
+    );
 
     // Loaded Locale
-    assert_eq!(i18n.get_translation("es", "event-01-basic-title"), "Un evento básico".to_string());
-    assert_eq!(i18n.get_translation("es", "event-non-existent"), "MISSING TRANSLATION `event-non-existent` in locale `es`");
+    assert_eq!(
+      i18n.get_translation("es", "event-01-basic-title"),
+      "Un evento básico".to_string()
+    );
+    assert_eq!(
+      i18n.get_translation("es", "event-non-existent"),
+      "MISSING TRANSLATION `event-non-existent` in locale `es`"
+    );
 
     // Missing Entry
-    assert_eq!(i18n.get_translation("ru", "event-non-existent"), "MISSING TRANSLATION `event-non-existent` in locale `ru`");
+    assert_eq!(
+      i18n.get_translation("ru", "event-non-existent"),
+      "MISSING TRANSLATION `event-non-existent` in locale `ru`"
+    );
 
     // Invalid Locale
-    assert_eq!(i18n.get_translation("it", "event-non-existent"), "MISSING LOCALE `it`");
+    assert_eq!(
+      i18n.get_translation("it", "event-non-existent"),
+      "MISSING LOCALE `it`"
+    );
 
     // Translation CSV File
     assert!(Path::new("/tmp/fixtures-build/en.csv").is_file());
-
   }
 }

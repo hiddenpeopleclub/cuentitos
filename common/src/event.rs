@@ -1,5 +1,6 @@
 use crate::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 pub type EventId = String;
 
@@ -11,6 +12,7 @@ pub struct Event {
   pub description: String,
   pub choices: Vec<EventChoice>,
   pub requirements: Vec<EventRequirement>,
+  pub settings: HashMap<String, String>,
 }
 
 #[derive(Default)]
@@ -72,6 +74,17 @@ impl EventBuilder {
     self
   }
 
+  pub fn set<T, U>(&mut self, key: T, value: U) -> &mut EventBuilder
+  where
+    T: AsRef<str>,
+    U: AsRef<str>,
+  {
+    let key = key.as_ref().to_string();
+    let value = value.as_ref().to_string();
+
+    self.event.settings.insert(key, value);
+    self
+  }
   pub fn build(&mut self) -> Event {
     self.event.clone()
   }
@@ -144,6 +157,19 @@ mod test {
       .build();
 
     assert_eq!(event.requirements[0], EventRequirement::default());
+  }
+
+  #[test]
+  fn event_builder_supports_settings() {
+    let event = EventBuilder::new().build();
+    assert_eq!(event.settings.len(), 0);
+
+    let event = EventBuilder::new().set("an-option", "the-value").build();
+
+    assert_eq!(
+      event.settings.get(&"an-option".to_string()).unwrap(),
+      &"the-value".to_string()
+    );
   }
 
   #[test]

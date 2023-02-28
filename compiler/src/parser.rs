@@ -11,7 +11,7 @@ pub struct Parser {
   pub config: Config,
   pub events: HashMap<String, Result<Event, String>>,
   pub items: HashMap<String, Result<Item, String>>,
-  pub i18n: HashMap<String, HashMap<String, Option<String>>>
+  pub i18n: HashMap<String, HashMap<String, Option<String>>>,
 }
 
 impl Parser {
@@ -29,6 +29,7 @@ impl Parser {
       &mut self.events,
     )
     .unwrap();
+
     parse_type::<crate::parsers::Item, cuentitos_common::Item>(
       "items",
       &self.config,
@@ -79,17 +80,16 @@ where
 }
 
 fn parse_id(path: &DirEntry) -> Option<String> {
-  Some(
-    path.file_name().to_str()?
-      .split('.')
-      .next()?
-      .to_string(),
-  )
+  Some(path.file_name().to_str()?.split('.').next()?.to_string())
 }
 
 fn paths(directory: &str, config: &Config) -> Vec<DirEntry> {
   let mut base_path = config.base_path.clone();
   base_path.push(directory);
+
+  if !base_path.is_dir() {
+    return vec![];
+  }
 
   let mut paths: Vec<_> = fs::read_dir(&base_path)
     .unwrap()
@@ -116,7 +116,7 @@ mod test {
     let config = Config::load("fixtures", "fixtures-build").unwrap();
     let mut parser = Parser::new(config);
     parser.parse().unwrap();
-    assert_eq!(parser.events.len(), 5);
+    assert_eq!(parser.events.len(), 6);
   }
 
   #[test]

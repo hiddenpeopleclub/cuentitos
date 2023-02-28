@@ -14,13 +14,18 @@ pub struct Config {
   pub base_path: PathBuf,
   #[serde(skip)]
   pub destination_path: PathBuf,
+  #[serde(default)]
   pub resources: HashMap<String, ResourceKind>,
+  #[serde(default)]
   pub reputations: Vec<String>,
+  #[serde(default)]
   pub tiles: Vec<String>,
+  #[serde(default)]
+  pub settings: Vec<String>,
   #[serde(default)]
   pub runtime: RuntimeConfig,
   pub locales: Vec<String>,
-  pub default_locale: String
+  pub default_locale: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Eq)]
@@ -77,7 +82,7 @@ impl Config {
 mod test {
   use crate::Config;
   use crate::ResourceKind;
-  
+
   #[test]
   fn loads_config_from_toml() {
     // TODO(fran): Fix this
@@ -93,10 +98,11 @@ mod test {
       .insert("happy".to_string(), ResourceKind::Bool);
     expected.reputations = vec!["rep-1".to_string(), "rep-2".to_string()];
     expected.tiles.push("forest".to_string());
-
+    expected.settings.push("character".to_string());
+    expected.settings.push("character-voice".to_string());
     expected.locales = vec!["en".to_string()];
     expected.default_locale = "en".to_string();
-    
+
     assert_eq!(config, expected);
   }
 }

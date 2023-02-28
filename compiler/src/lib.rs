@@ -35,7 +35,6 @@ pub mod parsers;
 mod i18n;
 pub use i18n::I18n;
 
-
 pub fn compile<T, U>(source_path: T, destination_path: U) -> Result<Parser>
 where
   T: AsRef<Path>,
@@ -47,7 +46,7 @@ where
   let mut config = Config::load(&source_path, &destination_path).unwrap();
   config.base_path = source_path.as_ref().to_path_buf();
   config.destination_path = destination_path.as_ref().to_path_buf();
-  
+
   // Parse
   let mut parser = parser::Parser::new(config);
   parser.parse().unwrap();
@@ -78,7 +77,7 @@ where
       let mut item = item.clone();
       item.id = id.clone();
       db.items.push(item)
-    }    
+    }
   }
 
   db.i18n = i18n;

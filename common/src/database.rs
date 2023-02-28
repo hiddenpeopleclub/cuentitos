@@ -1,6 +1,6 @@
-use crate::I18n;
 use crate::Config;
 use crate::Event;
+use crate::I18n;
 use crate::Item;
 use crate::Result;
 use rmp_serde::Deserializer;
@@ -11,7 +11,7 @@ pub struct Database {
   pub config: Config,
   pub events: Vec<Event>,
   pub items: Vec<Item>,
-  pub i18n: I18n
+  pub i18n: I18n,
 }
 
 impl Database {
