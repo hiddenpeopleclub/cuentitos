@@ -20,7 +20,7 @@ pub struct Config {
   #[serde(default)]
   pub runtime: RuntimeConfig,
   pub locales: Vec<String>,
-  pub default_locale: String
+  pub default_locale: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Eq)]
@@ -77,7 +77,7 @@ impl Config {
 mod test {
   use crate::Config;
   use crate::ResourceKind;
-  
+
   #[test]
   fn loads_config_from_toml() {
     // TODO(fran): Fix this
@@ -96,7 +96,7 @@ mod test {
 
     expected.locales = vec!["en".to_string()];
     expected.default_locale = "en".to_string();
-    
+
     assert_eq!(config, expected);
   }
 }

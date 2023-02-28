@@ -11,7 +11,7 @@ pub struct Parser {
   pub config: Config,
   pub events: HashMap<String, Result<Event, String>>,
   pub items: HashMap<String, Result<Item, String>>,
-  pub i18n: HashMap<String, HashMap<String, Option<String>>>
+  pub i18n: HashMap<String, HashMap<String, Option<String>>>,
 }
 
 impl Parser {
@@ -79,12 +79,7 @@ where
 }
 
 fn parse_id(path: &DirEntry) -> Option<String> {
-  Some(
-    path.file_name().to_str()?
-      .split('.')
-      .next()?
-      .to_string(),
-  )
+  Some(path.file_name().to_str()?.split('.').next()?.to_string())
 }
 
 fn paths(directory: &str, config: &Config) -> Vec<DirEntry> {

@@ -31,7 +31,11 @@ pub struct Modifier {
 }
 
 impl Event {
-  pub fn from_cuentitos(event: &cuentitos_common::Event, i18n: &cuentitos_common::I18n, locale: &LanguageId) -> crate::Event {
+  pub fn from_cuentitos(
+    event: &cuentitos_common::Event,
+    i18n: &cuentitos_common::I18n,
+    locale: &LanguageId,
+  ) -> crate::Event {
     let mut choices = vec![];
 
     for (id, choice) in event.choices.iter().enumerate() {
@@ -47,19 +51,29 @@ impl Event {
 }
 
 impl EventChoice {
-  pub fn from_cuentitos(id: usize, choice: &cuentitos_common::EventChoice, i18n: &cuentitos_common::I18n, locale: &LanguageId) -> crate::EventChoice {
+  pub fn from_cuentitos(
+    id: usize,
+    choice: &cuentitos_common::EventChoice,
+    i18n: &cuentitos_common::I18n,
+    locale: &LanguageId,
+  ) -> crate::EventChoice {
     crate::EventChoice {
-        id,
-        text: i18n.get_translation(locale, &choice.text),
-      }
+      id,
+      text: i18n.get_translation(locale, &choice.text),
+    }
   }
 }
 
 impl EventResult {
-  pub fn from_cuentitos(result: &cuentitos_common::EventResult, i18n: &cuentitos_common::I18n, locale: &LanguageId, modifiers: Vec<Modifier>) -> EventResult {
+  pub fn from_cuentitos(
+    result: &cuentitos_common::EventResult,
+    i18n: &cuentitos_common::I18n,
+    locale: &LanguageId,
+    modifiers: Vec<Modifier>,
+  ) -> EventResult {
     crate::EventResult {
       text: i18n.get_translation(locale, &result.text),
-      modifiers
+      modifiers,
     }
   }
 }

@@ -23,7 +23,9 @@ static mut RUNTIMES: Vec<Runtime> = vec![];
 
 #[no_mangle]
 pub extern "C" fn cuentitos_load_db(buffer: *const u8, length: usize) -> DatabaseId {
-  if buffer.is_null() { return 0; }
+  if buffer.is_null() {
+    return 0;
+  }
 
   let rust_buffer: &[u8] = unsafe { slice::from_raw_parts(buffer, length as usize) };
   let db = Database::from_u8(rust_buffer);
@@ -59,7 +61,7 @@ pub extern "C" fn cuentitos_set_locale(id: RuntimeId, locale: Cstring) -> bool {
   if invalid_runtime(id) {
     return false;
   }
-  
+
   get_runtime(id).set_locale(rust_string(locale)) == Ok(())
 }
 
@@ -216,10 +218,9 @@ pub extern "C" fn cuentitos_get_items(id: usize, buffer: *mut u8, length: *mut u
   if invalid_runtime(id) {
     return;
   }
-  
-  serialize_to_buffer(&get_runtime(id).database.items, buffer, length);  
-}
 
+  serialize_to_buffer(&get_runtime(id).database.items, buffer, length);
+}
 
 #[no_mangle]
 pub extern "C" fn cuentitos_next_event(id: usize, buffer: *mut u8, length: *mut usize) {
@@ -241,7 +242,12 @@ pub extern "C" fn cuentitos_next_event(id: usize, buffer: *mut u8, length: *mut 
 }
 
 #[no_mangle]
-pub extern "C" fn cuentitos_set_choice(id: usize, choice_id: usize, buffer: *mut u8, length: *mut usize) -> bool {
+pub extern "C" fn cuentitos_set_choice(
+  id: usize,
+  choice_id: usize,
+  buffer: *mut u8,
+  length: *mut usize,
+) -> bool {
   if buffer.is_null() {
     return false;
   }
@@ -252,15 +258,12 @@ pub extern "C" fn cuentitos_set_choice(id: usize, choice_id: usize, buffer: *mut
     return false;
   }
 
-  match get_runtime(id).set_choice(choice_id)
-  {
-    Ok(modifiers) =>{
+  match get_runtime(id).set_choice(choice_id) {
+    Ok(modifiers) => {
       serialize_to_buffer(&modifiers, buffer, length);
       true
     }
-    Err(_) =>{
-      false
-    }
+    Err(_) => false,
   }
 }
 

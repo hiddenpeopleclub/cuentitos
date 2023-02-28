@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 pub type LanguageDb = HashMap<String, String>;
 pub type LanguageId = String;
@@ -11,7 +11,6 @@ pub struct I18n {
   pub strings: HashMap<LanguageId, LanguageDb>,
 }
 
-
 impl I18n {
   pub fn has_locale(&self, locale: &String) -> bool {
     self.locales.contains(locale)
@@ -21,10 +20,10 @@ impl I18n {
     if let Some(strings) = self.strings.get(locale) {
       match strings.get(text) {
         Some(t) => return t.to_string(),
-        None => return format!("MISSING TRANSLATION `{}` in locale `{}`", text, locale)
+        None => return format!("MISSING TRANSLATION `{}` in locale `{}`", text, locale),
       };
     } else {
       return format!("MISSING LOCALE `{}`", locale);
     }
-  }  
+  }
 }

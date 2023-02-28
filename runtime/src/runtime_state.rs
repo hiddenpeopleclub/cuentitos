@@ -1,5 +1,5 @@
-use cuentitos_common::LanguageId;
 use cuentitos_common::EventId;
+use cuentitos_common::LanguageId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -11,5 +11,5 @@ pub struct RuntimeState {
   pub current_event: Option<usize>,
   pub current_choice: Option<usize>,
   pub current_result: Option<usize>,
-  pub current_locale: LanguageId
+  pub current_locale: LanguageId,
 }
