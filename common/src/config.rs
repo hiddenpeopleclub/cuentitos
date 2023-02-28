@@ -18,6 +18,8 @@ pub struct Config {
   pub reputations: Vec<String>,
   pub tiles: Vec<String>,
   #[serde(default)]
+  pub settings: Vec<String>,
+  #[serde(default)]
   pub runtime: RuntimeConfig,
   pub locales: Vec<String>,
   pub default_locale: String,
@@ -93,7 +95,8 @@ mod test {
       .insert("happy".to_string(), ResourceKind::Bool);
     expected.reputations = vec!["rep-1".to_string(), "rep-2".to_string()];
     expected.tiles.push("forest".to_string());
-
+    expected.settings.push("character".to_string());
+    expected.settings.push("character-voice".to_string());
     expected.locales = vec!["en".to_string()];
     expected.default_locale = "en".to_string();
 

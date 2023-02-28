@@ -111,7 +111,7 @@ mod test {
     let config = Config::load("fixtures", "fixtures-build").unwrap();
     let mut parser = Parser::new(config);
     parser.parse().unwrap();
-    assert_eq!(parser.events.len(), 5);
+    assert_eq!(parser.events.len(), 6);
   }
 
   #[test]

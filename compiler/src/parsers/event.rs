@@ -32,6 +32,14 @@ impl Parsable<cuentitos_common::Event> for Event {
     let mut line_number = 2;
 
     for line in lines {
+      if let Some((key, value)) = parse_setting(line) {
+        if config.settings.contains(&key) {
+          builder.set(key, value);
+        } else {
+          return Err(format!("Unknown setting '{}'", key));
+        }
+      }
+
       if let Some(choice) = parse_choice(line) {
         // We found a new choice, we add the current one...
         if in_choice {
@@ -104,6 +112,15 @@ impl Parsable<cuentitos_common::Event> for Event {
 
     Ok(builder.build())
   }
+}
+
+fn parse_setting(line: &str) -> Option<(String, String)> {
+  let regexp = Regex::new(r"^set (.+) (.+)").unwrap();
+
+  if let Some(result) = regexp.captures_iter(line).next() {
+    return Some((result[1].to_string(), result[2].to_string()));
+  }
+  None
 }
 
 fn parse_choice(line: &str) -> Option<EventChoice> {
@@ -347,6 +364,31 @@ mod test {
         Modifier::Achievement("an_achievement".to_string())
       ]
     );
+  }
+
+  #[test]
+  fn parse_parses_settings() {
+    let event = include_str!("../../fixtures/events/06-settings.event");
+
+    let mut config = Config::default();
+
+    let parsed_event = Event::parse(event, &config);
+    assert_eq!(parsed_event, Err("Unknown setting 'character'".to_string()));
+
+    config.settings.push("character".to_string());
+    config.settings.push("character_voice".to_string());
+
+    let parsed_event = Event::parse(event, &config).unwrap();
+
+    assert_eq!(
+      parsed_event.settings.get("character").unwrap(),
+      &"laidaxai".to_string()
+    );
+
+    assert_eq!(
+      parsed_event.settings.get("character_voice").unwrap(),
+      &"strong".to_string()
+    )
   }
 
   // #[test]

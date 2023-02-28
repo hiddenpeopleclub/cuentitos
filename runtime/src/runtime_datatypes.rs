@@ -1,5 +1,6 @@
 use cuentitos_common::LanguageId;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // These are stripped down versions of the structs that
 // that are sent through the runtime to the game engine.
@@ -9,6 +10,7 @@ pub struct Event {
   pub title: String,
   pub description: String,
   pub choices: Vec<EventChoice>,
+  pub settings: HashMap<String, String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq)]
@@ -42,10 +44,13 @@ impl Event {
       choices.push(EventChoice::from_cuentitos(id, choice, i18n, locale))
     }
 
+    let settings = event.settings.clone();
+
     crate::Event {
       title: i18n.get_translation(locale, &event.title),
       description: i18n.get_translation(locale, &event.description),
       choices,
+      settings,
     }
   }
 }
