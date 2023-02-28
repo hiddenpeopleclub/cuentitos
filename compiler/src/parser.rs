@@ -29,6 +29,7 @@ impl Parser {
       &mut self.events,
     )
     .unwrap();
+
     parse_type::<crate::parsers::Item, cuentitos_common::Item>(
       "items",
       &self.config,
@@ -85,6 +86,10 @@ fn parse_id(path: &DirEntry) -> Option<String> {
 fn paths(directory: &str, config: &Config) -> Vec<DirEntry> {
   let mut base_path = config.base_path.clone();
   base_path.push(directory);
+
+  if !base_path.is_dir() {
+    return vec![];
+  }
 
   let mut paths: Vec<_> = fs::read_dir(&base_path)
     .unwrap()

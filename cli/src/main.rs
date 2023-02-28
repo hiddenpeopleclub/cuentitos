@@ -109,9 +109,11 @@ where
 
   let mut listening_paths = source_path.as_ref().to_path_buf();
   listening_paths.push("items");
-  watcher
-    .watch(&listening_paths, RecursiveMode::Recursive)
-    .unwrap();
+  if listening_paths.is_dir() {
+    watcher
+      .watch(&listening_paths, RecursiveMode::Recursive)
+      .unwrap();
+  }
 
   loop {}
 }

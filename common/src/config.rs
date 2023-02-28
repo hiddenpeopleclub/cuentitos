@@ -14,8 +14,11 @@ pub struct Config {
   pub base_path: PathBuf,
   #[serde(skip)]
   pub destination_path: PathBuf,
+  #[serde(default)]
   pub resources: HashMap<String, ResourceKind>,
+  #[serde(default)]
   pub reputations: Vec<String>,
+  #[serde(default)]
   pub tiles: Vec<String>,
   #[serde(default)]
   pub settings: Vec<String>,
