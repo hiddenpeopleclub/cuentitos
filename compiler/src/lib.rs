@@ -101,10 +101,10 @@ where
   std::fs::create_dir_all(&base_path).unwrap();
 
   let mut config = base_path.clone();
-  config.push("config.toml");
+  config.push("cuentitos.toml");
 
   if !config.is_file() {
-    panic!("Missing config.toml")
+    panic!("Missing cuentitos.toml")
   }
 
   let mut events = base_path;

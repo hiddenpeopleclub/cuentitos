@@ -701,7 +701,9 @@ mod test {
     let mut runtime = Runtime::new(db);
     runtime.set_seed(1);
 
-    let event = runtime.next_event().unwrap();
+    let event = runtime.next_event();
+
+    assert_ne!(event, None);
 
     assert_eq!(runtime.state.current_event, Some(0));
 

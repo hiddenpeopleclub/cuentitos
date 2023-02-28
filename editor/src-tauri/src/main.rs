@@ -111,7 +111,6 @@ fn reload_db(state: State<'_, EditorState>) -> Result<(), String>
 struct EditorState {
   source_path: PathBuf,
   destination_path: PathBuf,
-  database_name: String,
   parser: Mutex<cuentitos_compiler::parser::Parser>,
   runtime: Mutex<Runtime>
 }
@@ -145,7 +144,6 @@ fn main() {
                   app.manage(EditorState {
                     source_path: source,
                     destination_path: destination,
-                    database_name: db.to_string(),
                     parser: parser.into(),
                     runtime: runtime.into()
                   });
