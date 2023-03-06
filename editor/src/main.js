@@ -39,19 +39,6 @@ async function generate_state() {
     state_ul.appendChild(li);
   }
 
-  // Create Tiles
-  if(config.tiles.length > 0) {
-    let li = document.createElement("li");
-    li.innerHTML = '<label for="current_tile">Tile: <select name="current_tile" id="current_tile" data-method="set_tile"></select></label>';
-    let select = li.querySelector("select");
-    for(let i in config.tiles) {
-      let option = document.createElement("option");
-      option.textContent = config.tiles[i];
-      select.appendChild(option);
-    }
-    state_ul.appendChild(li);
-  }
-
   // Add Reputations
   let reputation_ul = document.querySelector("#state-reputations ul");
   if(config.reputations.length > 0) {
@@ -193,9 +180,6 @@ window.addEventListener("DOMContentLoaded", () => {
     switch (method) {
       case 'set_locale':
         params["locale"] = target.value;
-        break;
-      case 'set_tile':
-        params["tile"] = target.value;
         break;
       case 'set_variable_bool':
         params["variable"] = target.dataset.id;

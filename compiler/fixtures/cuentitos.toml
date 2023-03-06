@@ -1,8 +1,8 @@
 reputations = [ "rep_1", "rep_2" ]
-tiles = [ "forest" ]
 locales = ['en', 'es', 'ru']
 default_locale = 'en'
 
 [variables]
 health = "integer"
 happy = "bool"
+tiles = { kind = "enum", values = ["forest"] }

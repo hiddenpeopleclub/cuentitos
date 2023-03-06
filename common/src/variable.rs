@@ -9,6 +9,7 @@ pub enum VariableKind {
   Integer,
   Float,
   Bool,
+  Enum { values: Vec<String> }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone)]
@@ -37,6 +38,9 @@ mod test {
 
     let variable_kind = VariableKind::Bool;
     assert!(variable_kind == VariableKind::Bool);
+
+    let variable_kind = VariableKind::Enum { values: vec!["a-value".to_string()] };
+    assert!(variable_kind == VariableKind::Enum { values: vec!["a-value".to_string()] });
   }
 
   #[test]

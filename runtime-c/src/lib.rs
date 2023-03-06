@@ -151,18 +151,6 @@ pub extern "C" fn cuentitos_set_time_of_day(id: RuntimeId, time_of_day: TimeOfDa
 }
 
 #[no_mangle]
-pub extern "C" fn cuentitos_set_tile(id: RuntimeId, tile: Cstring) -> bool {
-  if invalid_runtime(id) {
-    return false;
-  }
-  if tile.is_null() {
-    return false;
-  }
-  let tile = rust_string(tile);
-  Ok(()) == get_runtime(id).set_tile(tile)
-}
-
-#[no_mangle]
 pub extern "C" fn cuentitos_get_reputation(
   id: RuntimeId,
   reputation: Cstring,

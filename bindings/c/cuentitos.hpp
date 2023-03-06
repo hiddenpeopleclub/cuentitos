@@ -41,8 +41,6 @@ bool cuentitos_set_item(RuntimeId id, Cstring item, uint8_t value);
 
 bool cuentitos_set_time_of_day(RuntimeId id, TimeOfDay time_of_day);
 
-bool cuentitos_set_tile(RuntimeId id, Cstring tile);
-
 bool cuentitos_get_reputation(RuntimeId id, Cstring reputation, int32_t *value);
 
 bool cuentitos_get_decision(RuntimeId id, Cstring decision, bool *value);

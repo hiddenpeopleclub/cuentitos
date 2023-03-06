@@ -188,6 +188,36 @@ mod test {
   }
 
   #[test]
+  fn parses_enum_variable() {
+    let mut config = Config::default();
+    let id = "health".to_string();
+
+    config.variables.insert(id.clone(), Bool);
+    let variable = Variable {
+      id: id.clone(),
+      kind: Bool,
+    };
+
+    let result = Modifier::parse("var health true", &config).unwrap();
+    assert_eq!(
+      result,
+      cuentitos_common::Modifier::Resource {
+        id: variable.id.clone(),
+        amount: "true".to_string()
+      }
+    );
+
+    let result = Modifier::parse("var health false", &config).unwrap();
+    assert_eq!(
+      result,
+      cuentitos_common::Modifier::Resource {
+        id: variable.id.clone(),
+        amount: "false".to_string()
+      }
+    );
+  }
+
+  #[test]
   fn error_on_missing_variable() {
     let config = Config::default();
     let result = Modifier::parse("var health 100", &config);

@@ -268,8 +268,8 @@ mod test {
     let mut config = Config::default();
     config.variables.insert("health".to_string(), Integer);
     config.variables.insert("happy".to_string(), Bool);
+    config.variables.insert("tiles".to_string(), Enum { values: vec!["forest".to_string()] });
     config.reputations.push("rep_1".to_string());
-    config.tiles.push("forest".to_string());
     let event = include_str!("../../fixtures/events/04-requirements.event");
     let event = Event::parse(event, &config).unwrap();
 

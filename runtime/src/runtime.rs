@@ -317,20 +317,6 @@ impl Runtime {
     self.game_state.time_of_day = time_of_day;
   }
 
-  pub fn set_tile<T>(&mut self, tile: T) -> Result<(), String>
-  where
-    T: AsRef<str>,
-  {
-    let tile = tile.as_ref().to_string();
-
-    if self.database.config.tiles.contains(&tile) {
-      self.game_state.tile = tile;
-      Ok(())
-    } else {
-      Err("Invalid Tile".to_string())
-    }
-  }
-
   pub fn get_reputation<T>(&self, reputation_id: T) -> Result<i32, String>
   where
     T: AsRef<str>,
@@ -475,7 +461,7 @@ impl Runtime {
   fn requirement_met(&self, requirement: &EventRequirement) -> bool {
     match requirement {
       EventRequirement::Variable {
-        variable: variable,
+        variable,
         condition,
         amount,
       } => {
@@ -485,7 +471,7 @@ impl Runtime {
           .get(&variable.id)
           .unwrap_or(&"0".to_string())
           .clone();
-        match variable.kind {
+        match &variable.kind {
           VariableKind::Integer => {
             let cv = current_value.parse::<i32>().unwrap_or(0);
             let a = amount.parse::<i32>().unwrap_or(0);
@@ -514,6 +500,9 @@ impl Runtime {
               return cv == a;
             }
             return true;
+          }
+          VariableKind::Enum { values } => {
+            values.contains(&current_value)
           }
         }
       }
@@ -1435,30 +1424,6 @@ mod test {
     assert_eq!(
       runtime.set_item("missing_item", 3),
       Err("Invalid Item".to_string())
-    );
-  }
-
-  #[test]
-  fn set_tile_works() {
-    let db = Database {
-      config: Config {
-        tiles: vec!["forest".to_string()],
-        ..Default::default()
-      },
-      ..Default::default()
-    };
-
-    let mut runtime = Runtime::new(db);
-
-    assert_eq!(runtime.game_state.tile, "");
-
-    runtime.set_tile("forest").unwrap();
-
-    assert_eq!(runtime.game_state.tile, "forest");
-
-    assert_eq!(
-      runtime.set_tile("missing_tile"),
-      Err("Invalid Tile".to_string())
     );
   }
 

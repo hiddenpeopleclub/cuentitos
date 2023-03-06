@@ -26,6 +26,9 @@ impl EventRequirement {
                 Self::parse_amount_and_condition::<&str, f32>(params[2], Condition::HigherThan)
               }
               Bool => Self::parse_amount_and_condition::<&str, bool>(params[2], Condition::Equals),
+              Enum { values: values } => {
+                Err("blah".to_string())
+              }
             };
 
             match result {
@@ -101,15 +104,6 @@ impl EventRequirement {
         let mut id = params[1].to_string();
         let condition = Self::parse_condition(&mut id, Condition::Depends);
         Ok(cuentitos_common::EventRequirement::Decision { id, condition })
-      }
-      "tile" => {
-        let mut id = params[1].to_string();
-        let condition = Self::parse_condition(&mut id, Condition::Depends);
-        if config.tiles.contains(&id) {
-          Ok(cuentitos_common::EventRequirement::Tile { id, condition })
-        } else {
-          Err(format!("'{}' is not a valid tile", id))
-        }
       }
       _ => Err(format!("\"{}\" is not a valid requirement", params[0])),
     }
@@ -297,6 +291,39 @@ mod test {
     let variable = Variable {
       id: id.clone(),
       kind: Bool,
+    };
+
+    let result = EventRequirement::parse("var health good", &config).unwrap();
+    assert_eq!(
+      result,
+      cuentitos_common::EventRequirement::Variable {
+        variable: variable.clone(),
+        condition: Equals,
+        amount: "good".to_string()
+      }
+    );
+
+    let result = EventRequirement::parse("var health bad", &config);
+    assert_eq!(
+      Err("\"bad\" is not defined as a valid value for variable `health`".to_string()),
+      result
+    );
+  }
+
+  #[test]
+  fn parses_enum_variable() {
+    let mut config = Config::default();
+    let id = "health".to_string();
+
+    config.variables.insert(id.clone(), Enum {
+      values: vec!["good".to_string()]
+    });
+    
+    let variable = Variable {
+      id: id.clone(),
+      kind: Enum {
+        values: vec!["good".to_string()]
+      }
     };
 
     let result = EventRequirement::parse("var health true", &config).unwrap();
@@ -571,30 +598,6 @@ mod test {
       result,
       cuentitos_common::EventRequirement::Decision {
         id: "a_decision".to_string(),
-        condition: MutEx
-      }
-    );
-  }
-
-  #[test]
-  fn parses_tile() {
-    let mut config = Config::default();
-    config.tiles.push("forest".to_string());
-
-    let result = EventRequirement::parse("tile forest", &config).unwrap();
-    assert_eq!(
-      result,
-      cuentitos_common::EventRequirement::Tile {
-        id: "forest".to_string(),
-        condition: Depends
-      }
-    );
-
-    let result = EventRequirement::parse("tile !forest", &config).unwrap();
-    assert_eq!(
-      result,
-      cuentitos_common::EventRequirement::Tile {
-        id: "forest".to_string(),
         condition: MutEx
       }
     );

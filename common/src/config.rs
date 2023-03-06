@@ -19,8 +19,6 @@ pub struct Config {
   #[serde(default)]
   pub reputations: Vec<String>,
   #[serde(default)]
-  pub tiles: Vec<String>,
-  #[serde(default)]
   pub settings: Vec<String>,
   #[serde(default)]
   pub runtime: RuntimeConfig,
@@ -96,8 +94,10 @@ mod test {
     expected
       .variables
       .insert("happy".to_string(), VariableKind::Bool);
+    expected
+      .variables
+      .insert("tiles".to_string(), VariableKind::Enum { values: vec!["forest".to_string()] });
     expected.reputations = vec!["rep_1".to_string(), "rep_2".to_string()];
-    expected.tiles.push("forest".to_string());
     expected.settings.push("character".to_string());
     expected.settings.push("character-voice".to_string());
     expected.locales = vec!["en".to_string()];

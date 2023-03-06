@@ -60,11 +60,6 @@ fn set_locale(state: State<'_, EditorState>, locale: String) -> Result<(), Strin
 }
 
 #[tauri::command]
-fn set_tile(state: State<'_, EditorState>, tile: String) -> Result<(), String> {
-  state.runtime.lock().unwrap().set_tile(tile)
-}
-
-#[tauri::command]
 fn set_variable_bool(
   state: State<'_, EditorState>,
   variable: String,
@@ -177,7 +172,6 @@ fn main() {
       get_config,
       get_items,
       set_locale,
-      set_tile,
       set_variable_bool,
       set_variable_float,
       set_variable_int,
