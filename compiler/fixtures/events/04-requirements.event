@@ -1,21 +1,21 @@
 Conditions
 This event has conditions
   unique
-  require resource health <100
+  require var health <100
   require item wooden_figure
-  require reputation rep-1 5
+  require reputation rep_1 5
   require time_of_day night
   require event !choices
   require decision a_decision
   require tile forest
   * An Option
-    require resource health =100
+    require var health =100
     require time_of_day night
     require event choices
     (10) One Result
-      require resource happy true
+      require var happy true
       require time_of_day morning
       require time_of_day !noon
     (90) Another Result
-      require resource happy false
+      require var happy false
       require time_of_day evening

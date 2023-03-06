@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use std::collections::HashMap;
 
-use crate::ResourceKind;
+use crate::VariableKind;
 use crate::Result;
 
 use serde::{Deserialize, Serialize};
@@ -15,7 +15,7 @@ pub struct Config {
   #[serde(skip)]
   pub destination_path: PathBuf,
   #[serde(default)]
-  pub resources: HashMap<String, ResourceKind>,
+  pub variables: HashMap<String, VariableKind>,
   #[serde(default)]
   pub reputations: Vec<String>,
   #[serde(default)]
@@ -81,7 +81,7 @@ impl Config {
 #[cfg(test)]
 mod test {
   use crate::Config;
-  use crate::ResourceKind;
+  use crate::VariableKind;
 
   #[test]
   fn loads_config_from_toml() {
@@ -91,12 +91,12 @@ mod test {
     expected.base_path.push("fixtures");
     expected.destination_path.push("fixtures-build");
     expected
-      .resources
-      .insert("health".to_string(), ResourceKind::Integer);
+      .variables
+      .insert("health".to_string(), VariableKind::Integer);
     expected
-      .resources
-      .insert("happy".to_string(), ResourceKind::Bool);
-    expected.reputations = vec!["rep-1".to_string(), "rep-2".to_string()];
+      .variables
+      .insert("happy".to_string(), VariableKind::Bool);
+    expected.reputations = vec!["rep_1".to_string(), "rep_2".to_string()];
     expected.tiles.push("forest".to_string());
     expected.settings.push("character".to_string());
     expected.settings.push("character-voice".to_string());

@@ -4,7 +4,7 @@ What it needs:
 
 GameState {
   inventory: Vec<Item>,
-  resources: Vec<Resource>,
+  variables: Vec<Resource>,
 
 }
 

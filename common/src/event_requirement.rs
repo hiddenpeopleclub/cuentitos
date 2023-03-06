@@ -2,7 +2,7 @@ use crate::DecisionId;
 use crate::EventId;
 use crate::ItemId;
 use crate::ReputationId;
-use crate::Resource;
+use crate::Variable;
 use crate::TileId;
 use crate::TimeOfDay;
 use serde::{Deserialize, Serialize};
@@ -21,8 +21,8 @@ pub enum Condition {
 pub enum EventRequirement {
   #[default]
   Empty,
-  Resource {
-    resource: Resource,
+  Variable {
+    variable: Variable,
     condition: Condition,
     amount: String,
   },

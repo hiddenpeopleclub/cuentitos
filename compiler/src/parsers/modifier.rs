@@ -1,7 +1,7 @@
 use crate::Config;
 use core::fmt::Display;
 use core::str::FromStr;
-use cuentitos_common::ResourceKind::*;
+use cuentitos_common::VariableKind::*;
 
 pub struct Modifier;
 
@@ -13,9 +13,9 @@ impl Modifier {
     let params: Vec<&str> = data.as_ref().split(' ').collect();
 
     match params[0] {
-      "resource" => {
-        let resource = params[1];
-        match config.resources.get_key_value(resource) {
+      "var" => {
+        let variable = params[1];
+        match config.variables.get_key_value(variable) {
           Some((_, kind)) => {
             let result = match kind {
               Integer => Self::parse_amount::<&str, i32>(params[2]),
@@ -25,15 +25,15 @@ impl Modifier {
 
             match result {
               Ok(amount) => Ok(cuentitos_common::Modifier::Resource {
-                id: resource.to_string(),
+                id: variable.to_string(),
                 amount,
               }),
-              Err(error) => Err(format!("{} for resource '{}'", error, resource)),
+              Err(error) => Err(format!("{} for variable '{}'", error, variable)),
             }
           }
           None => Err(format!(
-            "\"{}\" is not defined as a valid resource",
-            resource
+            "\"{}\" is not defined as a valid variable",
+            variable
           )),
         }
       }
@@ -61,7 +61,7 @@ impl Modifier {
       "achievement" => Ok(cuentitos_common::Modifier::Achievement(
         params[1].to_string(),
       )),
-      _ => Err(format!("\"{}\" is not a valid requirement", params[0])),
+      _ => Err(format!("\"{}\" is not a valid modifier", params[0])),
     }
   }
 
@@ -84,115 +84,115 @@ impl Modifier {
 mod test {
   use crate::parsers::modifier::Modifier;
   use crate::Config;
-  use cuentitos_common::Resource;
-  use cuentitos_common::ResourceKind::*;
+  use cuentitos_common::Variable;
+  use cuentitos_common::VariableKind::*;
 
   #[test]
-  fn error_on_wrong_requirement() {
+  fn error_on_wrong_modifier() {
     let config = Config::default();
     let result = Modifier::parse("wrong health 100", &config);
     assert_eq!(
-      Err("\"wrong\" is not a valid requirement".to_string()),
+      Err("\"wrong\" is not a valid modifier".to_string()),
       result
     );
   }
 
   #[test]
-  fn parses_integer_resource() {
+  fn parses_integer_variable() {
     let mut config = Config::default();
     let id = "health".to_string();
 
-    config.resources.insert(id.clone(), Integer);
-    let resource = Resource {
+    config.variables.insert(id.clone(), Integer);
+    let variable = Variable {
       id: id.clone(),
       kind: Integer,
     };
 
-    let result = Modifier::parse("resource health 100", &config).unwrap();
+    let result = Modifier::parse("var health 100", &config).unwrap();
     assert_eq!(
       result,
       cuentitos_common::Modifier::Resource {
-        id: resource.id.clone(),
+        id: variable.id.clone(),
         amount: 100.to_string()
       }
     );
 
-    let result = Modifier::parse("resource health -100", &config).unwrap();
+    let result = Modifier::parse("var health -100", &config).unwrap();
     assert_eq!(
       result,
       cuentitos_common::Modifier::Resource {
-        id: resource.id.clone(),
+        id: variable.id.clone(),
         amount: (-100).to_string()
       }
     );
   }
 
   #[test]
-  fn parses_float_resource() {
+  fn parses_float_variable() {
     let mut config = Config::default();
     let id = "health".to_string();
 
-    config.resources.insert(id.clone(), Float);
-    let resource = Resource {
+    config.variables.insert(id.clone(), Float);
+    let variable = Variable {
       id: id.clone(),
       kind: Float,
     };
 
-    let result = Modifier::parse("resource health 0.9", &config).unwrap();
+    let result = Modifier::parse("var health 0.9", &config).unwrap();
     assert_eq!(
       result,
       cuentitos_common::Modifier::Resource {
-        id: resource.id.clone(),
+        id: variable.id.clone(),
         amount: 0.9.to_string()
       }
     );
 
-    let result = Modifier::parse("resource health -0.9", &config).unwrap();
+    let result = Modifier::parse("var health -0.9", &config).unwrap();
     assert_eq!(
       result,
       cuentitos_common::Modifier::Resource {
-        id: resource.id.clone(),
+        id: variable.id.clone(),
         amount: (-0.9).to_string()
       }
     );
   }
 
   #[test]
-  fn parses_bool_resource() {
+  fn parses_bool_variable() {
     let mut config = Config::default();
     let id = "health".to_string();
 
-    config.resources.insert(id.clone(), Bool);
-    let resource = Resource {
+    config.variables.insert(id.clone(), Bool);
+    let variable = Variable {
       id: id.clone(),
       kind: Bool,
     };
 
-    let result = Modifier::parse("resource health true", &config).unwrap();
+    let result = Modifier::parse("var health true", &config).unwrap();
     assert_eq!(
       result,
       cuentitos_common::Modifier::Resource {
-        id: resource.id.clone(),
+        id: variable.id.clone(),
         amount: "true".to_string()
       }
     );
 
-    let result = Modifier::parse("resource health false", &config).unwrap();
+    let result = Modifier::parse("var health false", &config).unwrap();
     assert_eq!(
       result,
       cuentitos_common::Modifier::Resource {
-        id: resource.id.clone(),
+        id: variable.id.clone(),
         amount: "false".to_string()
       }
     );
   }
 
   #[test]
-  fn error_on_missing_resource() {
+  fn error_on_missing_variable() {
     let config = Config::default();
-    let result = Modifier::parse("resource health 100", &config);
+    let result = Modifier::parse("var health 100", &config);
     assert_eq!(
-      Err("\"health\" is not defined as a valid resource".to_string()),
+      Err("\"health\" is not defined as a valid variable".to_string()),
       result
     );
   }
@@ -285,12 +285,12 @@ mod test {
   }
 
   #[test]
-  fn error_on_wrong_resource_value() {
+  fn error_on_wrong_variable_value() {
     let mut config = Config::default();
-    config.resources.insert("health".to_string(), Integer);
-    let result = Modifier::parse("resource health false", &config);
+    config.variables.insert("health".to_string(), Integer);
+    let result = Modifier::parse("var health false", &config);
     assert_eq!(
-      Err("Invalid value: 'false' for resource 'health'".to_string()),
+      Err("Invalid value: 'false' for variable 'health'".to_string()),
       result
     );
   }

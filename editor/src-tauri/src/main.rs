@@ -65,30 +65,30 @@ fn set_tile(state: State<'_, EditorState>, tile: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn set_resource_bool(
+fn set_variable_bool(
   state: State<'_, EditorState>,
-  resource: String,
+  variable: String,
   value: bool,
 ) -> Result<(), String> {
-  state.runtime.lock().unwrap().set_resource(resource, value)
+  state.runtime.lock().unwrap().set_variable(variable, value)
 }
 
 #[tauri::command]
-fn set_resource_int(
+fn set_variable_int(
   state: State<'_, EditorState>,
-  resource: String,
+  variable: String,
   value: i32,
 ) -> Result<(), String> {
-  state.runtime.lock().unwrap().set_resource(resource, value)
+  state.runtime.lock().unwrap().set_variable(variable, value)
 }
 
 #[tauri::command]
-fn set_resource_float(
+fn set_variable_float(
   state: State<'_, EditorState>,
-  resource: String,
+  variable: String,
   value: f32,
 ) -> Result<(), String> {
-  state.runtime.lock().unwrap().set_resource(resource, value)
+  state.runtime.lock().unwrap().set_variable(variable, value)
 }
 
 #[tauri::command]
@@ -178,9 +178,9 @@ fn main() {
       get_items,
       set_locale,
       set_tile,
-      set_resource_bool,
-      set_resource_float,
-      set_resource_int,
+      set_variable_bool,
+      set_variable_float,
+      set_variable_int,
       set_item
     ])
     .run(tauri::generate_context!())

@@ -25,17 +25,17 @@ RuntimeId cuentitos_new_runtime(DatabaseId id);
 
 void cuentitos_set_seed(RuntimeId id, uint64_t seed);
 
-bool cuentitos_set_int_resource(RuntimeId id, Cstring resource, int32_t value);
+bool cuentitos_set_int_variable(RuntimeId id, Cstring variable, int32_t value);
 
-bool cuentitos_set_float_resource(RuntimeId id, Cstring resource, float value);
+bool cuentitos_set_float_variable(RuntimeId id, Cstring variable, float value);
 
-bool cuentitos_set_bool_resource(RuntimeId id, Cstring resource, bool value);
+bool cuentitos_set_bool_variable(RuntimeId id, Cstring variable, bool value);
 
-bool cuentitos_get_int_resource(RuntimeId id, Cstring resource, int32_t *value);
+bool cuentitos_get_int_variable(RuntimeId id, Cstring variable, int32_t *value);
 
-bool cuentitos_get_float_resource(RuntimeId id, Cstring resource, float *value);
+bool cuentitos_get_float_variable(RuntimeId id, Cstring variable, float *value);
 
-bool cuentitos_get_bool_resource(RuntimeId id, Cstring resource, bool *value);
+bool cuentitos_get_bool_variable(RuntimeId id, Cstring variable, bool *value);
 
 bool cuentitos_set_item(RuntimeId id, Cstring item, uint8_t value);
 

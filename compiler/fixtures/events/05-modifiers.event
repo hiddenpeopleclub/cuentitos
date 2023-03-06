@@ -4,12 +4,12 @@ This event has options with results and mods
     (100) One Result
       mod item wooden_figure
       mod item wooden_figure -1
-      mod resource health -2
-      mod resource health 5
-      mod resource happy true
-      mod resource happy false
-      mod reputation rep-1 2
-      mod reputation rep-2 -2
+      mod var health -2
+      mod var health 5
+      mod var happy true
+      mod var happy false
+      mod reputation rep_1 2
+      mod reputation rep_2 -2
       mod decision a_decision
       mod achievement an_achievement
 

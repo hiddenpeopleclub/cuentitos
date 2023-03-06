@@ -179,8 +179,8 @@ mod test {
   use cuentitos_common::EventRequirement;
   use cuentitos_common::EventResult;
   use cuentitos_common::Modifier;
-  use cuentitos_common::Resource;
-  use cuentitos_common::ResourceKind::*;
+  use cuentitos_common::Variable;
+  use cuentitos_common::VariableKind::*;
   use cuentitos_common::TimeOfDay;
 
   use crate::parsers::Event;
@@ -266,9 +266,9 @@ mod test {
   #[test]
   fn parse_parses_requirements() {
     let mut config = Config::default();
-    config.resources.insert("health".to_string(), Integer);
-    config.resources.insert("happy".to_string(), Bool);
-    config.reputations.push("rep-1".to_string());
+    config.variables.insert("health".to_string(), Integer);
+    config.variables.insert("happy".to_string(), Bool);
+    config.reputations.push("rep_1".to_string());
     config.tiles.push("forest".to_string());
     let event = include_str!("../../fixtures/events/04-requirements.event");
     let event = Event::parse(event, &config).unwrap();
@@ -276,8 +276,8 @@ mod test {
     assert_eq!(
       event.requirements,
       vec![
-        EventRequirement::Resource {
-          resource: Resource {
+        EventRequirement::Variable {
+          variable: Variable {
             id: "health".to_string(),
             kind: Integer
           },
@@ -290,7 +290,7 @@ mod test {
           amount: 1.to_string()
         },
         EventRequirement::Reputation {
-          id: "rep-1".to_string(),
+          id: "rep_1".to_string(),
           condition: Condition::HigherThan,
           amount: 5.to_string()
         },
@@ -317,10 +317,10 @@ mod test {
   #[test]
   fn parse_parses_modifiers() {
     let mut config = Config::default();
-    config.resources.insert("health".to_string(), Integer);
-    config.resources.insert("happy".to_string(), Bool);
-    config.reputations.push("rep-1".to_string());
-    config.reputations.push("rep-2".to_string());
+    config.variables.insert("health".to_string(), Integer);
+    config.variables.insert("happy".to_string(), Bool);
+    config.reputations.push("rep_1".to_string());
+    config.reputations.push("rep_2".to_string());
 
     let event = include_str!("../../fixtures/events/05-modifiers.event");
     let event = Event::parse(event, &config).unwrap();
@@ -353,11 +353,11 @@ mod test {
           amount: false.to_string()
         },
         Modifier::Reputation {
-          id: "rep-1".to_string(),
+          id: "rep_1".to_string(),
           amount: 2.to_string()
         },
         Modifier::Reputation {
-          id: "rep-2".to_string(),
+          id: "rep_2".to_string(),
           amount: (-2).to_string()
         },
         Modifier::Decision("a_decision".to_string()),

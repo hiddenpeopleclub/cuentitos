@@ -1,8 +1,8 @@
 use crate::Config;
 use core::fmt::Display;
 use core::str::FromStr;
-use cuentitos_common::Resource;
-use cuentitos_common::{Condition, ResourceKind::*};
+use cuentitos_common::Variable;
+use cuentitos_common::{Condition, VariableKind::*};
 
 pub struct EventRequirement;
 
@@ -14,9 +14,9 @@ impl EventRequirement {
     let params: Vec<&str> = data.as_ref().split(' ').collect();
 
     match params[0] {
-      "resource" => {
-        let resource = params[1];
-        match config.resources.get_key_value(resource) {
+      "var" => {
+        let variable = params[1];
+        match config.variables.get_key_value(variable) {
           Some((_, kind)) => {
             let result = match kind {
               Integer => {
@@ -30,22 +30,22 @@ impl EventRequirement {
 
             match result {
               Ok((amount, condition)) => {
-                let resource = Resource {
-                  id: resource.to_string(),
+                let variable = Variable {
+                  id: variable.to_string(),
                   kind: kind.clone(),
                 };
-                Ok(cuentitos_common::EventRequirement::Resource {
-                  resource,
+                Ok(cuentitos_common::EventRequirement::Variable {
+                  variable,
                   amount,
                   condition,
                 })
               }
-              Err(error) => Err(format!("{} for resource '{}'", error, resource)),
+              Err(error) => Err(format!("{} for variable '{}'", error, variable)),
             }
           }
           None => Err(format!(
-            "\"{}\" is not defined as a valid resource",
-            resource
+            "\"{}\" is not defined as a valid variable",
+            variable
           )),
         }
       }
@@ -169,8 +169,8 @@ mod test {
   use crate::parsers::event_requirement::EventRequirement;
   use crate::Config;
   use cuentitos_common::Condition::*;
-  use cuentitos_common::Resource;
-  use cuentitos_common::ResourceKind::*;
+  use cuentitos_common::Variable;
+  use cuentitos_common::VariableKind::*;
 
   #[test]
   fn error_on_wrong_requirement() {
@@ -183,52 +183,52 @@ mod test {
   }
 
   #[test]
-  fn parses_integer_resource() {
+  fn parses_integer_variable() {
     let mut config = Config::default();
     let id = "health".to_string();
 
-    config.resources.insert(id.clone(), Integer);
-    let resource = Resource {
+    config.variables.insert(id.clone(), Integer);
+    let variable = Variable {
       id: id.clone(),
       kind: Integer,
     };
     let amount = "100".to_string();
 
-    let result = EventRequirement::parse("resource health 100", &config).unwrap();
+    let result = EventRequirement::parse("var health 100", &config).unwrap();
     assert_eq!(
       result,
-      cuentitos_common::EventRequirement::Resource {
-        resource: resource.clone(),
+      cuentitos_common::EventRequirement::Variable {
+        variable: variable.clone(),
         condition: HigherThan,
         amount: amount.clone()
       }
     );
 
-    let result = EventRequirement::parse("resource health >100", &config).unwrap();
+    let result = EventRequirement::parse("var health >100", &config).unwrap();
     assert_eq!(
       result,
-      cuentitos_common::EventRequirement::Resource {
-        resource: resource.clone(),
+      cuentitos_common::EventRequirement::Variable {
+        variable: variable.clone(),
         condition: HigherThan,
         amount: amount.clone()
       }
     );
 
-    let result = EventRequirement::parse("resource health <100", &config).unwrap();
+    let result = EventRequirement::parse("var health <100", &config).unwrap();
     assert_eq!(
       result,
-      cuentitos_common::EventRequirement::Resource {
-        resource: resource.clone(),
+      cuentitos_common::EventRequirement::Variable {
+        variable: variable.clone(),
         condition: LessThan,
         amount: amount.clone()
       }
     );
 
-    let result = EventRequirement::parse("resource health =100", &config).unwrap();
+    let result = EventRequirement::parse("var health =100", &config).unwrap();
     assert_eq!(
       result,
-      cuentitos_common::EventRequirement::Resource {
-        resource: resource.clone(),
+      cuentitos_common::EventRequirement::Variable {
+        variable: variable.clone(),
         condition: Equals,
         amount: amount.clone()
       }
@@ -236,52 +236,52 @@ mod test {
   }
 
   #[test]
-  fn parses_float_resource() {
+  fn parses_float_variable() {
     let mut config = Config::default();
     let id = "health".to_string();
 
-    config.resources.insert(id.clone(), Float);
-    let resource = Resource {
+    config.variables.insert(id.clone(), Float);
+    let variable = Variable {
       id: id.clone(),
       kind: Float,
     };
     let amount = "0.9".to_string();
 
-    let result = EventRequirement::parse("resource health 0.9", &config).unwrap();
+    let result = EventRequirement::parse("var health 0.9", &config).unwrap();
     assert_eq!(
       result,
-      cuentitos_common::EventRequirement::Resource {
-        resource: resource.clone(),
+      cuentitos_common::EventRequirement::Variable {
+        variable: variable.clone(),
         condition: HigherThan,
         amount: amount.clone()
       }
     );
 
-    let result = EventRequirement::parse("resource health >0.9", &config).unwrap();
+    let result = EventRequirement::parse("var health >0.9", &config).unwrap();
     assert_eq!(
       result,
-      cuentitos_common::EventRequirement::Resource {
-        resource: resource.clone(),
+      cuentitos_common::EventRequirement::Variable {
+        variable: variable.clone(),
         condition: HigherThan,
         amount: amount.clone()
       }
     );
 
-    let result = EventRequirement::parse("resource health <0.9", &config).unwrap();
+    let result = EventRequirement::parse("var health <0.9", &config).unwrap();
     assert_eq!(
       result,
-      cuentitos_common::EventRequirement::Resource {
-        resource: resource.clone(),
+      cuentitos_common::EventRequirement::Variable {
+        variable: variable.clone(),
         condition: LessThan,
         amount: amount.clone()
       }
     );
 
-    let result = EventRequirement::parse("resource health =0.9", &config).unwrap();
+    let result = EventRequirement::parse("var health =0.9", &config).unwrap();
     assert_eq!(
       result,
-      cuentitos_common::EventRequirement::Resource {
-        resource: resource.clone(),
+      cuentitos_common::EventRequirement::Variable {
+        variable: variable.clone(),
         condition: Equals,
         amount: amount.clone()
       }
@@ -289,31 +289,31 @@ mod test {
   }
 
   #[test]
-  fn parses_bool_resource() {
+  fn parses_bool_variable() {
     let mut config = Config::default();
     let id = "health".to_string();
 
-    config.resources.insert(id.clone(), Bool);
-    let resource = Resource {
+    config.variables.insert(id.clone(), Bool);
+    let variable = Variable {
       id: id.clone(),
       kind: Bool,
     };
 
-    let result = EventRequirement::parse("resource health true", &config).unwrap();
+    let result = EventRequirement::parse("var health true", &config).unwrap();
     assert_eq!(
       result,
-      cuentitos_common::EventRequirement::Resource {
-        resource: resource.clone(),
+      cuentitos_common::EventRequirement::Variable {
+        variable: variable.clone(),
         condition: Equals,
         amount: "true".to_string()
       }
     );
 
-    let result = EventRequirement::parse("resource health false", &config).unwrap();
+    let result = EventRequirement::parse("var health false", &config).unwrap();
     assert_eq!(
       result,
-      cuentitos_common::EventRequirement::Resource {
-        resource: resource.clone(),
+      cuentitos_common::EventRequirement::Variable {
+        variable: variable.clone(),
         condition: Equals,
         amount: "false".to_string()
       }
@@ -321,11 +321,11 @@ mod test {
   }
 
   #[test]
-  fn error_on_missing_resource() {
+  fn error_on_missing_variable() {
     let config = Config::default();
-    let result = EventRequirement::parse("resource health 100", &config);
+    let result = EventRequirement::parse("var health 100", &config);
     assert_eq!(
-      Err("\"health\" is not defined as a valid resource".to_string()),
+      Err("\"health\" is not defined as a valid variable".to_string()),
       result
     );
   }
@@ -608,12 +608,12 @@ mod test {
   }
 
   #[test]
-  fn error_on_wrong_resource_value() {
+  fn error_on_wrong_variable_value() {
     let mut config = Config::default();
-    config.resources.insert("health".to_string(), Integer);
-    let result = EventRequirement::parse("resource health false", &config);
+    config.variables.insert("health".to_string(), Integer);
+    let result = EventRequirement::parse("var health false", &config);
     assert_eq!(
-      Err("Invalid value: 'false' for resource 'health'".to_string()),
+      Err("Invalid value: 'false' for variable 'health'".to_string()),
       result
     );
   }

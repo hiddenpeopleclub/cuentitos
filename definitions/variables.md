@@ -1,13 +1,13 @@
-# Resources
+# Variables
 
-A user can define resources and their types to use inside conditions.
+A user can define variables and their types to use inside conditions.
 
 This is done in the configuration file.
 
 These can be of type `integer`, `float`, and `bool`.
 
 ```toml
-[resources]
+[variables]
 health = "integer"
 money = "integer"
 ```
