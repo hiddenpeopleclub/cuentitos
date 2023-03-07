@@ -9,17 +9,17 @@ use serde::{Deserialize, Serialize};
 pub enum Modifier {
   #[default]
   Empty,
-  Resource {
+  Variable {
     id: VariableId,
-    amount: String,
+    value: String,
   },
   Item {
     id: ItemId,
-    amount: String,
+    value: String,
   },
   Reputation {
     id: ReputationId,
-    amount: String,
+    value: String,
   },
   Decision(DecisionId),
   Achievement(AchievementId),

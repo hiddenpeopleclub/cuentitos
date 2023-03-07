@@ -7,7 +7,7 @@ This event has conditions
   require time_of_day night
   require event !choices
   require decision a_decision
-  require tile forest
+  require var tile forest
   * An Option
     require var health =100
     require time_of_day night

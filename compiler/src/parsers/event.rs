@@ -266,9 +266,10 @@ mod test {
   #[test]
   fn parse_parses_requirements() {
     let mut config = Config::default();
+    let values = vec!["forest".to_string()];
     config.variables.insert("health".to_string(), Integer);
     config.variables.insert("happy".to_string(), Bool);
-    config.variables.insert("tiles".to_string(), Enum { values: vec!["forest".to_string()] });
+    config.variables.insert("tile".to_string(), Enum { values: values.clone() });
     config.reputations.push("rep_1".to_string());
     let event = include_str!("../../fixtures/events/04-requirements.event");
     let event = Event::parse(event, &config).unwrap();
@@ -282,17 +283,17 @@ mod test {
             kind: Integer
           },
           condition: Condition::LessThan,
-          amount: 100.to_string()
+          value: 100.to_string()
         },
         EventRequirement::Item {
           id: "wooden_figure".to_string(),
           condition: Condition::Equals,
-          amount: 1.to_string()
+          value: 1.to_string()
         },
         EventRequirement::Reputation {
           id: "rep_1".to_string(),
           condition: Condition::HigherThan,
-          amount: 5.to_string()
+          value: 5.to_string()
         },
         EventRequirement::TimeOfDay {
           id: TimeOfDay::Night,
@@ -306,10 +307,14 @@ mod test {
           id: "a_decision".to_string(),
           condition: Condition::Depends
         },
-        EventRequirement::Tile {
-          id: "forest".to_string(),
-          condition: Condition::Depends
-        }
+        EventRequirement::Variable {
+          variable: Variable {
+            id: "tile".to_string(),
+            kind: Enum { values: values.clone() }
+          },
+          condition: Condition::Equals,
+          value: "forest".to_string()
+        },
       ]
     );
   }
@@ -330,35 +335,35 @@ mod test {
       vec![
         Modifier::Item {
           id: "wooden_figure".to_string(),
-          amount: 1.to_string()
+          value: 1.to_string()
         },
         Modifier::Item {
           id: "wooden_figure".to_string(),
-          amount: (-1).to_string()
+          value: (-1).to_string()
         },
-        Modifier::Resource {
+        Modifier::Variable {
           id: "health".to_string(),
-          amount: (-2).to_string()
+          value: (-2).to_string()
         },
-        Modifier::Resource {
+        Modifier::Variable {
           id: "health".to_string(),
-          amount: 5.to_string()
+          value: 5.to_string()
         },
-        Modifier::Resource {
+        Modifier::Variable {
           id: "happy".to_string(),
-          amount: true.to_string()
+          value: true.to_string()
         },
-        Modifier::Resource {
+        Modifier::Variable {
           id: "happy".to_string(),
-          amount: false.to_string()
+          value: false.to_string()
         },
         Modifier::Reputation {
           id: "rep_1".to_string(),
-          amount: 2.to_string()
+          value: 2.to_string()
         },
         Modifier::Reputation {
           id: "rep_2".to_string(),
-          amount: (-2).to_string()
+          value: (-2).to_string()
         },
         Modifier::Decision("a_decision".to_string()),
         Modifier::Achievement("an_achievement".to_string())

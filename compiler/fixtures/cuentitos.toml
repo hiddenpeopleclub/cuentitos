@@ -5,4 +5,4 @@ default_locale = 'en'
 [variables]
 health = "integer"
 happy = "bool"
-tiles = { kind = "enum", values = ["forest"] }
+tile = { enum = { values = ["forest"] }}

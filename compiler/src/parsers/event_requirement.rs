@@ -20,26 +20,32 @@ impl EventRequirement {
           Some((_, kind)) => {
             let result = match kind {
               Integer => {
-                Self::parse_amount_and_condition::<&str, i32>(params[2], Condition::HigherThan)
+                Self::parse_value_and_condition::<&str, i32>(params[2], Condition::HigherThan)
               }
               Float => {
-                Self::parse_amount_and_condition::<&str, f32>(params[2], Condition::HigherThan)
+                Self::parse_value_and_condition::<&str, f32>(params[2], Condition::HigherThan)
               }
-              Bool => Self::parse_amount_and_condition::<&str, bool>(params[2], Condition::Equals),
-              Enum { values: values } => {
-                Err("blah".to_string())
+              Bool => Self::parse_value_and_condition::<&str, bool>(params[2], Condition::Equals),
+              Enum { values } => {
+                let mut value = params[2].to_string();
+                let condition = Self::parse_condition(&mut value, Condition::Equals);
+
+                if values.contains(&value)
+                  { Ok((value, condition)) }
+                else
+                  { Err(format!("'{}' is not a valid value", params[2])) }
               }
             };
 
             match result {
-              Ok((amount, condition)) => {
+              Ok((value, condition)) => {
                 let variable = Variable {
                   id: variable.to_string(),
                   kind: kind.clone(),
                 };
                 Ok(cuentitos_common::EventRequirement::Variable {
                   variable,
-                  amount,
+                  value,
                   condition,
                 })
               }
@@ -47,7 +53,7 @@ impl EventRequirement {
             }
           }
           None => Err(format!(
-            "\"{}\" is not defined as a valid variable",
+            "'{}' is not defined as a valid variable",
             variable
           )),
         }
@@ -55,26 +61,26 @@ impl EventRequirement {
       "item" => {
         // TODO(fran): find a way to check if the item is valid, should this be done in a separate validation step?
         let id = params[1].to_string();
-        let mut amount = "1".to_string();
+        let mut value = "1".to_string();
         let mut condition = Condition::Equals;
         if params.len() > 2 {
-          let result = Self::parse_amount_and_condition::<&str, u32>(params[2], Condition::Equals)?;
-          amount = result.0;
+          let result = Self::parse_value_and_condition::<&str, u32>(params[2], Condition::Equals)?;
+          value = result.0;
           condition = result.1;
         }
         Ok(cuentitos_common::EventRequirement::Item {
           id,
-          amount,
+          value,
           condition,
         })
       }
       "reputation" => {
         let id = params[1].to_string();
         if config.reputations.contains(&id) {
-          match Self::parse_amount_and_condition::<&str, i32>(params[2], Condition::HigherThan) {
-            Ok((amount, condition)) => Ok(cuentitos_common::EventRequirement::Reputation {
+          match Self::parse_value_and_condition::<&str, i32>(params[2], Condition::HigherThan) {
+            Ok((value, condition)) => Ok(cuentitos_common::EventRequirement::Reputation {
               id,
-              amount,
+              value,
               condition,
             }),
             Err(error) => Err(format!("{} for reputation '{}'", error, id)),
@@ -123,7 +129,7 @@ impl EventRequirement {
     }
   }
 
-  fn parse_amount_and_condition<T, U>(
+  fn parse_value_and_condition<T, U>(
     data: T,
     default_condition: Condition,
   ) -> Result<(String, Condition), String>
@@ -186,7 +192,7 @@ mod test {
       id: id.clone(),
       kind: Integer,
     };
-    let amount = "100".to_string();
+    let value = "100".to_string();
 
     let result = EventRequirement::parse("var health 100", &config).unwrap();
     assert_eq!(
@@ -194,7 +200,7 @@ mod test {
       cuentitos_common::EventRequirement::Variable {
         variable: variable.clone(),
         condition: HigherThan,
-        amount: amount.clone()
+        value: value.clone()
       }
     );
 
@@ -204,7 +210,7 @@ mod test {
       cuentitos_common::EventRequirement::Variable {
         variable: variable.clone(),
         condition: HigherThan,
-        amount: amount.clone()
+        value: value.clone()
       }
     );
 
@@ -214,7 +220,7 @@ mod test {
       cuentitos_common::EventRequirement::Variable {
         variable: variable.clone(),
         condition: LessThan,
-        amount: amount.clone()
+        value: value.clone()
       }
     );
 
@@ -224,7 +230,7 @@ mod test {
       cuentitos_common::EventRequirement::Variable {
         variable: variable.clone(),
         condition: Equals,
-        amount: amount.clone()
+        value: value.clone()
       }
     )
   }
@@ -239,7 +245,7 @@ mod test {
       id: id.clone(),
       kind: Float,
     };
-    let amount = "0.9".to_string();
+    let value = "0.9".to_string();
 
     let result = EventRequirement::parse("var health 0.9", &config).unwrap();
     assert_eq!(
@@ -247,7 +253,7 @@ mod test {
       cuentitos_common::EventRequirement::Variable {
         variable: variable.clone(),
         condition: HigherThan,
-        amount: amount.clone()
+        value: value.clone()
       }
     );
 
@@ -257,7 +263,7 @@ mod test {
       cuentitos_common::EventRequirement::Variable {
         variable: variable.clone(),
         condition: HigherThan,
-        amount: amount.clone()
+        value: value.clone()
       }
     );
 
@@ -267,7 +273,7 @@ mod test {
       cuentitos_common::EventRequirement::Variable {
         variable: variable.clone(),
         condition: LessThan,
-        amount: amount.clone()
+        value: value.clone()
       }
     );
 
@@ -277,7 +283,7 @@ mod test {
       cuentitos_common::EventRequirement::Variable {
         variable: variable.clone(),
         condition: Equals,
-        amount: amount.clone()
+        value: value.clone()
       }
     )
   }
@@ -293,20 +299,24 @@ mod test {
       kind: Bool,
     };
 
-    let result = EventRequirement::parse("var health good", &config).unwrap();
+    let result = EventRequirement::parse("var health true", &config).unwrap();
     assert_eq!(
       result,
       cuentitos_common::EventRequirement::Variable {
         variable: variable.clone(),
         condition: Equals,
-        amount: "good".to_string()
+        value: "true".to_string()
       }
     );
 
-    let result = EventRequirement::parse("var health bad", &config);
+    let result = EventRequirement::parse("var health false", &config).unwrap();
     assert_eq!(
-      Err("\"bad\" is not defined as a valid value for variable `health`".to_string()),
-      result
+      result,
+      cuentitos_common::EventRequirement::Variable {
+        variable: variable.clone(),
+        condition: Equals,
+        value: "false".to_string()
+      }
     );
   }
 
@@ -326,24 +336,30 @@ mod test {
       }
     };
 
-    let result = EventRequirement::parse("var health true", &config).unwrap();
+    let result = EventRequirement::parse("var health !good", &config).unwrap();
     assert_eq!(
       result,
       cuentitos_common::EventRequirement::Variable {
         variable: variable.clone(),
-        condition: Equals,
-        amount: "true".to_string()
+        condition: MutEx,
+        value: "good".to_string()
       }
     );
 
-    let result = EventRequirement::parse("var health false", &config).unwrap();
+    let result = EventRequirement::parse("var health good", &config).unwrap();
     assert_eq!(
       result,
       cuentitos_common::EventRequirement::Variable {
         variable: variable.clone(),
         condition: Equals,
-        amount: "false".to_string()
+        value: "good".to_string()
       }
+    );
+
+    let result = EventRequirement::parse("var health bad", &config);
+    assert_eq!(
+      Err("'bad' is not a valid value for variable 'health'".to_string()),
+      result
     );
   }
 
@@ -352,7 +368,7 @@ mod test {
     let config = Config::default();
     let result = EventRequirement::parse("var health 100", &config);
     assert_eq!(
-      Err("\"health\" is not defined as a valid variable".to_string()),
+      Err("'health' is not defined as a valid variable".to_string()),
       result
     );
   }
@@ -367,7 +383,7 @@ mod test {
       cuentitos_common::EventRequirement::Item {
         id: "wooden_figure".to_string(),
         condition: Equals,
-        amount: "1".to_string()
+        value: "1".to_string()
       }
     );
 
@@ -377,7 +393,7 @@ mod test {
       cuentitos_common::EventRequirement::Item {
         id: "wooden_figure".to_string(),
         condition: HigherThan,
-        amount: "3".to_string()
+        value: "3".to_string()
       }
     );
 
@@ -387,7 +403,7 @@ mod test {
       cuentitos_common::EventRequirement::Item {
         id: "wooden_figure".to_string(),
         condition: LessThan,
-        amount: "3".to_string()
+        value: "3".to_string()
       }
     );
   }
@@ -412,7 +428,7 @@ mod test {
       cuentitos_common::EventRequirement::Reputation {
         id: "friends".to_string(),
         condition: HigherThan,
-        amount: "1".to_string()
+        value: "1".to_string()
       }
     );
 
@@ -422,7 +438,7 @@ mod test {
       cuentitos_common::EventRequirement::Reputation {
         id: "friends".to_string(),
         condition: HigherThan,
-        amount: "1".to_string()
+        value: "1".to_string()
       }
     );
 
@@ -432,7 +448,7 @@ mod test {
       cuentitos_common::EventRequirement::Reputation {
         id: "friends".to_string(),
         condition: LessThan,
-        amount: "5".to_string()
+        value: "5".to_string()
       }
     );
 
@@ -442,7 +458,7 @@ mod test {
       cuentitos_common::EventRequirement::Reputation {
         id: "friends".to_string(),
         condition: Equals,
-        amount: "5".to_string()
+        value: "5".to_string()
       }
     );
 
@@ -452,7 +468,7 @@ mod test {
       cuentitos_common::EventRequirement::Reputation {
         id: "friends".to_string(),
         condition: HigherThan,
-        amount: "-1".to_string()
+        value: "-1".to_string()
       }
     );
 
@@ -462,7 +478,7 @@ mod test {
       cuentitos_common::EventRequirement::Reputation {
         id: "friends".to_string(),
         condition: HigherThan,
-        amount: "-1".to_string()
+        value: "-1".to_string()
       }
     );
 
@@ -472,7 +488,7 @@ mod test {
       cuentitos_common::EventRequirement::Reputation {
         id: "friends".to_string(),
         condition: LessThan,
-        amount: "-5".to_string()
+        value: "-5".to_string()
       }
     );
 
@@ -482,7 +498,7 @@ mod test {
       cuentitos_common::EventRequirement::Reputation {
         id: "friends".to_string(),
         condition: Equals,
-        amount: "-5".to_string()
+        value: "-5".to_string()
       }
     );
   }
@@ -601,13 +617,6 @@ mod test {
         condition: MutEx
       }
     );
-  }
-
-  #[test]
-  fn error_on_missing_tile() {
-    let config = Config::default();
-    let result = EventRequirement::parse("tile forest", &config);
-    assert_eq!(Err("'forest' is not a valid tile".to_string()), result);
   }
 
   #[test]

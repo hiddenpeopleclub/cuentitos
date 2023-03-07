@@ -24,17 +24,17 @@ pub enum EventRequirement {
   Variable {
     variable: Variable,
     condition: Condition,
-    amount: String,
+    value: String,
   },
   Item {
     id: ItemId,
     condition: Condition,
-    amount: String,
+    value: String,
   },
   Reputation {
     id: ReputationId,
     condition: Condition,
-    amount: String,
+    value: String,
   },
   TimeOfDay {
     id: TimeOfDay,
@@ -47,9 +47,5 @@ pub enum EventRequirement {
   Event {
     id: EventId,
     condition: Condition,
-  },
-  Tile {
-    id: TileId,
-    condition: Condition,
-  },
+  }
 }

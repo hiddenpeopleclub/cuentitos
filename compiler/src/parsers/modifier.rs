@@ -18,15 +18,24 @@ impl Modifier {
         match config.variables.get_key_value(variable) {
           Some((_, kind)) => {
             let result = match kind {
-              Integer => Self::parse_amount::<&str, i32>(params[2]),
-              Float => Self::parse_amount::<&str, f32>(params[2]),
-              Bool => Self::parse_amount::<&str, bool>(params[2]),
+              Integer => Self::parse_value::<&str, i32>(params[2]),
+              Float => Self::parse_value::<&str, f32>(params[2]),
+              Bool => Self::parse_value::<&str, bool>(params[2]),
+              Enum { values } => {
+                let value = params[2].to_string();
+                if values.contains(&value) {
+                  Ok(value)
+                } else {
+                  Err(format!("invalid value '{}'", value))
+                }
+                
+              },
             };
 
             match result {
-              Ok(amount) => Ok(cuentitos_common::Modifier::Resource {
+              Ok(value) => Ok(cuentitos_common::Modifier::Variable {
                 id: variable.to_string(),
-                amount,
+                value,
               }),
               Err(error) => Err(format!("{} for variable '{}'", error, variable)),
             }
@@ -40,17 +49,17 @@ impl Modifier {
       "item" => {
         // TODO(fran): find a way to check if the item is valid, should this be done in a separate validation step?
         let id = params[1].to_string();
-        let mut amount = "1".to_string();
+        let mut value = "1".to_string();
         if params.len() > 2 {
-          amount = Self::parse_amount::<&str, i32>(params[2])?;
+          value = Self::parse_value::<&str, i32>(params[2])?;
         }
-        Ok(cuentitos_common::Modifier::Item { id, amount })
+        Ok(cuentitos_common::Modifier::Item { id, value })
       }
       "reputation" => {
         let id = params[1].to_string();
         if config.reputations.contains(&id) {
-          match Self::parse_amount::<&str, i32>(params[2]) {
-            Ok(amount) => Ok(cuentitos_common::Modifier::Reputation { id, amount }),
+          match Self::parse_value::<&str, i32>(params[2]) {
+            Ok(value) => Ok(cuentitos_common::Modifier::Reputation { id, value }),
             Err(error) => Err(format!("{} for reputation '{}'", error, id)),
           }
         } else {
@@ -65,7 +74,7 @@ impl Modifier {
     }
   }
 
-  fn parse_amount<T, U>(data: T) -> Result<String, String>
+  fn parse_value<T, U>(data: T) -> Result<String, String>
   where
     T: AsRef<str>,
     U: FromStr + Display,
@@ -75,7 +84,7 @@ impl Modifier {
 
     match U::from_str(&value) {
       Ok(value) => Ok(value.to_string()),
-      Err(_) => Err(format!("Invalid value: '{}'", data.as_ref())),
+      Err(_) => Err(format!("invalid value: '{}'", data.as_ref())),
     }
   }
 }
@@ -111,18 +120,18 @@ mod test {
     let result = Modifier::parse("var health 100", &config).unwrap();
     assert_eq!(
       result,
-      cuentitos_common::Modifier::Resource {
+      cuentitos_common::Modifier::Variable {
         id: variable.id.clone(),
-        amount: 100.to_string()
+        value: 100.to_string()
       }
     );
 
     let result = Modifier::parse("var health -100", &config).unwrap();
     assert_eq!(
       result,
-      cuentitos_common::Modifier::Resource {
+      cuentitos_common::Modifier::Variable {
         id: variable.id.clone(),
-        amount: (-100).to_string()
+        value: (-100).to_string()
       }
     );
   }
@@ -141,18 +150,18 @@ mod test {
     let result = Modifier::parse("var health 0.9", &config).unwrap();
     assert_eq!(
       result,
-      cuentitos_common::Modifier::Resource {
+      cuentitos_common::Modifier::Variable {
         id: variable.id.clone(),
-        amount: 0.9.to_string()
+        value: 0.9.to_string()
       }
     );
 
     let result = Modifier::parse("var health -0.9", &config).unwrap();
     assert_eq!(
       result,
-      cuentitos_common::Modifier::Resource {
+      cuentitos_common::Modifier::Variable {
         id: variable.id.clone(),
-        amount: (-0.9).to_string()
+        value: (-0.9).to_string()
       }
     );
   }
@@ -171,18 +180,18 @@ mod test {
     let result = Modifier::parse("var health true", &config).unwrap();
     assert_eq!(
       result,
-      cuentitos_common::Modifier::Resource {
+      cuentitos_common::Modifier::Variable {
         id: variable.id.clone(),
-        amount: "true".to_string()
+        value: "true".to_string()
       }
     );
 
     let result = Modifier::parse("var health false", &config).unwrap();
     assert_eq!(
       result,
-      cuentitos_common::Modifier::Resource {
+      cuentitos_common::Modifier::Variable {
         id: variable.id.clone(),
-        amount: "false".to_string()
+        value: "false".to_string()
       }
     );
   }
@@ -192,28 +201,22 @@ mod test {
     let mut config = Config::default();
     let id = "health".to_string();
 
-    config.variables.insert(id.clone(), Bool);
-    let variable = Variable {
-      id: id.clone(),
-      kind: Bool,
-    };
-
-    let result = Modifier::parse("var health true", &config).unwrap();
+    let values = vec!["good".to_string()];
+    config.variables.insert(id.clone(), Enum { values });
+    
+    let result = Modifier::parse("var health good", &config).unwrap();
     assert_eq!(
       result,
-      cuentitos_common::Modifier::Resource {
-        id: variable.id.clone(),
-        amount: "true".to_string()
+      cuentitos_common::Modifier::Variable {
+        id: id.clone(),
+        value: "good".to_string()
       }
     );
 
-    let result = Modifier::parse("var health false", &config).unwrap();
+    let result = Modifier::parse("var health bad", &config);
     assert_eq!(
       result,
-      cuentitos_common::Modifier::Resource {
-        id: variable.id.clone(),
-        amount: "false".to_string()
-      }
+      Err("invalid value 'bad' for variable 'health'".to_string())
     );
   }
 
@@ -236,7 +239,7 @@ mod test {
       result,
       cuentitos_common::Modifier::Item {
         id: "wooden_figure".to_string(),
-        amount: 1.to_string()
+        value: 1.to_string()
       }
     );
 
@@ -245,7 +248,7 @@ mod test {
       result,
       cuentitos_common::Modifier::Item {
         id: "wooden_figure".to_string(),
-        amount: (-3).to_string()
+        value: (-3).to_string()
       }
     );
   }
@@ -269,7 +272,7 @@ mod test {
       result,
       cuentitos_common::Modifier::Reputation {
         id: "friends".to_string(),
-        amount: 1.to_string()
+        value: 1.to_string()
       }
     );
 
@@ -278,7 +281,7 @@ mod test {
       result,
       cuentitos_common::Modifier::Reputation {
         id: "friends".to_string(),
-        amount: (-1).to_string()
+        value: (-1).to_string()
       }
     );
   }
@@ -320,7 +323,7 @@ mod test {
     config.variables.insert("health".to_string(), Integer);
     let result = Modifier::parse("var health false", &config);
     assert_eq!(
-      Err("Invalid value: 'false' for variable 'health'".to_string()),
+      Err("invalid value: 'false' for variable 'health'".to_string()),
       result
     );
   }

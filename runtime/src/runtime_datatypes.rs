@@ -29,7 +29,7 @@ pub struct EventResult {
 pub struct Modifier {
   pub kind: String,
   pub id: String,
-  pub amount: String,
+  pub value: String,
 }
 
 impl Event {

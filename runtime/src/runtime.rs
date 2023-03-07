@@ -193,30 +193,30 @@ impl Runtime {
     for modifier in &result.modifiers {
       let modifier = modifier.clone();
       match modifier {
-        Modifier::Resource { id, amount } => v.push(crate::Modifier {
+        Modifier::Variable { id, value } => v.push(crate::Modifier {
           kind: "variable".to_string(),
           id,
-          amount,
+          value,
         }),
-        Modifier::Item { id, amount } => v.push(crate::Modifier {
+        Modifier::Item { id, value } => v.push(crate::Modifier {
           kind: "item".to_string(),
           id,
-          amount,
+          value,
         }),
-        Modifier::Reputation { id, amount } => v.push(crate::Modifier {
+        Modifier::Reputation { id, value } => v.push(crate::Modifier {
           kind: "reputation".to_string(),
           id,
-          amount,
+          value,
         }),
         Modifier::Decision(id) => v.push(crate::Modifier {
           kind: "decision".to_string(),
           id,
-          amount: String::default(),
+          value: String::default(),
         }),
         Modifier::Achievement(id) => v.push(crate::Modifier {
           kind: "achievement".to_string(),
           id,
-          amount: String::default(),
+          value: String::default(),
         }),
         _ => {}
       }
@@ -242,10 +242,10 @@ impl Runtime {
           .variables
           .insert(variable, value.to_string());
       } else {
-        return Err("Invalid Resource Type".to_string());
+        return Err("Invalid Variable Type".to_string());
       }
     } else {
-      return Err("Invalid Resource".to_string());
+      return Err("Invalid Variable".to_string());
     }
     Ok(())
   }
@@ -288,9 +288,9 @@ impl Runtime {
         }
       }
     } else {
-      return Err("Invalid Resource".to_string());
+      return Err("Invalid Variable".to_string());
     }
-    return Err("Invalid Resource".to_string());
+    return Err("Invalid Variable".to_string());
   }
 
   pub fn set_item<T>(&mut self, item: T, count: u8) -> Result<(), String>
@@ -371,7 +371,7 @@ impl Runtime {
     }
   }
 
-  fn add_reputation<T>(&mut self, reputation_id: T, amount: i32) -> Result<(), String>
+  fn add_reputation<T>(&mut self, reputation_id: T, value: i32) -> Result<(), String>
   where
     T: AsRef<str>,
   {
@@ -382,11 +382,11 @@ impl Runtime {
       Some(reputation) => self
         .game_state
         .reputations
-        .insert(reputation_id.to_string(), reputation + amount),
+        .insert(reputation_id.to_string(), reputation + value),
       None => self
         .game_state
         .reputations
-        .insert(reputation_id.to_string(), amount),
+        .insert(reputation_id.to_string(), value),
     };
     Ok(())
   }
@@ -422,9 +422,9 @@ impl Runtime {
 
   fn apply_modifier(&mut self, modifier: &cuentitos_common::Modifier) -> Result<(), String> {
     match modifier {
-      Modifier::Reputation { id, amount } => match amount.parse::<i32>() {
-        Ok(amount) => self.add_reputation(id, amount),
-        Err(error) => Err(format!("Couldn't parse amount: {}", error)),
+      Modifier::Reputation { id, value } => match value.parse::<i32>() {
+        Ok(value) => self.add_reputation(id, value),
+        Err(error) => Err(format!("Couldn't parse value: {}", error)),
       },
       Modifier::Decision(id) => Ok(self.set_decision(id)),
       _ => Ok(()),
@@ -463,7 +463,7 @@ impl Runtime {
       EventRequirement::Variable {
         variable,
         condition,
-        amount,
+        value,
       } => {
         let current_value = self
           .game_state
@@ -474,7 +474,7 @@ impl Runtime {
         match &variable.kind {
           VariableKind::Integer => {
             let cv = current_value.parse::<i32>().unwrap_or(0);
-            let a = amount.parse::<i32>().unwrap_or(0);
+            let a = value.parse::<i32>().unwrap_or(0);
             match condition {
               Condition::Equals => return cv == a,
               Condition::HigherThan => return cv > a,
@@ -484,7 +484,7 @@ impl Runtime {
           }
           VariableKind::Float => {
             let cv = current_value.parse::<f32>().unwrap_or(0.0);
-            let a = amount.parse::<f32>().unwrap_or(0.0);
+            let a = value.parse::<f32>().unwrap_or(0.0);
             match condition {
               Condition::Equals => return cv == a,
               Condition::HigherThan => return cv > a,
@@ -494,25 +494,29 @@ impl Runtime {
           }
           VariableKind::Bool => {
             let cv = current_value.parse::<bool>().unwrap_or(false);
-            let a = amount.parse::<bool>().unwrap_or(false);
+            let a = value.parse::<bool>().unwrap_or(false);
 
             if condition == &Condition::Equals {
               return cv == a;
             }
             return true;
           }
-          VariableKind::Enum { values } => {
-            values.contains(&current_value)
+          VariableKind::Enum { .. } => {
+            if condition == &Condition::Equals {
+              return current_value == *value
+            } else {
+              return current_value != *value
+            }
           }
         }
       }
       EventRequirement::Item {
         id,
         condition,
-        amount,
+        value,
       } => {
         let cv = *self.game_state.items.get(id).unwrap_or(&0);
-        let a = amount.parse::<u8>().unwrap_or(0);
+        let a = value.parse::<u8>().unwrap_or(0);
         match condition {
           Condition::Equals => return cv == a,
           Condition::HigherThan => return cv > a,
@@ -523,10 +527,10 @@ impl Runtime {
       EventRequirement::Reputation {
         id,
         condition,
-        amount,
+        value,
       } => {
         let cv = *self.game_state.reputations.get(id).unwrap_or(&0);
-        let a = amount.parse::<i32>().unwrap_or(0);
+        let a = value.parse::<i32>().unwrap_or(0);
         match condition {
           Condition::Equals => return cv == a,
           Condition::HigherThan => return cv > a,
@@ -550,11 +554,6 @@ impl Runtime {
       EventRequirement::Event { id, condition } => match condition {
         Condition::Depends => return self.state.previous_events.contains(id),
         Condition::MutEx => return !self.state.previous_events.contains(id),
-        _ => return true,
-      },
-      EventRequirement::Tile { id, condition } => match condition {
-        Condition::Equals => return self.game_state.tile == *id,
-        Condition::MutEx => return self.game_state.tile != *id,
         _ => return true,
       },
       EventRequirement::Empty => true,
@@ -796,7 +795,7 @@ mod test {
               kind: VariableKind::Integer,
             },
             condition: Condition::HigherThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -808,7 +807,7 @@ mod test {
               kind: VariableKind::Integer,
             },
             condition: Condition::LessThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -820,7 +819,7 @@ mod test {
               kind: VariableKind::Integer,
             },
             condition: Condition::Equals,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -878,7 +877,7 @@ mod test {
               kind: VariableKind::Float,
             },
             condition: Condition::HigherThan,
-            amount: "10.5".to_string(),
+            value: "10.5".to_string(),
           }],
           ..Default::default()
         },
@@ -890,7 +889,7 @@ mod test {
               kind: VariableKind::Float,
             },
             condition: Condition::LessThan,
-            amount: "10.5".to_string(),
+            value: "10.5".to_string(),
           }],
           ..Default::default()
         },
@@ -902,7 +901,7 @@ mod test {
               kind: VariableKind::Float,
             },
             condition: Condition::Equals,
-            amount: "10.5".to_string(),
+            value: "10.5".to_string(),
           }],
           ..Default::default()
         },
@@ -956,7 +955,7 @@ mod test {
               kind: VariableKind::Bool,
             },
             condition: Condition::Equals,
-            amount: "true".to_string(),
+            value: "true".to_string(),
           }],
           ..Default::default()
         },
@@ -968,7 +967,7 @@ mod test {
               kind: VariableKind::Bool,
             },
             condition: Condition::Equals,
-            amount: "false".to_string(),
+            value: "false".to_string(),
           }],
           ..Default::default()
         },
@@ -1002,6 +1001,67 @@ mod test {
   }
 
   #[test]
+  fn requirements_on_enum_variable_are_honored() {
+    let values = vec![ "value".to_string(), "another-value".to_string() ];
+    let db = Database {
+      events: vec![
+        Event {
+          id: "event-variable-bool-equals-value".to_string(),
+          requirements: vec![EventRequirement::Variable {
+            variable: Variable {
+              id: "variable-1".to_string(),
+              kind: VariableKind::Enum { values: values.clone() },
+            },
+            condition: Condition::Equals,
+            value: "value".to_string(),
+          }],
+          ..Default::default()
+        },
+        Event {
+          id: "event-variable-bool-equals-another-value".to_string(),
+          requirements: vec![EventRequirement::Variable {
+            variable: Variable {
+              id: "variable-1".to_string(),
+              kind: VariableKind::Enum { values: values.clone() },
+            },
+            condition: Condition::Equals,
+            value: "another-value".to_string(),
+          }],
+          ..Default::default()
+        },
+      ],
+      ..Default::default()
+    };
+
+    let variable = "variable-1".to_string();
+
+    let mut runtime = Runtime::new(db);
+
+    runtime
+      .game_state
+      .variables
+      .insert(variable.clone(), "value".to_string());
+    assert_eq!(
+      runtime.available_events(),
+      ["event-variable-bool-equals-value"]
+    );
+    assert_eq!(runtime.event_frequencies(), [100]);
+
+    runtime
+      .game_state
+      .variables
+      .insert(variable.clone(), "another-value".to_string());
+    assert_eq!(
+      runtime.available_events(),
+      ["event-variable-bool-equals-another-value"]
+    );
+    assert_eq!(runtime.event_frequencies(), [100]);
+  }
+
+
+
+
+  #[test]
   fn requirements_on_items_are_honored() {
     let db = Database {
       events: vec![
@@ -1010,7 +1070,7 @@ mod test {
           requirements: vec![EventRequirement::Item {
             id: "item".to_string(),
             condition: Condition::Equals,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1019,7 +1079,7 @@ mod test {
           requirements: vec![EventRequirement::Item {
             id: "item".to_string(),
             condition: Condition::HigherThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1028,7 +1088,7 @@ mod test {
           requirements: vec![EventRequirement::Item {
             id: "item".to_string(),
             condition: Condition::LessThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1037,7 +1097,7 @@ mod test {
           requirements: vec![EventRequirement::Item {
             id: "missing".to_string(),
             condition: Condition::HigherThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1046,7 +1106,7 @@ mod test {
           requirements: vec![EventRequirement::Item {
             id: "missing".to_string(),
             condition: Condition::LessThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1088,7 +1148,7 @@ mod test {
           requirements: vec![EventRequirement::Reputation {
             id: "reputation".to_string(),
             condition: Condition::Equals,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1097,7 +1157,7 @@ mod test {
           requirements: vec![EventRequirement::Reputation {
             id: "reputation".to_string(),
             condition: Condition::HigherThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1106,7 +1166,7 @@ mod test {
           requirements: vec![EventRequirement::Reputation {
             id: "reputation".to_string(),
             condition: Condition::LessThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1115,7 +1175,7 @@ mod test {
           requirements: vec![EventRequirement::Reputation {
             id: "missing".to_string(),
             condition: Condition::HigherThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1124,7 +1184,7 @@ mod test {
           requirements: vec![EventRequirement::Reputation {
             id: "missing".to_string(),
             condition: Condition::LessThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1292,41 +1352,6 @@ mod test {
   }
 
   #[test]
-  fn requirements_on_tile_are_honored() {
-    let db = Database {
-      events: vec![
-        Event {
-          id: "event-tile-forest".to_string(),
-          requirements: vec![EventRequirement::Tile {
-            id: "forest".to_string(),
-            condition: Condition::Equals,
-          }],
-          ..Default::default()
-        },
-        Event {
-          id: "event-tile-not-forest".to_string(),
-          requirements: vec![EventRequirement::Tile {
-            id: "forest".to_string(),
-            condition: Condition::MutEx,
-          }],
-          ..Default::default()
-        },
-      ],
-      ..Default::default()
-    };
-
-    let mut runtime = Runtime::new(db);
-
-    runtime.game_state.tile = "plain".to_string();
-    assert_eq!(runtime.available_events(), ["event-tile-not-forest"]);
-    assert_eq!(runtime.event_frequencies(), [100]);
-
-    runtime.game_state.tile = "forest".to_string();
-    assert_eq!(runtime.available_events(), ["event-tile-forest"]);
-    assert_eq!(runtime.event_frequencies(), [100]);
-  }
-
-  #[test]
   fn set_choice_with_valid_choice_works() {
     let db = Database {
       events: vec![Event {
@@ -1366,7 +1391,7 @@ mod test {
           requirements: vec![cuentitos_common::EventRequirement::Item {
             id: "my-item".to_string(),
             condition: cuentitos_common::Condition::Equals,
-            amount: 1.to_string(),
+            value: 1.to_string(),
           }],
           ..Default::default()
         }],
@@ -1444,20 +1469,20 @@ mod test {
 
     assert_eq!(
       runtime.set_variable("invalid".to_string(), 1),
-      Err("Invalid Resource".to_string())
+      Err("Invalid Variable".to_string())
     );
 
     assert_eq!(
       runtime.set_variable("variable-int".to_string(), 10.5),
-      Err("Invalid Resource Type".to_string())
+      Err("Invalid Variable Type".to_string())
     );
     assert_eq!(
       runtime.set_variable("variable-float".to_string(), true),
-      Err("Invalid Resource Type".to_string())
+      Err("Invalid Variable Type".to_string())
     );
     assert_eq!(
       runtime.set_variable("variable-bool".to_string(), 10),
-      Err("Invalid Resource Type".to_string())
+      Err("Invalid Variable Type".to_string())
     );
 
     runtime.set_variable("variable-int", 10).unwrap();
@@ -1559,45 +1584,45 @@ mod test {
           results: vec![cuentitos_common::EventResult {
             chance: 100,
             modifiers: vec![
-              Modifier::Resource {
+              Modifier::Variable {
                 id: "variable-1".to_string(),
-                amount: "1".to_string(),
+                value: "1".to_string(),
               },
-              Modifier::Resource {
+              Modifier::Variable {
                 id: "variable-2".to_string(),
-                amount: "-1".to_string(),
+                value: "-1".to_string(),
               },
-              Modifier::Resource {
+              Modifier::Variable {
                 id: "variable-3".to_string(),
-                amount: "1.5".to_string(),
+                value: "1.5".to_string(),
               },
-              Modifier::Resource {
+              Modifier::Variable {
                 id: "variable-4".to_string(),
-                amount: "-1.5".to_string(),
+                value: "-1.5".to_string(),
               },
-              Modifier::Resource {
+              Modifier::Variable {
                 id: "variable-5".to_string(),
-                amount: "true".to_string(),
+                value: "true".to_string(),
               },
-              Modifier::Resource {
+              Modifier::Variable {
                 id: "variable-6".to_string(),
-                amount: "false".to_string(),
+                value: "false".to_string(),
               },
               Modifier::Item {
                 id: "item-1".to_string(),
-                amount: "1".to_string(),
+                value: "1".to_string(),
               },
               Modifier::Item {
                 id: "item-2".to_string(),
-                amount: "-1".to_string(),
+                value: "-1".to_string(),
               },
               Modifier::Reputation {
                 id: "reputation-1".to_string(),
-                amount: "1".to_string(),
+                value: "1".to_string(),
               },
               Modifier::Reputation {
                 id: "reputation-2".to_string(),
-                amount: "-1".to_string(),
+                value: "-1".to_string(),
               },
               Modifier::Decision("decision-1".to_string()),
               Modifier::Achievement("achievement-1".to_string()),
@@ -1660,7 +1685,7 @@ mod test {
       crate::Modifier {
         kind: "variable".to_string(),
         id: "variable-1".to_string(),
-        amount: "1".to_string(),
+        value: "1".to_string(),
       }
     );
 
@@ -1669,7 +1694,7 @@ mod test {
       crate::Modifier {
         kind: "variable".to_string(),
         id: "variable-2".to_string(),
-        amount: "-1".to_string(),
+        value: "-1".to_string(),
       }
     );
 
@@ -1678,7 +1703,7 @@ mod test {
       crate::Modifier {
         kind: "variable".to_string(),
         id: "variable-3".to_string(),
-        amount: "1.5".to_string(),
+        value: "1.5".to_string(),
       }
     );
 
@@ -1687,7 +1712,7 @@ mod test {
       crate::Modifier {
         kind: "variable".to_string(),
         id: "variable-4".to_string(),
-        amount: "-1.5".to_string(),
+        value: "-1.5".to_string(),
       }
     );
 
@@ -1696,7 +1721,7 @@ mod test {
       crate::Modifier {
         kind: "variable".to_string(),
         id: "variable-5".to_string(),
-        amount: "true".to_string(),
+        value: "true".to_string(),
       }
     );
 
@@ -1705,7 +1730,7 @@ mod test {
       crate::Modifier {
         kind: "variable".to_string(),
         id: "variable-6".to_string(),
-        amount: "false".to_string(),
+        value: "false".to_string(),
       }
     );
 
@@ -1714,7 +1739,7 @@ mod test {
       crate::Modifier {
         kind: "item".to_string(),
         id: "item-1".to_string(),
-        amount: "1".to_string(),
+        value: "1".to_string(),
       }
     );
 
@@ -1723,7 +1748,7 @@ mod test {
       crate::Modifier {
         kind: "item".to_string(),
         id: "item-2".to_string(),
-        amount: "-1".to_string(),
+        value: "-1".to_string(),
       }
     );
 
@@ -1732,7 +1757,7 @@ mod test {
       crate::Modifier {
         kind: "reputation".to_string(),
         id: "reputation-1".to_string(),
-        amount: "1".to_string(),
+        value: "1".to_string(),
       }
     );
 
@@ -1741,7 +1766,7 @@ mod test {
       crate::Modifier {
         kind: "reputation".to_string(),
         id: "reputation-2".to_string(),
-        amount: "-1".to_string(),
+        value: "-1".to_string(),
       }
     );
 
@@ -1750,7 +1775,7 @@ mod test {
       crate::Modifier {
         kind: "decision".to_string(),
         id: "decision-1".to_string(),
-        amount: "".to_string(),
+        value: "".to_string(),
       }
     );
 
@@ -1759,7 +1784,7 @@ mod test {
       crate::Modifier {
         kind: "achievement".to_string(),
         id: "achievement-1".to_string(),
-        amount: "".to_string(),
+        value: "".to_string(),
       }
     );
   }
@@ -1775,11 +1800,11 @@ mod test {
             modifiers: vec![
               Modifier::Reputation {
                 id: "reputation-1".to_string(),
-                amount: "1".to_string(),
+                value: "1".to_string(),
               },
               Modifier::Reputation {
                 id: "reputation-2".to_string(),
-                amount: "-1".to_string(),
+                value: "-1".to_string(),
               },
               Modifier::Decision("decision-1".to_string()),
             ],
