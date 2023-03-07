@@ -179,9 +179,9 @@ mod test {
   use cuentitos_common::EventRequirement;
   use cuentitos_common::EventResult;
   use cuentitos_common::Modifier;
+  use cuentitos_common::TimeOfDay;
   use cuentitos_common::Variable;
   use cuentitos_common::VariableKind::*;
-  use cuentitos_common::TimeOfDay;
 
   use crate::parsers::Event;
 
@@ -269,7 +269,12 @@ mod test {
     let values = vec!["forest".to_string()];
     config.variables.insert("health".to_string(), Integer);
     config.variables.insert("happy".to_string(), Bool);
-    config.variables.insert("tile".to_string(), Enum { values: values.clone() });
+    config.variables.insert(
+      "tile".to_string(),
+      Enum {
+        values: values.clone(),
+      },
+    );
     config.reputations.push("rep_1".to_string());
     let event = include_str!("../../fixtures/events/04-requirements.event");
     let event = Event::parse(event, &config).unwrap();
@@ -310,7 +315,9 @@ mod test {
         EventRequirement::Variable {
           variable: Variable {
             id: "tile".to_string(),
-            kind: Enum { values: values.clone() }
+            kind: Enum {
+              values: values.clone()
+            }
           },
           condition: Condition::Equals,
           value: "forest".to_string()

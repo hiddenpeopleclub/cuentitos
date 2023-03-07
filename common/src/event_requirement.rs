@@ -2,9 +2,8 @@ use crate::DecisionId;
 use crate::EventId;
 use crate::ItemId;
 use crate::ReputationId;
-use crate::Variable;
-use crate::TileId;
 use crate::TimeOfDay;
+use crate::Variable;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -47,5 +46,5 @@ pub enum EventRequirement {
   Event {
     id: EventId,
     condition: Condition,
-  }
+  },
 }

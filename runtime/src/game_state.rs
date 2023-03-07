@@ -1,7 +1,7 @@
 use cuentitos_common::ItemId;
 use cuentitos_common::ReputationId;
-use cuentitos_common::VariableId;
 use cuentitos_common::TimeOfDay;
+use cuentitos_common::VariableId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

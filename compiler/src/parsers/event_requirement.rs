@@ -30,10 +30,11 @@ impl EventRequirement {
                 let mut value = params[2].to_string();
                 let condition = Self::parse_condition(&mut value, Condition::Equals);
 
-                if values.contains(&value)
-                  { Ok((value, condition)) }
-                else
-                  { Err(format!("'{}' is not a valid value", params[2])) }
+                if values.contains(&value) {
+                  Ok((value, condition))
+                } else {
+                  Err(format!("'{}' is not a valid value", params[2]))
+                }
               }
             };
 
@@ -52,10 +53,7 @@ impl EventRequirement {
               Err(error) => Err(format!("{} for variable '{}'", error, variable)),
             }
           }
-          None => Err(format!(
-            "'{}' is not defined as a valid variable",
-            variable
-          )),
+          None => Err(format!("'{}' is not defined as a valid variable", variable)),
         }
       }
       "item" => {
@@ -325,15 +323,18 @@ mod test {
     let mut config = Config::default();
     let id = "health".to_string();
 
-    config.variables.insert(id.clone(), Enum {
-      values: vec!["good".to_string()]
-    });
-    
+    config.variables.insert(
+      id.clone(),
+      Enum {
+        values: vec!["good".to_string()],
+      },
+    );
+
     let variable = Variable {
       id: id.clone(),
       kind: Enum {
-        values: vec!["good".to_string()]
-      }
+        values: vec!["good".to_string()],
+      },
     };
 
     let result = EventRequirement::parse("var health !good", &config).unwrap();

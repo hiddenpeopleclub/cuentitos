@@ -503,9 +503,9 @@ impl Runtime {
           }
           VariableKind::Enum { .. } => {
             if condition == &Condition::Equals {
-              return current_value == *value
+              return current_value == *value;
             } else {
-              return current_value != *value
+              return current_value != *value;
             }
           }
         }
@@ -1002,7 +1002,7 @@ mod test {
 
   #[test]
   fn requirements_on_enum_variable_are_honored() {
-    let values = vec![ "value".to_string(), "another-value".to_string() ];
+    let values = vec!["value".to_string(), "another-value".to_string()];
     let db = Database {
       events: vec![
         Event {
@@ -1010,7 +1010,9 @@ mod test {
           requirements: vec![EventRequirement::Variable {
             variable: Variable {
               id: "variable-1".to_string(),
-              kind: VariableKind::Enum { values: values.clone() },
+              kind: VariableKind::Enum {
+                values: values.clone(),
+              },
             },
             condition: Condition::Equals,
             value: "value".to_string(),
@@ -1022,7 +1024,9 @@ mod test {
           requirements: vec![EventRequirement::Variable {
             variable: Variable {
               id: "variable-1".to_string(),
-              kind: VariableKind::Enum { values: values.clone() },
+              kind: VariableKind::Enum {
+                values: values.clone(),
+              },
             },
             condition: Condition::Equals,
             value: "another-value".to_string(),
@@ -1057,9 +1061,6 @@ mod test {
     );
     assert_eq!(runtime.event_frequencies(), [100]);
   }
-
-
-
 
   #[test]
   fn requirements_on_items_are_honored() {

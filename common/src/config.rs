@@ -3,8 +3,8 @@ use std::path::PathBuf;
 
 use std::collections::HashMap;
 
-use crate::VariableKind;
 use crate::Result;
+use crate::VariableKind;
 
 use serde::{Deserialize, Serialize};
 

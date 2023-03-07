@@ -28,8 +28,7 @@ impl Modifier {
                 } else {
                   Err(format!("invalid value '{}'", value))
                 }
-                
-              },
+              }
             };
 
             match result {
@@ -100,10 +99,7 @@ mod test {
   fn error_on_wrong_modifier() {
     let config = Config::default();
     let result = Modifier::parse("wrong health 100", &config);
-    assert_eq!(
-      Err("\"wrong\" is not a valid modifier".to_string()),
-      result
-    );
+    assert_eq!(Err("\"wrong\" is not a valid modifier".to_string()), result);
   }
 
   #[test]
@@ -203,7 +199,7 @@ mod test {
 
     let values = vec!["good".to_string()];
     config.variables.insert(id.clone(), Enum { values });
-    
+
     let result = Modifier::parse("var health good", &config).unwrap();
     assert_eq!(
       result,
