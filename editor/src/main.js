@@ -39,19 +39,6 @@ async function generate_state() {
     state_ul.appendChild(li);
   }
 
-  // Create Tiles
-  if(config.tiles.length > 0) {
-    let li = document.createElement("li");
-    li.innerHTML = '<label for="current_tile">Tile: <select name="current_tile" id="current_tile" data-method="set_tile"></select></label>';
-    let select = li.querySelector("select");
-    for(let i in config.tiles) {
-      let option = document.createElement("option");
-      option.textContent = config.tiles[i];
-      select.appendChild(option);
-    }
-    state_ul.appendChild(li);
-  }
-
   // Add Reputations
   let reputation_ul = document.querySelector("#state-reputations ul");
   if(config.reputations.length > 0) {
@@ -63,23 +50,23 @@ async function generate_state() {
     }
   }
 
-  // Add Resources
-  let resources_ul = document.querySelector("#state-resources ul");
-  for(let name in config.resources) {
-    let resource = config.resources[name];
+  // Add Variables
+  let variables_ul = document.querySelector("#state-variables ul");
+  for(let name in config.variables) {
+    let variable = config.variables[name];
     let li = document.createElement("li");
-    switch (resource) {
+    switch (variable) {
       case "bool":
-        li.innerHTML = "<label for='resource_"+name+"'>"+name+":<input id='resource_"+name+"' type='checkbox' data-method='set_resource_bool' data-id='"+name+"' data-kind='"+resource+"'/></label>"
+        li.innerHTML = "<label for='variable_"+name+"'>"+name+":<input id='variable_"+name+"' type='checkbox' data-method='set_variable_bool' data-id='"+name+"' data-kind='"+variable+"'/></label>"
         break;
       case "integer":
-        li.innerHTML = "<label for='resource_"+name+"'>"+name+":<input id='resource_"+name+"' type='number' value=0 data-method='set_resource_int' data-id='"+name+"' data-kind='"+resource+"'/></label>"
+        li.innerHTML = "<label for='variable_"+name+"'>"+name+":<input id='variable_"+name+"' type='number' value=0 data-method='set_variable_int' data-id='"+name+"' data-kind='"+variable+"'/></label>"
         break;
       case "float":
-        li.innerHTML = "<label for='resource_"+name+"'>"+name+":<input id='resource_"+name+"' type='number' step='0.1' value=0.0 data-method='set_resource_float' data-id='"+name+"' data-kind='"+resource+"'/></label>"
+        li.innerHTML = "<label for='variable_"+name+"'>"+name+":<input id='variable_"+name+"' type='number' step='0.1' value=0.0 data-method='set_variable_float' data-id='"+name+"' data-kind='"+variable+"'/></label>"
         break;
     }
-    resources_ul.appendChild(li);
+    variables_ul.appendChild(li);
   }
 
   // Add Items
@@ -91,7 +78,7 @@ async function generate_state() {
     const name = item.name;
     const max = item.max_stack_count;
     let li = document.createElement("li");
-    li.innerHTML = "<label for='resource_"+name+"'>"+name+":<input id='resource_"+name+"' type='number' min=0 max="+max+" data-method='set_item' data-id='"+item.id+"' value=0 /></label>"
+    li.innerHTML = "<label for='variable_"+name+"'>"+name+":<input id='variable_"+name+"' type='number' min=0 max="+max+" data-method='set_item' data-id='"+item.id+"' value=0 /></label>"
     items_ul.appendChild(li);
   }
 }
@@ -194,19 +181,16 @@ window.addEventListener("DOMContentLoaded", () => {
       case 'set_locale':
         params["locale"] = target.value;
         break;
-      case 'set_tile':
-        params["tile"] = target.value;
-        break;
-      case 'set_resource_bool':
-        params["resource"] = target.dataset.id;
+      case 'set_variable_bool':
+        params["variable"] = target.dataset.id;
         params["value"] = target.value == "on" ? true : false;
         break;
-      case 'set_resource_float':
-        params["resource"] = target.dataset.id;
+      case 'set_variable_float':
+        params["variable"] = target.dataset.id;
         params["value"] = parseFloat(target.value);
         break;
-      case 'set_resource_int':
-        params["resource"] = target.dataset.id;
+      case 'set_variable_int':
+        params["variable"] = target.dataset.id;
         params["value"] = parseInt(target.value);
         break;
       case 'set_item':

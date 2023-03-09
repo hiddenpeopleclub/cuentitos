@@ -7,7 +7,7 @@ use cuentitos_common::TimeOfDay;
 use cuentitos_common::Condition;
 use cuentitos_common::Event;
 use cuentitos_common::EventRequirement;
-use cuentitos_common::ResourceKind;
+use cuentitos_common::VariableKind;
 use rand::Rng;
 use rand::SeedableRng;
 
@@ -193,30 +193,30 @@ impl Runtime {
     for modifier in &result.modifiers {
       let modifier = modifier.clone();
       match modifier {
-        Modifier::Resource { id, amount } => v.push(crate::Modifier {
-          kind: "resource".to_string(),
+        Modifier::Variable { id, value } => v.push(crate::Modifier {
+          kind: "variable".to_string(),
           id,
-          amount,
+          value,
         }),
-        Modifier::Item { id, amount } => v.push(crate::Modifier {
+        Modifier::Item { id, value } => v.push(crate::Modifier {
           kind: "item".to_string(),
           id,
-          amount,
+          value,
         }),
-        Modifier::Reputation { id, amount } => v.push(crate::Modifier {
+        Modifier::Reputation { id, value } => v.push(crate::Modifier {
           kind: "reputation".to_string(),
           id,
-          amount,
+          value,
         }),
         Modifier::Decision(id) => v.push(crate::Modifier {
           kind: "decision".to_string(),
           id,
-          amount: String::default(),
+          value: String::default(),
         }),
         Modifier::Achievement(id) => v.push(crate::Modifier {
           kind: "achievement".to_string(),
           id,
-          amount: String::default(),
+          value: String::default(),
         }),
         _ => {}
       }
@@ -225,58 +225,58 @@ impl Runtime {
     Some(v)
   }
 
-  pub fn set_resource<R, T>(&mut self, resource: R, value: T) -> Result<(), String>
+  pub fn set_variable<R, T>(&mut self, variable: R, value: T) -> Result<(), String>
   where
     T: Display,
     R: AsRef<str>,
   {
-    let resource = resource.as_ref().to_string();
-    if self.database.config.resources.contains_key(&resource) {
+    let variable = variable.as_ref().to_string();
+    if self.database.config.variables.contains_key(&variable) {
       let t = std::any::type_name::<T>();
-      if (t == "i32" && self.database.config.resources[&resource] == ResourceKind::Integer)
-        || (t == "f32" && self.database.config.resources[&resource] == ResourceKind::Float)
-        || (t == "bool" && self.database.config.resources[&resource] == ResourceKind::Bool)
+      if (t == "i32" && self.database.config.variables[&variable] == VariableKind::Integer)
+        || (t == "f32" && self.database.config.variables[&variable] == VariableKind::Float)
+        || (t == "bool" && self.database.config.variables[&variable] == VariableKind::Bool)
       {
         self
           .game_state
-          .resources
-          .insert(resource, value.to_string());
+          .variables
+          .insert(variable, value.to_string());
       } else {
-        return Err("Invalid Resource Type".to_string());
+        return Err("Invalid Variable Type".to_string());
       }
     } else {
-      return Err("Invalid Resource".to_string());
+      return Err("Invalid Variable".to_string());
     }
     Ok(())
   }
 
-  pub fn get_resource_kind<R>(&self, resource: R) -> Option<ResourceKind>
+  pub fn get_variable_kind<R>(&self, variable: R) -> Option<VariableKind>
   where
     R: AsRef<str>,
   {
-    let resource = resource.as_ref();
+    let variable = variable.as_ref();
 
-    if self.database.config.resources.contains_key(resource) {
-      Some(self.database.config.resources[resource].clone())
+    if self.database.config.variables.contains_key(variable) {
+      Some(self.database.config.variables[variable].clone())
     } else {
       None
     }
   }
 
-  pub fn get_resource<R, T>(&self, resource: R) -> Result<T, String>
+  pub fn get_variable<R, T>(&self, variable: R) -> Result<T, String>
   where
     T: Display + std::str::FromStr + Default,
     R: AsRef<str>,
   {
-    let resource = resource.as_ref().to_string();
-    if self.database.config.resources.contains_key(&resource) {
+    let variable = variable.as_ref().to_string();
+    if self.database.config.variables.contains_key(&variable) {
       let t = std::any::type_name::<T>();
 
-      if (t == "i32" && self.database.config.resources[&resource] == ResourceKind::Integer)
-        || (t == "f32" && self.database.config.resources[&resource] == ResourceKind::Float)
-        || (t == "bool" && self.database.config.resources[&resource] == ResourceKind::Bool)
+      if (t == "i32" && self.database.config.variables[&variable] == VariableKind::Integer)
+        || (t == "f32" && self.database.config.variables[&variable] == VariableKind::Float)
+        || (t == "bool" && self.database.config.variables[&variable] == VariableKind::Bool)
       {
-        let value = match self.game_state.resources.get(&resource) {
+        let value = match self.game_state.variables.get(&variable) {
           Some(value) => value.clone(),
           None => T::default().to_string(),
         };
@@ -288,9 +288,9 @@ impl Runtime {
         }
       }
     } else {
-      return Err("Invalid Resource".to_string());
+      return Err("Invalid Variable".to_string());
     }
-    return Err("Invalid Resource".to_string());
+    return Err("Invalid Variable".to_string());
   }
 
   pub fn set_item<T>(&mut self, item: T, count: u8) -> Result<(), String>
@@ -315,20 +315,6 @@ impl Runtime {
 
   pub fn set_time_of_day(&mut self, time_of_day: TimeOfDay) {
     self.game_state.time_of_day = time_of_day;
-  }
-
-  pub fn set_tile<T>(&mut self, tile: T) -> Result<(), String>
-  where
-    T: AsRef<str>,
-  {
-    let tile = tile.as_ref().to_string();
-
-    if self.database.config.tiles.contains(&tile) {
-      self.game_state.tile = tile;
-      Ok(())
-    } else {
-      Err("Invalid Tile".to_string())
-    }
   }
 
   pub fn get_reputation<T>(&self, reputation_id: T) -> Result<i32, String>
@@ -385,7 +371,7 @@ impl Runtime {
     }
   }
 
-  fn add_reputation<T>(&mut self, reputation_id: T, amount: i32) -> Result<(), String>
+  fn add_reputation<T>(&mut self, reputation_id: T, value: i32) -> Result<(), String>
   where
     T: AsRef<str>,
   {
@@ -396,11 +382,11 @@ impl Runtime {
       Some(reputation) => self
         .game_state
         .reputations
-        .insert(reputation_id.to_string(), reputation + amount),
+        .insert(reputation_id.to_string(), reputation + value),
       None => self
         .game_state
         .reputations
-        .insert(reputation_id.to_string(), amount),
+        .insert(reputation_id.to_string(), value),
     };
     Ok(())
   }
@@ -436,9 +422,9 @@ impl Runtime {
 
   fn apply_modifier(&mut self, modifier: &cuentitos_common::Modifier) -> Result<(), String> {
     match modifier {
-      Modifier::Reputation { id, amount } => match amount.parse::<i32>() {
-        Ok(amount) => self.add_reputation(id, amount),
-        Err(error) => Err(format!("Couldn't parse amount: {}", error)),
+      Modifier::Reputation { id, value } => match value.parse::<i32>() {
+        Ok(value) => self.add_reputation(id, value),
+        Err(error) => Err(format!("Couldn't parse value: {}", error)),
       },
       Modifier::Decision(id) => Ok(self.set_decision(id)),
       _ => Ok(()),
@@ -454,7 +440,7 @@ impl Runtime {
         (!self.state.previous_event_cooldown.contains_key(&event.id) // Event has not been chosen before, or cooldown happened
           || self.state.previous_event_cooldown[&event.id] >= 0) &&     //
 
-        self.resource_requirements_met(event)
+        self.variable_requirements_met(event)
       {
         result.push(event.id.clone());
       }
@@ -462,7 +448,7 @@ impl Runtime {
     result
   }
 
-  fn resource_requirements_met(&self, event: &Event) -> bool {
+  fn variable_requirements_met(&self, event: &Event) -> bool {
     let mut result = true;
 
     for requirement in &event.requirements {
@@ -474,21 +460,21 @@ impl Runtime {
 
   fn requirement_met(&self, requirement: &EventRequirement) -> bool {
     match requirement {
-      EventRequirement::Resource {
-        resource,
+      EventRequirement::Variable {
+        variable,
         condition,
-        amount,
+        value,
       } => {
         let current_value = self
           .game_state
-          .resources
-          .get(&resource.id)
+          .variables
+          .get(&variable.id)
           .unwrap_or(&"0".to_string())
           .clone();
-        match resource.kind {
-          ResourceKind::Integer => {
+        match &variable.kind {
+          VariableKind::Integer => {
             let cv = current_value.parse::<i32>().unwrap_or(0);
-            let a = amount.parse::<i32>().unwrap_or(0);
+            let a = value.parse::<i32>().unwrap_or(0);
             match condition {
               Condition::Equals => return cv == a,
               Condition::HigherThan => return cv > a,
@@ -496,9 +482,9 @@ impl Runtime {
               _ => return true,
             }
           }
-          ResourceKind::Float => {
+          VariableKind::Float => {
             let cv = current_value.parse::<f32>().unwrap_or(0.0);
-            let a = amount.parse::<f32>().unwrap_or(0.0);
+            let a = value.parse::<f32>().unwrap_or(0.0);
             match condition {
               Condition::Equals => return cv == a,
               Condition::HigherThan => return cv > a,
@@ -506,24 +492,31 @@ impl Runtime {
               _ => return true,
             }
           }
-          ResourceKind::Bool => {
+          VariableKind::Bool => {
             let cv = current_value.parse::<bool>().unwrap_or(false);
-            let a = amount.parse::<bool>().unwrap_or(false);
+            let a = value.parse::<bool>().unwrap_or(false);
 
             if condition == &Condition::Equals {
               return cv == a;
             }
             return true;
           }
+          VariableKind::Enum { .. } => {
+            if condition == &Condition::Equals {
+              return current_value == *value;
+            } else {
+              return current_value != *value;
+            }
+          }
         }
       }
       EventRequirement::Item {
         id,
         condition,
-        amount,
+        value,
       } => {
         let cv = *self.game_state.items.get(id).unwrap_or(&0);
-        let a = amount.parse::<u8>().unwrap_or(0);
+        let a = value.parse::<u8>().unwrap_or(0);
         match condition {
           Condition::Equals => return cv == a,
           Condition::HigherThan => return cv > a,
@@ -534,10 +527,10 @@ impl Runtime {
       EventRequirement::Reputation {
         id,
         condition,
-        amount,
+        value,
       } => {
         let cv = *self.game_state.reputations.get(id).unwrap_or(&0);
-        let a = amount.parse::<i32>().unwrap_or(0);
+        let a = value.parse::<i32>().unwrap_or(0);
         match condition {
           Condition::Equals => return cv == a,
           Condition::HigherThan => return cv > a,
@@ -561,11 +554,6 @@ impl Runtime {
       EventRequirement::Event { id, condition } => match condition {
         Condition::Depends => return self.state.previous_events.contains(id),
         Condition::MutEx => return !self.state.previous_events.contains(id),
-        _ => return true,
-      },
-      EventRequirement::Tile { id, condition } => match condition {
-        Condition::Equals => return self.game_state.tile == *id,
-        Condition::MutEx => return self.game_state.tile != *id,
         _ => return true,
       },
       EventRequirement::Empty => true,
@@ -796,42 +784,42 @@ mod test {
   }
 
   #[test]
-  fn requirements_on_integer_resource_are_honored() {
+  fn requirements_on_integer_variable_are_honored() {
     let db = Database {
       events: vec![
         Event {
-          id: "event-resource-integer-higher-than".to_string(),
-          requirements: vec![EventRequirement::Resource {
-            resource: Resource {
-              id: "resource-1".to_string(),
-              kind: ResourceKind::Integer,
+          id: "event-variable-integer-higher-than".to_string(),
+          requirements: vec![EventRequirement::Variable {
+            variable: Variable {
+              id: "variable-1".to_string(),
+              kind: VariableKind::Integer,
             },
             condition: Condition::HigherThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
         Event {
-          id: "event-resource-integer-less-than".to_string(),
-          requirements: vec![EventRequirement::Resource {
-            resource: Resource {
-              id: "resource-1".to_string(),
-              kind: ResourceKind::Integer,
+          id: "event-variable-integer-less-than".to_string(),
+          requirements: vec![EventRequirement::Variable {
+            variable: Variable {
+              id: "variable-1".to_string(),
+              kind: VariableKind::Integer,
             },
             condition: Condition::LessThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
         Event {
-          id: "event-resource-integer-equals".to_string(),
-          requirements: vec![EventRequirement::Resource {
-            resource: Resource {
-              id: "resource-1".to_string(),
-              kind: ResourceKind::Integer,
+          id: "event-variable-integer-equals".to_string(),
+          requirements: vec![EventRequirement::Variable {
+            variable: Variable {
+              id: "variable-1".to_string(),
+              kind: VariableKind::Integer,
             },
             condition: Condition::Equals,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -839,81 +827,81 @@ mod test {
       ..Default::default()
     };
 
-    let resource = "resource-1".to_string();
+    let variable = "variable-1".to_string();
 
     let mut runtime = Runtime::new(db);
 
     runtime
       .game_state
-      .resources
-      .insert(resource.clone(), "2".to_string());
+      .variables
+      .insert(variable.clone(), "2".to_string());
     assert_eq!(
       runtime.available_events(),
-      ["event-resource-integer-less-than"]
+      ["event-variable-integer-less-than"]
     );
 
     assert_eq!(runtime.event_frequencies(), [100]);
 
     runtime
       .game_state
-      .resources
-      .insert(resource.clone(), "12".to_string());
+      .variables
+      .insert(variable.clone(), "12".to_string());
     assert_eq!(
       runtime.available_events(),
-      ["event-resource-integer-higher-than"]
+      ["event-variable-integer-higher-than"]
     );
 
     assert_eq!(runtime.event_frequencies(), [100]);
 
     runtime
       .game_state
-      .resources
-      .insert(resource, "10".to_string());
+      .variables
+      .insert(variable, "10".to_string());
     assert_eq!(
       runtime.available_events(),
-      ["event-resource-integer-equals"]
+      ["event-variable-integer-equals"]
     );
 
     assert_eq!(runtime.event_frequencies(), [100]);
   }
 
   #[test]
-  fn requirements_on_float_resource_are_honored() {
+  fn requirements_on_float_variable_are_honored() {
     let db = Database {
       events: vec![
         Event {
-          id: "event-resource-float-higher-than".to_string(),
-          requirements: vec![EventRequirement::Resource {
-            resource: Resource {
-              id: "resource-1".to_string(),
-              kind: ResourceKind::Float,
+          id: "event-variable-float-higher-than".to_string(),
+          requirements: vec![EventRequirement::Variable {
+            variable: Variable {
+              id: "variable-1".to_string(),
+              kind: VariableKind::Float,
             },
             condition: Condition::HigherThan,
-            amount: "10.5".to_string(),
+            value: "10.5".to_string(),
           }],
           ..Default::default()
         },
         Event {
-          id: "event-resource-float-less-than".to_string(),
-          requirements: vec![EventRequirement::Resource {
-            resource: Resource {
-              id: "resource-1".to_string(),
-              kind: ResourceKind::Float,
+          id: "event-variable-float-less-than".to_string(),
+          requirements: vec![EventRequirement::Variable {
+            variable: Variable {
+              id: "variable-1".to_string(),
+              kind: VariableKind::Float,
             },
             condition: Condition::LessThan,
-            amount: "10.5".to_string(),
+            value: "10.5".to_string(),
           }],
           ..Default::default()
         },
         Event {
-          id: "event-resource-float-equals".to_string(),
-          requirements: vec![EventRequirement::Resource {
-            resource: Resource {
-              id: "resource-1".to_string(),
-              kind: ResourceKind::Float,
+          id: "event-variable-float-equals".to_string(),
+          requirements: vec![EventRequirement::Variable {
+            variable: Variable {
+              id: "variable-1".to_string(),
+              kind: VariableKind::Float,
             },
             condition: Condition::Equals,
-            amount: "10.5".to_string(),
+            value: "10.5".to_string(),
           }],
           ..Default::default()
         },
@@ -921,65 +909,65 @@ mod test {
       ..Default::default()
     };
 
-    let resource = "resource-1".to_string();
+    let variable = "variable-1".to_string();
 
     let mut runtime = Runtime::new(db);
 
     runtime
       .game_state
-      .resources
-      .insert(resource.clone(), "2.5".to_string());
+      .variables
+      .insert(variable.clone(), "2.5".to_string());
     assert_eq!(
       runtime.available_events(),
-      ["event-resource-float-less-than"]
+      ["event-variable-float-less-than"]
     );
     assert_eq!(runtime.event_frequencies(), [100]);
 
     runtime
       .game_state
-      .resources
-      .insert(resource.clone(), "12.5".to_string());
+      .variables
+      .insert(variable.clone(), "12.5".to_string());
     assert_eq!(
       runtime.available_events(),
-      ["event-resource-float-higher-than"]
+      ["event-variable-float-higher-than"]
     );
 
     assert_eq!(runtime.event_frequencies(), [100]);
 
     runtime
       .game_state
-      .resources
-      .insert(resource, "10.5".to_string());
-    assert_eq!(runtime.available_events(), ["event-resource-float-equals"]);
+      .variables
+      .insert(variable, "10.5".to_string());
+    assert_eq!(runtime.available_events(), ["event-variable-float-equals"]);
 
     assert_eq!(runtime.event_frequencies(), [100]);
   }
 
   #[test]
-  fn requirements_on_bool_resource_are_honored() {
+  fn requirements_on_bool_variable_are_honored() {
     let db = Database {
       events: vec![
         Event {
-          id: "event-resource-bool-equals-true".to_string(),
-          requirements: vec![EventRequirement::Resource {
-            resource: Resource {
-              id: "resource-1".to_string(),
-              kind: ResourceKind::Bool,
+          id: "event-variable-bool-equals-true".to_string(),
+          requirements: vec![EventRequirement::Variable {
+            variable: Variable {
+              id: "variable-1".to_string(),
+              kind: VariableKind::Bool,
             },
             condition: Condition::Equals,
-            amount: "true".to_string(),
+            value: "true".to_string(),
           }],
           ..Default::default()
         },
         Event {
-          id: "event-resource-bool-equals-false".to_string(),
-          requirements: vec![EventRequirement::Resource {
-            resource: Resource {
-              id: "resource-1".to_string(),
-              kind: ResourceKind::Bool,
+          id: "event-variable-bool-equals-false".to_string(),
+          requirements: vec![EventRequirement::Variable {
+            variable: Variable {
+              id: "variable-1".to_string(),
+              kind: VariableKind::Bool,
             },
             condition: Condition::Equals,
-            amount: "false".to_string(),
+            value: "false".to_string(),
           }],
           ..Default::default()
         },
@@ -987,27 +975,89 @@ mod test {
       ..Default::default()
     };
 
-    let resource = "resource-1".to_string();
+    let variable = "variable-1".to_string();
 
     let mut runtime = Runtime::new(db);
 
     runtime
       .game_state
-      .resources
-      .insert(resource.clone(), "true".to_string());
+      .variables
+      .insert(variable.clone(), "true".to_string());
     assert_eq!(
       runtime.available_events(),
-      ["event-resource-bool-equals-true"]
+      ["event-variable-bool-equals-true"]
     );
     assert_eq!(runtime.event_frequencies(), [100]);
 
     runtime
       .game_state
-      .resources
-      .insert(resource.clone(), "false".to_string());
+      .variables
+      .insert(variable.clone(), "false".to_string());
     assert_eq!(
       runtime.available_events(),
-      ["event-resource-bool-equals-false"]
+      ["event-variable-bool-equals-false"]
+    );
+    assert_eq!(runtime.event_frequencies(), [100]);
+  }
+
+  #[test]
+  fn requirements_on_enum_variable_are_honored() {
+    let values = vec!["value".to_string(), "another-value".to_string()];
+    let db = Database {
+      events: vec![
+        Event {
+          id: "event-variable-bool-equals-value".to_string(),
+          requirements: vec![EventRequirement::Variable {
+            variable: Variable {
+              id: "variable-1".to_string(),
+              kind: VariableKind::Enum {
+                values: values.clone(),
+              },
+            },
+            condition: Condition::Equals,
+            value: "value".to_string(),
+          }],
+          ..Default::default()
+        },
+        Event {
+          id: "event-variable-bool-equals-another-value".to_string(),
+          requirements: vec![EventRequirement::Variable {
+            variable: Variable {
+              id: "variable-1".to_string(),
+              kind: VariableKind::Enum {
+                values: values.clone(),
+              },
+            },
+            condition: Condition::Equals,
+            value: "another-value".to_string(),
+          }],
+          ..Default::default()
+        },
+      ],
+      ..Default::default()
+    };
+
+    let variable = "variable-1".to_string();
+
+    let mut runtime = Runtime::new(db);
+
+    runtime
+      .game_state
+      .variables
+      .insert(variable.clone(), "value".to_string());
+    assert_eq!(
+      runtime.available_events(),
+      ["event-variable-bool-equals-value"]
+    );
+    assert_eq!(runtime.event_frequencies(), [100]);
+
+    runtime
+      .game_state
+      .variables
+      .insert(variable.clone(), "another-value".to_string());
+    assert_eq!(
+      runtime.available_events(),
+      ["event-variable-bool-equals-another-value"]
     );
     assert_eq!(runtime.event_frequencies(), [100]);
   }
@@ -1021,7 +1071,7 @@ mod test {
           requirements: vec![EventRequirement::Item {
             id: "item".to_string(),
             condition: Condition::Equals,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1030,7 +1080,7 @@ mod test {
           requirements: vec![EventRequirement::Item {
             id: "item".to_string(),
             condition: Condition::HigherThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1039,7 +1089,7 @@ mod test {
           requirements: vec![EventRequirement::Item {
             id: "item".to_string(),
             condition: Condition::LessThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1048,7 +1098,7 @@ mod test {
           requirements: vec![EventRequirement::Item {
             id: "missing".to_string(),
             condition: Condition::HigherThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1057,7 +1107,7 @@ mod test {
           requirements: vec![EventRequirement::Item {
             id: "missing".to_string(),
             condition: Condition::LessThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1099,7 +1149,7 @@ mod test {
           requirements: vec![EventRequirement::Reputation {
             id: "reputation".to_string(),
             condition: Condition::Equals,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1108,7 +1158,7 @@ mod test {
           requirements: vec![EventRequirement::Reputation {
             id: "reputation".to_string(),
             condition: Condition::HigherThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1117,7 +1167,7 @@ mod test {
           requirements: vec![EventRequirement::Reputation {
             id: "reputation".to_string(),
             condition: Condition::LessThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1126,7 +1176,7 @@ mod test {
           requirements: vec![EventRequirement::Reputation {
             id: "missing".to_string(),
             condition: Condition::HigherThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1135,7 +1185,7 @@ mod test {
           requirements: vec![EventRequirement::Reputation {
             id: "missing".to_string(),
             condition: Condition::LessThan,
-            amount: "10".to_string(),
+            value: "10".to_string(),
           }],
           ..Default::default()
         },
@@ -1303,41 +1353,6 @@ mod test {
   }
 
   #[test]
-  fn requirements_on_tile_are_honored() {
-    let db = Database {
-      events: vec![
-        Event {
-          id: "event-tile-forest".to_string(),
-          requirements: vec![EventRequirement::Tile {
-            id: "forest".to_string(),
-            condition: Condition::Equals,
-          }],
-          ..Default::default()
-        },
-        Event {
-          id: "event-tile-not-forest".to_string(),
-          requirements: vec![EventRequirement::Tile {
-            id: "forest".to_string(),
-            condition: Condition::MutEx,
-          }],
-          ..Default::default()
-        },
-      ],
-      ..Default::default()
-    };
-
-    let mut runtime = Runtime::new(db);
-
-    runtime.game_state.tile = "plain".to_string();
-    assert_eq!(runtime.available_events(), ["event-tile-not-forest"]);
-    assert_eq!(runtime.event_frequencies(), [100]);
-
-    runtime.game_state.tile = "forest".to_string();
-    assert_eq!(runtime.available_events(), ["event-tile-forest"]);
-    assert_eq!(runtime.event_frequencies(), [100]);
-  }
-
-  #[test]
   fn set_choice_with_valid_choice_works() {
     let db = Database {
       events: vec![Event {
@@ -1377,7 +1392,7 @@ mod test {
           requirements: vec![cuentitos_common::EventRequirement::Item {
             id: "my-item".to_string(),
             condition: cuentitos_common::Condition::Equals,
-            amount: 1.to_string(),
+            value: 1.to_string(),
           }],
           ..Default::default()
         }],
@@ -1439,76 +1454,52 @@ mod test {
   }
 
   #[test]
-  fn set_tile_works() {
-    let db = Database {
-      config: Config {
-        tiles: vec!["forest".to_string()],
-        ..Default::default()
-      },
-      ..Default::default()
-    };
-
-    let mut runtime = Runtime::new(db);
-
-    assert_eq!(runtime.game_state.tile, "");
-
-    runtime.set_tile("forest").unwrap();
-
-    assert_eq!(runtime.game_state.tile, "forest");
-
-    assert_eq!(
-      runtime.set_tile("missing_tile"),
-      Err("Invalid Tile".to_string())
-    );
-  }
-
-  #[test]
-  fn set_game_state_resource() {
+  fn set_game_state_variable() {
     let mut db = Database::default();
     db.config
-      .resources
-      .insert("resource-int".to_string(), ResourceKind::Integer);
+      .variables
+      .insert("variable-int".to_string(), VariableKind::Integer);
     db.config
-      .resources
-      .insert("resource-float".to_string(), ResourceKind::Float);
+      .variables
+      .insert("variable-float".to_string(), VariableKind::Float);
     db.config
-      .resources
-      .insert("resource-bool".to_string(), ResourceKind::Bool);
+      .variables
+      .insert("variable-bool".to_string(), VariableKind::Bool);
 
     let mut runtime = Runtime::new(db);
 
     assert_eq!(
-      runtime.set_resource("invalid".to_string(), 1),
-      Err("Invalid Resource".to_string())
+      runtime.set_variable("invalid".to_string(), 1),
+      Err("Invalid Variable".to_string())
     );
 
     assert_eq!(
-      runtime.set_resource("resource-int".to_string(), 10.5),
-      Err("Invalid Resource Type".to_string())
+      runtime.set_variable("variable-int".to_string(), 10.5),
+      Err("Invalid Variable Type".to_string())
     );
     assert_eq!(
-      runtime.set_resource("resource-float".to_string(), true),
-      Err("Invalid Resource Type".to_string())
+      runtime.set_variable("variable-float".to_string(), true),
+      Err("Invalid Variable Type".to_string())
     );
     assert_eq!(
-      runtime.set_resource("resource-bool".to_string(), 10),
-      Err("Invalid Resource Type".to_string())
+      runtime.set_variable("variable-bool".to_string(), 10),
+      Err("Invalid Variable Type".to_string())
     );
 
-    runtime.set_resource("resource-int", 10).unwrap();
-    runtime.set_resource("resource-float", 10.5 as f32).unwrap();
-    runtime.set_resource("resource-bool", true).unwrap();
+    runtime.set_variable("variable-int", 10).unwrap();
+    runtime.set_variable("variable-float", 10.5 as f32).unwrap();
+    runtime.set_variable("variable-bool", true).unwrap();
 
     assert_eq!(
-      runtime.get_resource::<&str, i32>("resource-int").unwrap(),
+      runtime.get_variable::<&str, i32>("variable-int").unwrap(),
       10
     );
     assert_eq!(
-      runtime.get_resource::<&str, f32>("resource-float").unwrap(),
+      runtime.get_variable::<&str, f32>("variable-float").unwrap(),
       10.5
     );
     assert_eq!(
-      runtime.get_resource::<&str, bool>("resource-bool").unwrap(),
+      runtime.get_variable::<&str, bool>("variable-bool").unwrap(),
       true
     );
   }
@@ -1594,45 +1585,45 @@ mod test {
           results: vec![cuentitos_common::EventResult {
             chance: 100,
             modifiers: vec![
-              Modifier::Resource {
-                id: "resource-1".to_string(),
-                amount: "1".to_string(),
+              Modifier::Variable {
+                id: "variable-1".to_string(),
+                value: "1".to_string(),
               },
-              Modifier::Resource {
-                id: "resource-2".to_string(),
-                amount: "-1".to_string(),
+              Modifier::Variable {
+                id: "variable-2".to_string(),
+                value: "-1".to_string(),
               },
-              Modifier::Resource {
-                id: "resource-3".to_string(),
-                amount: "1.5".to_string(),
+              Modifier::Variable {
+                id: "variable-3".to_string(),
+                value: "1.5".to_string(),
               },
-              Modifier::Resource {
-                id: "resource-4".to_string(),
-                amount: "-1.5".to_string(),
+              Modifier::Variable {
+                id: "variable-4".to_string(),
+                value: "-1.5".to_string(),
               },
-              Modifier::Resource {
-                id: "resource-5".to_string(),
-                amount: "true".to_string(),
+              Modifier::Variable {
+                id: "variable-5".to_string(),
+                value: "true".to_string(),
               },
-              Modifier::Resource {
-                id: "resource-6".to_string(),
-                amount: "false".to_string(),
+              Modifier::Variable {
+                id: "variable-6".to_string(),
+                value: "false".to_string(),
               },
               Modifier::Item {
                 id: "item-1".to_string(),
-                amount: "1".to_string(),
+                value: "1".to_string(),
               },
               Modifier::Item {
                 id: "item-2".to_string(),
-                amount: "-1".to_string(),
+                value: "-1".to_string(),
               },
               Modifier::Reputation {
                 id: "reputation-1".to_string(),
-                amount: "1".to_string(),
+                value: "1".to_string(),
               },
               Modifier::Reputation {
                 id: "reputation-2".to_string(),
-                amount: "-1".to_string(),
+                value: "-1".to_string(),
               },
               Modifier::Decision("decision-1".to_string()),
               Modifier::Achievement("achievement-1".to_string()),
@@ -1647,23 +1638,23 @@ mod test {
     };
 
     db.config
-      .resources
-      .insert("resource-1".to_string(), ResourceKind::Integer);
+      .variables
+      .insert("variable-1".to_string(), VariableKind::Integer);
     db.config
-      .resources
-      .insert("resource-2".to_string(), ResourceKind::Integer);
+      .variables
+      .insert("variable-2".to_string(), VariableKind::Integer);
     db.config
-      .resources
-      .insert("resource-3".to_string(), ResourceKind::Float);
+      .variables
+      .insert("variable-3".to_string(), VariableKind::Float);
     db.config
-      .resources
-      .insert("resource-4".to_string(), ResourceKind::Float);
+      .variables
+      .insert("variable-4".to_string(), VariableKind::Float);
     db.config
-      .resources
-      .insert("resource-5".to_string(), ResourceKind::Bool);
+      .variables
+      .insert("variable-5".to_string(), VariableKind::Bool);
     db.config
-      .resources
-      .insert("resource-6".to_string(), ResourceKind::Bool);
+      .variables
+      .insert("variable-6".to_string(), VariableKind::Bool);
     db.config.reputations.push("reputation-1".to_string());
     db.config.reputations.push("reputation-2".to_string());
 
@@ -1693,54 +1684,54 @@ mod test {
     assert_eq!(
       modifiers[0],
       crate::Modifier {
-        kind: "resource".to_string(),
-        id: "resource-1".to_string(),
-        amount: "1".to_string(),
+        kind: "variable".to_string(),
+        id: "variable-1".to_string(),
+        value: "1".to_string(),
       }
     );
 
     assert_eq!(
       modifiers[1],
       crate::Modifier {
-        kind: "resource".to_string(),
-        id: "resource-2".to_string(),
-        amount: "-1".to_string(),
+        kind: "variable".to_string(),
+        id: "variable-2".to_string(),
+        value: "-1".to_string(),
       }
     );
 
     assert_eq!(
       modifiers[2],
       crate::Modifier {
-        kind: "resource".to_string(),
-        id: "resource-3".to_string(),
-        amount: "1.5".to_string(),
+        kind: "variable".to_string(),
+        id: "variable-3".to_string(),
+        value: "1.5".to_string(),
       }
     );
 
     assert_eq!(
       modifiers[3],
       crate::Modifier {
-        kind: "resource".to_string(),
-        id: "resource-4".to_string(),
-        amount: "-1.5".to_string(),
+        kind: "variable".to_string(),
+        id: "variable-4".to_string(),
+        value: "-1.5".to_string(),
       }
     );
 
     assert_eq!(
       modifiers[4],
       crate::Modifier {
-        kind: "resource".to_string(),
-        id: "resource-5".to_string(),
-        amount: "true".to_string(),
+        kind: "variable".to_string(),
+        id: "variable-5".to_string(),
+        value: "true".to_string(),
       }
     );
 
     assert_eq!(
       modifiers[5],
       crate::Modifier {
-        kind: "resource".to_string(),
-        id: "resource-6".to_string(),
-        amount: "false".to_string(),
+        kind: "variable".to_string(),
+        id: "variable-6".to_string(),
+        value: "false".to_string(),
       }
     );
 
@@ -1749,7 +1740,7 @@ mod test {
       crate::Modifier {
         kind: "item".to_string(),
         id: "item-1".to_string(),
-        amount: "1".to_string(),
+        value: "1".to_string(),
       }
     );
 
@@ -1758,7 +1749,7 @@ mod test {
       crate::Modifier {
         kind: "item".to_string(),
         id: "item-2".to_string(),
-        amount: "-1".to_string(),
+        value: "-1".to_string(),
       }
     );
 
@@ -1767,7 +1758,7 @@ mod test {
       crate::Modifier {
         kind: "reputation".to_string(),
         id: "reputation-1".to_string(),
-        amount: "1".to_string(),
+        value: "1".to_string(),
       }
     );
 
@@ -1776,7 +1767,7 @@ mod test {
       crate::Modifier {
         kind: "reputation".to_string(),
         id: "reputation-2".to_string(),
-        amount: "-1".to_string(),
+        value: "-1".to_string(),
       }
     );
 
@@ -1785,7 +1776,7 @@ mod test {
       crate::Modifier {
         kind: "decision".to_string(),
         id: "decision-1".to_string(),
-        amount: "".to_string(),
+        value: "".to_string(),
       }
     );
 
@@ -1794,7 +1785,7 @@ mod test {
       crate::Modifier {
         kind: "achievement".to_string(),
         id: "achievement-1".to_string(),
-        amount: "".to_string(),
+        value: "".to_string(),
       }
     );
   }
@@ -1810,11 +1801,11 @@ mod test {
             modifiers: vec![
               Modifier::Reputation {
                 id: "reputation-1".to_string(),
-                amount: "1".to_string(),
+                value: "1".to_string(),
               },
               Modifier::Reputation {
                 id: "reputation-2".to_string(),
-                amount: "-1".to_string(),
+                value: "-1".to_string(),
               },
               Modifier::Decision("decision-1".to_string()),
             ],

@@ -74,53 +74,53 @@ pub extern "C" fn cuentitos_set_seed(id: RuntimeId, seed: u64) {
 }
 
 #[no_mangle]
-pub extern "C" fn cuentitos_set_int_resource(id: RuntimeId, resource: Cstring, value: i32) -> bool {
-  set_resource(id, resource, value)
+pub extern "C" fn cuentitos_set_int_variable(id: RuntimeId, variable: Cstring, value: i32) -> bool {
+  set_variable(id, variable, value)
 }
 
 #[no_mangle]
-pub extern "C" fn cuentitos_set_float_resource(
+pub extern "C" fn cuentitos_set_float_variable(
   id: RuntimeId,
-  resource: Cstring,
+  variable: Cstring,
   value: f32,
 ) -> bool {
-  set_resource(id, resource, value)
+  set_variable(id, variable, value)
 }
 
 #[no_mangle]
-pub extern "C" fn cuentitos_set_bool_resource(
+pub extern "C" fn cuentitos_set_bool_variable(
   id: RuntimeId,
-  resource: Cstring,
+  variable: Cstring,
   value: bool,
 ) -> bool {
-  set_resource(id, resource, value)
+  set_variable(id, variable, value)
 }
 
 #[no_mangle]
-pub extern "C" fn cuentitos_get_int_resource(
+pub extern "C" fn cuentitos_get_int_variable(
   id: RuntimeId,
-  resource: Cstring,
+  variable: Cstring,
   value: *mut i32,
 ) -> bool {
-  get_resource(id, resource, value)
+  get_variable(id, variable, value)
 }
 
 #[no_mangle]
-pub extern "C" fn cuentitos_get_float_resource(
+pub extern "C" fn cuentitos_get_float_variable(
   id: RuntimeId,
-  resource: Cstring,
+  variable: Cstring,
   value: *mut f32,
 ) -> bool {
-  get_resource(id, resource, value)
+  get_variable(id, variable, value)
 }
 
 #[no_mangle]
-pub extern "C" fn cuentitos_get_bool_resource(
+pub extern "C" fn cuentitos_get_bool_variable(
   id: RuntimeId,
-  resource: Cstring,
+  variable: Cstring,
   value: *mut bool,
 ) -> bool {
-  get_resource(id, resource, value)
+  get_variable(id, variable, value)
 }
 
 #[no_mangle]
@@ -148,18 +148,6 @@ pub extern "C" fn cuentitos_set_time_of_day(id: RuntimeId, time_of_day: TimeOfDa
     TimeOfDay::Night => get_runtime(id).set_time_of_day(cuentitos_common::TimeOfDay::Night),
   }
   true
-}
-
-#[no_mangle]
-pub extern "C" fn cuentitos_set_tile(id: RuntimeId, tile: Cstring) -> bool {
-  if invalid_runtime(id) {
-    return false;
-  }
-  if tile.is_null() {
-    return false;
-  }
-  let tile = rust_string(tile);
-  Ok(()) == get_runtime(id).set_tile(tile)
 }
 
 #[no_mangle]
@@ -291,28 +279,28 @@ pub extern "C" fn cuentitos_current_modifiers(
   false
 }
 
-fn set_resource<T>(id: RuntimeId, resource: Cstring, value: T) -> bool
+fn set_variable<T>(id: RuntimeId, variable: Cstring, value: T) -> bool
 where
   T: Display,
 {
   if invalid_runtime(id) {
     return false;
   }
-  if resource.is_null() {
+  if variable.is_null() {
     return false;
   }
-  let resource = rust_string(resource);
-  Ok(()) == get_runtime(id).set_resource(resource, value)
+  let variable = rust_string(variable);
+  Ok(()) == get_runtime(id).set_variable(variable, value)
 }
 
-fn get_resource<T>(id: RuntimeId, resource: Cstring, value: *mut T) -> bool
+fn get_variable<T>(id: RuntimeId, variable: Cstring, value: *mut T) -> bool
 where
   T: Display + std::str::FromStr + std::default::Default,
 {
   if invalid_runtime(id) {
     return false;
   }
-  if resource.is_null() {
+  if variable.is_null() {
     return false;
   }
   if value.is_null() {
@@ -320,10 +308,10 @@ where
   }
 
   let runtime = get_runtime(id);
-  let resource = rust_string(resource);
-  if let Ok(resource_value) = runtime.get_resource(resource) {
+  let variable = rust_string(variable);
+  if let Ok(variable_value) = runtime.get_variable(variable) {
     unsafe {
-      *value = resource_value;
+      *value = variable_value;
       return true;
     }
   }

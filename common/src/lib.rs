@@ -20,8 +20,8 @@ pub use modifier::*;
 mod event_result;
 pub use event_result::*;
 
-mod resource;
-pub use resource::*;
+mod variable;
+pub use variable::*;
 
 mod config;
 pub use config::Config;

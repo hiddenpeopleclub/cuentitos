@@ -2,24 +2,24 @@ use crate::AchievementId;
 use crate::DecisionId;
 use crate::ItemId;
 use crate::ReputationId;
-use crate::ResourceId;
+use crate::VariableId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum Modifier {
   #[default]
   Empty,
-  Resource {
-    id: ResourceId,
-    amount: String,
+  Variable {
+    id: VariableId,
+    value: String,
   },
   Item {
     id: ItemId,
-    amount: String,
+    value: String,
   },
   Reputation {
     id: ReputationId,
-    amount: String,
+    value: String,
   },
   Decision(DecisionId),
   Achievement(AchievementId),

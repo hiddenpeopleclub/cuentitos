@@ -2,9 +2,8 @@ use crate::DecisionId;
 use crate::EventId;
 use crate::ItemId;
 use crate::ReputationId;
-use crate::Resource;
-use crate::TileId;
 use crate::TimeOfDay;
+use crate::Variable;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -21,20 +20,20 @@ pub enum Condition {
 pub enum EventRequirement {
   #[default]
   Empty,
-  Resource {
-    resource: Resource,
+  Variable {
+    variable: Variable,
     condition: Condition,
-    amount: String,
+    value: String,
   },
   Item {
     id: ItemId,
     condition: Condition,
-    amount: String,
+    value: String,
   },
   Reputation {
     id: ReputationId,
     condition: Condition,
-    amount: String,
+    value: String,
   },
   TimeOfDay {
     id: TimeOfDay,
@@ -46,10 +45,6 @@ pub enum EventRequirement {
   },
   Event {
     id: EventId,
-    condition: Condition,
-  },
-  Tile {
-    id: TileId,
     condition: Condition,
   },
 }

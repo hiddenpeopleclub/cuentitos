@@ -23,20 +23,18 @@ int main() {
   RuntimeId runtime_id = cuentitos_new_runtime(db_id);
 
   cuentitos_set_seed(runtime_id, 42);
-  uint8_t *resource = (uint8_t*)malloc(10000 * sizeof(uint8_t));
-  size_t* length = (size_t*)malloc(1 * sizeof(size_t));
   
-  cuentitos_set_int_resource(runtime_id, "health", 10);
-  cuentitos_set_float_resource(runtime_id, "energized", 10.5);
-  cuentitos_set_bool_resource(runtime_id, "donkey", true);
+  cuentitos_set_int_variable(runtime_id, "health", 10);
+  cuentitos_set_float_variable(runtime_id, "energized", 10.5);
+  cuentitos_set_bool_variable(runtime_id, "donkey", true);
 
   int32_t health;
   float energized;
   bool donkey;
 
-  cuentitos_get_int_resource(runtime_id, "health", &health);
-  cuentitos_get_float_resource(runtime_id, "energized", &energized);
-  cuentitos_get_bool_resource(runtime_id, "donkey", &donkey);
+  cuentitos_get_int_variable(runtime_id, "health", &health);
+  cuentitos_get_float_variable(runtime_id, "energized", &energized);
+  cuentitos_get_bool_variable(runtime_id, "donkey", &donkey);
 
   // Read next event
   // uint8_t *event_buffer = (uint8_t*)malloc(10000 * sizeof(uint8_t));
