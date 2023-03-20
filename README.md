@@ -1,6 +1,8 @@
 # Cuentitos
 A game narrative engine with probabily at its core.
 
+<iframe src="https://github.com/sponsors/hiddenpeopleclub/button" title="Sponsor hiddenpeopleclub" height="32" width="114" style="border: 0; border-radius: 6px;"></iframe>
+
 ## TODO
 
 ### Next
