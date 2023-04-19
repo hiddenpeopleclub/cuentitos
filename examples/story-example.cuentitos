@@ -1,0 +1,21 @@
+You've just arrived in the bustling city, full of excitement and anticipation for your new job. 
+The skyline reaches for the clouds, and the sounds of traffic and people surround you. 
+As you take your first steps in this urban jungle, you feel a mix of emotions, hoping to find your place in this new environment.
+	* I take a walk through a nearby park to relax and acclimate to the city.
+    As you stroll through the nearby park, the soothing sounds of rustling leaves and chirping birds help calm your senses. 
+    You find a quiet bench to sit on, taking a moment to breathe deeply and gather your thoughts. 
+    (50/100) A solitary figure sits on the bench, engrossed in a book, seemingly unfazed by the surrounding city noise.
+    This serene oasis gives you the confidence to face the challenges ahead as you acclimate to your new life in the bustling city.
+	* I visit a popular street market to experience the city's unique flavors and energy.
+    (50) At the bustling street market, you discover a food stand offering mouthwatering delicacies. 
+      As you sample the delicious fare, you strike up a conversation with the enthusiastic vendor.
+      It's a welcome distraction from the noise around you.
+    (2) As you try to navigate the crowded market, you're drawn to the entrancing melody of a street musician. 
+      The captivating sound creates a soothing bubble, momentarily transporting you away from the city's noise. 
+      You take a moment to appreciate the beauty of the music, feeling a connection to the artist and the vibrant energy they bring to the urban landscape.
+        * (50%) I leave two dollars to the artist.
+          The musician smiles and nods thanking you.
+        * I nod when the musician looks my way, to show I really enjoy the music.
+    (500) Wandering the market, you stumble upon a hidden alley adorned with vibrant street art. 
+      Each colorful mural tells a different story, capturing your imagination and sparking your creativity. 
+      This unexpected oasis of visual tranquility provides a respite from the chaos of the city, inspiring you to explore more of the urban canvas and the stories it holds.
