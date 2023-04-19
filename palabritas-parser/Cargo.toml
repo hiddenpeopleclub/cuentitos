@@ -1,0 +1,12 @@
+[package]
+name = "palabritas-parser"
+version = "0.0.0"
+edition = "2021"
+
+[[bin]]
+name = "palabritas-parser"
+path = "src/main.rs"
+
+[dependencies]
+pest = "2.0"
+pest_derive = "2.0"

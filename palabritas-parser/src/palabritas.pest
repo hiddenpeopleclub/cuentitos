@@ -1,0 +1,16 @@
+char = { ASCII_ALPHANUMERIC | "." | "_" | "/" | "," | ";" | "'" | " " | "?" | "!" | "¿" | "¡"}
+
+comparisson_operator = { "=" | "!=" | "<" | ">" | "<=" | ">=" }
+condition = { ASCII_ALPHANUMERIC+ ~ " "? ~ (comparisson_operator ~ " "? ~ ASCII_ALPHANUMERIC+ | "!" ~ ASCII_ALPHANUMERIC | ASCII_ALPHANUMERIC+)  }
+indent = { "  " | "\t" }
+
+requirement = { NEWLINE ~ indent* ~ "req " ~ condition }
+frequency = { NEWLINE ~ indent* ~ "freq "  ~ condition ~ " " ~ ASCII_DIGIT+ }
+one_off = { "(" ~  ((ASCII_DIGIT+ ~ "%") | ("0." ~ ASCII_DIGIT+) | (ASCII_DIGIT+ ~ "/" ~ ASCII_DIGIT+) | (ASCII_DIGIT+)) ~ ")" ~ " "? }
+text = { char+ }
+line = { text ~ requirement* ~ frequency? }
+
+option = { indent* ~ "*" ~ " "? ~ one_off? ~ line }
+text_shown = { indent* ~ one_off? ~ line }
+
+file = { SOI ~ ((text_shown | option | indent)? ~ NEWLINE)* ~ (text_shown | option | indent+)? ~ EOI }
