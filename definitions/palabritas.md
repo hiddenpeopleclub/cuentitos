@@ -142,7 +142,94 @@ In this case, only one of the options will show up, each one with a 50% chance.
 
 ## Reacting to State
 
-## State changes
+Up until this point, we've not used the game state to setup conditions. So let's do that now. We'll start writing from the root indentation level again. This texts will show up when the previous section is navigated until there is no more text to show. It will automatically backtrack to the root if no texts display in any indentation level.
+
+```cuentitos
+Feeling mentally and physically exhausted from the day's adventures, you decide it's time to head back to your hotel.
+As you enter the peaceful sanctuary of your room, you take a deep breath, relieved to have a quiet space where you can recharge and prepare for the challenges ahead.
+
+The sun shines bright through the window.
+  req time_of_day !night
+The moonlight gives the room a peaceful tone.
+  req time_of_day night
+```
+
+In this case, we're putting conditions to these two lines of text. They will only show up if the `time_of_day` variable value satisfies the conditions. The first one will show if time of day is not `night`, the second one, will show when time of day is `night`.
+
+Check the `Configuration` section to learn about variables.
+
+In this case, the requirements are mutually exclusive, only one will show at a time. But that's not a requirement. You could have multiple lines with different requirements and have them show one after the other if the conditions are satisfied.
+
+```cuentitos
+The sun shines bright through the window.
+  req time_of_day !night
+The moonlight gives the room a peaceful tone.
+  req time_of_day night
+You start to think about all the stuff you need to do tomorrow.
+  req time_of_day_night
+That makes you feel overwhelmed.
+  req time_of_day_night
+  req energy <10
+```
+
+These two new lines will only show at night, after `The moonlight gives...`. The last one only if the player is low on energy.
+
+You can also add requirements to options.
+
+```cuentitos
+[...]
+That makes you feel overwhelmed.
+  req time_of_day_night
+  req energy <10
+  * I make some tea
+    req item tea
+    A good cup of tea is always good to regulate after the sensory overload of the city.
+  * I go to bed
+    Feeling depleted of spoons, you go right back to bed.
+  * I call my parents
+    req energy >10
+```
+
+In this case, to make tea you need an `item` with identifier `tea` in the inventory.
+You also need more than `10` points of energy to call your parents.
+
+### Conditional probability changes
+
+You can change the probability of a text of option if a given condition is met by using the `freq` command.
+
+```cuentitos
+[...]
+  * I call my parents
+    req energy >10
+    (30) The phone rings twice, and dad picks up.
+      req energy>20
+    (10) The phone rings twice, and mom picks up.
+      req energy>20
+      freq time_of_day night 100
+    (40) The phone rings ten times, nobody is at home.
+```
+
+Let's analyse this situation:
+
+ * If the player has `energy` between `11` and `20`, nobody picks up, because the condition of `energy>20` is not met, so mom and dad will not pickup.
+ * If `energy` is `21` or more and `time_of_day` is not `night`, there are more chances that dad will pick up than mom (frequency `30` for dad, vs `10` for mom).
+ * If `energy` is `21` or more and `time_of_day` is `night`, it is very likely that mom will pick up, because the frequency is `110` (vs `30` for dad, and `40` for no one).
+
+In this way we can create very complex condition sets and frequency alterations that we can use to modify the behavior of our story. This is incredibly useful to create games that feel alive, in this example, the mother of the player works all day outside the house, while the dad takes care of the home during the day. 
+
+Conditions and probability modifications can be used to express rules of the world and its randomness to successfully represent a world that is more complex, alive and random than simple rule-based ones.
+
+The `freq` command can take negative numbers too, to reduce the frequency instead of increasing it.
+
+```cuentitos
+    (10) The phone rings twice, and mom picks up.
+      req energy>20
+      freq time_of_day !night -100
+```
+
+If the frequency ends up being 0 or less, the affected element will not be considered. In this case, mom would not pickup the phone at all unless it's night time.
+
+## Changing State
 
 ## String interpolation
 
@@ -153,3 +240,4 @@ In this case, only one of the options will show up, each one with a 50% chance.
 #### Float
 #### Enum
 ## Reputations
+## Items
