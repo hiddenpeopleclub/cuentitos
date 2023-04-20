@@ -10,7 +10,6 @@ identifier = { (ASCII_ALPHA | "_" ) ~ (ASCII_ALPHANUMERIC | "_")* }
 value = { identifier | float | percentage | integer}
 condition = { identifier ~ " "* ~ (comparison_operator ~ " "*)? ~ value }
 
-
 requirement = { "req" ~ " "+ ~ condition }
 frequency = { "freq" ~ " "+ ~ condition ~ " "+ ~ ( float | integer ) }
 modifier = { "mod" ~ " "+ ~ identifier ~ " "+ ~ value}
