@@ -106,7 +106,31 @@ The hidden alley! Let's see why:
 
 The sum of frequencies is `50 + 2 + 500 = 552`, then the probability of the deli stand is `50 / 552 ~= 0.09`, the probability of the musician is `2 / 552 ~= 0.003` and the probability of the hidden alley is `500 / 552 ~= 0.9`. So 9 out of 10 times we'll get the alley.
 
-### Probability of Options
+### Named Buckets
+
+You can also create what we call `named buckets`. These buckets support probabilities, conditions, modifiers as any piece of text.
+
+```cuentitos
+    (50) At the bustling street market, you discover a food stand offering mouthwatering delicacies. 
+      [(50) happy_vendor]
+        req time_of_day morning
+        (50%) You notice the stand owner, their eyes sparkling with joy as they animatedly describe their homemade offerings to an eager customer.
+        (50%) You see the owner beaming with joy, their infectious smile and animated gestures inviting customers to try their delectable creations.
+      [(50) tired_vendor]
+        req time_of_day morning
+        (50%) You come across a vendor with furrowed brows and a tense expression, their voice raised as they heatedly argue with a customer over a transaction at their stand.
+        (50%) You spot a visibly agitated vendor, their clenched fists and piercing glare making it clear that they're unhappy with the current situation unfolding before them.
+      [tired_vendor]
+        req time_of_day night
+        (50%) You observe a vendor at a small food stand, their shoulders slumped and eyes slightly glazed as they quietly serve customers, mustering just enough energy to complete each transaction.
+        (50%) The vendor at a nearby food stand appears worn, their movements slow and deliberate, as they attempt to maintain a smile while attending to the seemingly endless stream of customers.
+      You feel they're too busy to bother them with questions.
+```
+
+To create one of these you wrap the name and probability with `[]`, for example `[(50%) my_name]`. The name must to be snake case (lower_case_and_underscored). Then you can apply `req`, `mod` or `set`
+
+
+## Probability of Options
 
 Probability can be applied to pretty much everything in `cuentitos`, including options. Let's explore that.
 
@@ -125,7 +149,7 @@ If a choice doesn't have probability set, the probability of it showing up is 10
 
 In this case there is a 50% chance the user will see the option to leave two dollars to the musician. So half of the times he'll support the artist economically, and half just nod.
 
-#### Options bucket
+### Options bucket
 
 If all the options in an indentation level are probabilistic, then a bucket is created.
 
@@ -154,13 +178,14 @@ The moonlight gives the room a peaceful tone.
   req time_of_day night
 ```
 
-In this case, we're putting conditions to these two lines of text. They will only show up if the `time_of_day` variable value satisfies the conditions. The first one will show if time of day is not `night`, the second one, will show when time of day is `night`.
+In this case, we're putting requirements to these two lines of text using the `req` command. The lines will only show up if the `time_of_day` variable value satisfies the requirements. The first one will show if time of day is not `night`, the second one, will show when time of day is `night`.
 
 Check the `Configuration` section to learn about variables.
 
-In this case, the requirements are mutually exclusive, only one will show at a time. But that's not a requirement. You could have multiple lines with different requirements and have them show one after the other if the conditions are satisfied.
+In this case, the requirements are mutually exclusive, only one line will show at a time. But that's not mandatory. You could have multiple lines with different requirements and have them show one after the other if the conditions are met.
 
 ```cuentitos
+[...]
 The sun shines bright through the window.
   req time_of_day !night
 The moonlight gives the room a peaceful tone.
@@ -170,17 +195,18 @@ You start to think about all the stuff you need to do tomorrow.
 That makes you feel overwhelmed.
   req time_of_day_night
   req energy <10
+You decide to focus on the now...
+  req time_of_day_night
 ```
 
-These two new lines will only show at night, after `The moonlight gives...`. The last one only if the player is low on energy.
+Thse three lines will only show at night, after `The moonlight gives...`. The second one only if the player is low on energy.
 
 You can also add requirements to options.
 
 ```cuentitos
 [...]
-That makes you feel overwhelmed.
+You decide to focus on the now...
   req time_of_day_night
-  req energy <10
   * I make some tea
     req item tea
     A good cup of tea is always good to regulate after the sensory overload of the city.
@@ -227,11 +253,65 @@ The `freq` command can take negative numbers too, to reduce the frequency instea
       freq time_of_day !night -100
 ```
 
-If the frequency ends up being 0 or less, the affected element will not be considered. In this case, mom would not pickup the phone at all unless it's night time.
+If the frequency ends up being 0 or less, the affected element will not be considered. In this case, mom will not pickup the phone at all unless it's night time.
 
 ## Changing State
 
-## String interpolation
+The next thing we want to talk about is modifying state.
+
+`cuentitos`' runtime will manage the state for all the variables that get defined in the `Configuration`. We can make changes to that state from the game engine or from the story definition itself.
+
+```cuentitos
+  * I go to bed
+    Feeling depleted of spoons, you go right back to bed.
+    mod energy 10
+    mod time -7.5
+``` 
+
+For that we use the `mod` command with the variable name (in this case `energy` and `time`) and the value modification we want to apply. In this case we added `10` to `energy` and subtracted `7.5` to `time`. From this we infer that `energy` is a variable of type `integer` and `time` is of type `float`. We also supoprt `bool` and `enum`, check the `Configuration` section below.
+
+## Knots, diverts and stitches
+
+Being heavily inspired by [Ink](https://www.inklestudios.com/ink/), we shamelessly stole the idea of `knots` and `diverts` and `stitches` from there.
+
+A `knot` is a section of the story that you assign a name to so that you can move to it easily. You define knots by wrapping a snake_case identifier with three equal signs.
+
+```cuentitos
+=== second_day ===
+You wake up feeling refreshed.
+```
+
+Then you can go to a knot by using the arrow (divert) command `->`.
+
+```cuentitos
+  * I go to bed
+    Feeling depleted of spoons, you go right back to bed.
+    mod energy 10
+    mod time -7.5
+    -> second_day
+```
+
+Once the story hits `-> second_day`, the player will be directed to that knot.
+
+A `stitch` is a section within a `knot` and it's defined by using a single `=`.
+You can access a stitch by using the name of the knot, then a dot and then the stich name (`second_day.museum` in the example below).
+
+If the stick is within the current knot, you can ignore the knot name (`farmers_market` in the example below).
+
+```cuentitos
+=== second_day ===
+You wake up feeling refreshed. Let's see what this day brings.
+  * Explore a museum
+    -> second_day.museum
+  * Go to the Farmer's Market
+    -> farmers_market
+
+= museum
+  You get to the museum door. You watch through the window. It seems crowded.
+
+= farmers_market
+  You get to the farmer's market. It's very early and some stands are still being set up.
+```
 
 ## Configuration
 ### Variables
