@@ -1,32 +1,43 @@
-char = { ASCII_ALPHANUMERIC | "." | "_" | "/" | "," | ";" | "'" | " " | "?" | "!" | "¿" | "¡"}
-integer = { "-"? ~ ASCII_DIGIT+ }
-float = { integer ~ "." ~ ASCII_DIGIT* }
-percentage = { integer ~ "%" }
-indentation = { "  " | "\t" }
-string = { char+ }
-comparison_operator = { "!=" | "=" | "<=" | ">=" | "<" | ">" | "!" }
+Char = { ASCII_ALPHANUMERIC | "." | "_" | "/" | "," | ";" | "'" | " " | "?" | "!" | "¿" | "¡"}
+Integer = { "-"? ~ ASCII_DIGIT+ }
+Float = { Integer ~ "." ~ ASCII_DIGIT* }
+Percentage = { Integer ~ "%" }
+Indentation = { "  " | "\t" }
+String = { Char+ }
+ComparisonOperator = { "!=" | "=" | "<=" | ">=" | "<" | ">" | "!" }
 
-snake_case = { ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | "_" | ASCII_DIGIT)* }
-identifier = { (ASCII_ALPHA | "_" ) ~ (ASCII_ALPHANUMERIC | "_")* }
-value = { identifier | float | percentage | integer}
-condition = { identifier ~ " "* ~ (comparison_operator ~ " "*)? ~ value }
+SnakeCase = { ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | "_" | ASCII_DIGIT)* }
+Identifier = { (ASCII_ALPHA | "_" ) ~ (ASCII_ALPHANUMERIC | "_")* }
+Value = { Identifier | Float | Percentage | Integer}
+Condition = { Identifier ~ " "* ~ (ComparisonOperator ~ " "*)? ~ Value }
 
-requirement = { "req" ~ " "+ ~ condition }
-frequency = { "freq" ~ " "+ ~ condition ~ " "+ ~ ( float | integer ) }
-modifier = { "mod" ~ " "+ ~ identifier ~ " "+ ~ value}
-divert = { "->"  ~ " "* ~ identifier ~ ("." ~ identifier)? }
+Requirement = { "req" ~ " "+ ~ Condition }
+Frequency = { "freq" ~ " "+ ~ Condition ~ " "+ ~ ( Float | Integer ) }
+Modifier = { "mod" ~ " "+ ~ Identifier ~ " "+ ~ Value}
+Divert = { "->"  ~ " "* ~ Identifier ~ ("." ~ Identifier)? }
 
-command = { NEWLINE ~ indentation* ~ (requirement | frequency | modifier | divert) ~ " "*} 
+Command = { (Requirement | Frequency | Modifier | Divert) } 
 
-probability = { "(" ~ " "* ~ ( percentage | float | integer ) ~ " "* ~ ")" ~ " "* }
+Probability = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
 
-knot = {"===" ~ " "* ~ identifier ~ " "* ~"===" ~ " "*}
-stitch = {"=" ~ " "* ~ identifier ~ " "*}
+Knot = {"===" ~ " "* ~ Identifier ~ " "* ~"==="}
+Stitch = {"=" ~ " "* ~ Identifier}
 
-text = { probability? ~ string }
+Text = { Probability? ~ String }
+Option = { "*" ~ " "* ~ Text }
+NamedBucket = { "[" ~ " "* ~ Probability? ~ SnakeCase ~ " "* ~ "]"}
 
-option = { indentation* ~ "*" ~ " "* ~ text ~ command* }
-text_shown = { indentation* ~ text ~ command* }
-named_bucket = { indentation* ~ "[" ~ " "* ~ probability? ~ snake_case ~ " "* ~ "]" ~ " "* ~ command* }
+NewBlock = _{
+    // The first line in the block
+    PEEK_ALL ~ PUSH( Indentation+ ) ~ BlockContent ~
+    // Subsequent lines in the block
+    (PEEK_ALL ~ BlockContent)* ~
+    // Remove the last layer of indentation from the stack when exiting the block
+    DROP
+}
 
-file = { SOI ~ (( named_bucket | text_shown | option | indentation+ | knot | stitch)? ~ NEWLINE)* ~ (named_bucket | text_shown | option | indentation+ | knot | stitch)? ~ EOI }
+BlockContent = {
+    (Command | NamedBucket | Option | Knot | Stitch | Text)  ~  " "* ~ (NEWLINE | EOI) ~ NewBlock*
+}
+
+File = { SOI ~ (NEWLINE | BlockContent)* ~ EOI }
