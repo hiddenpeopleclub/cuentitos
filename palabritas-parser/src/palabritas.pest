@@ -6,6 +6,7 @@ indentation = { "  " | "\t" }
 string = { char+ }
 comparison_operator = { "!=" | "=" | "<=" | ">=" | "<" | ">" | "!" }
 
+snake_case = { ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | "_" | ASCII_DIGIT)* }
 identifier = { (ASCII_ALPHA | "_" ) ~ (ASCII_ALPHANUMERIC | "_")* }
 value = { identifier | float | percentage | integer}
 condition = { identifier ~ " "* ~ (comparison_operator ~ " "*)? ~ value }
@@ -26,6 +27,6 @@ text = { probability? ~ string }
 
 option = { indentation* ~ "*" ~ " "* ~ text ~ command* }
 text_shown = { indentation* ~ text ~ command* }
-named_bucket = { indentation* ~ "[" ~ " "* ~ text ~ "]" ~ " "* ~ command* }
+named_bucket = { indentation* ~ "[" ~ " "* ~ probability? ~ snake_case ~ " "* ~ "]" ~ " "* ~ command* }
 
 file = { SOI ~ (( named_bucket | text_shown | option | indentation+ | knot | stitch)? ~ NEWLINE)* ~ (named_bucket | text_shown | option | indentation+ | knot | stitch)? ~ EOI }

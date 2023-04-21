@@ -91,6 +91,12 @@ mod test {
   }
 
   #[test]
+  fn parse_snake_case() {
+    //snake_case = { ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | "_" | ASCII_DIGIT)* }
+    assert_parse(Rule::snake_case, &make_random_snake_case());
+  }
+
+  #[test]
   fn parse_identifier() {
     //identifier = { (ASCII_ALPHA | "_" ) ~ (ASCII_ALPHANUMERIC | "_")* }
     assert_parse(Rule::identifier, &make_random_identifier());
@@ -269,16 +275,33 @@ mod test {
 
   #[test]
   fn parse_named_bucket() {
-    //named_bucket = { indentation* ~ "[" ~ " "* ~ text ~ "]" ~ " "* ~ command* }
-    let text = make_random_string();
+    //named_bucket = { indentation* ~ "[" ~ " "* ~ probability? ~ snake_case ~ " "* ~ "]" ~ " "* ~ command* }
     let command = "\nreq ".to_string() + &(make_random_condition());
+    let integer = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string();
+    let probability = "(".to_string() + &integer + ")";
+
     assert_parse(
       Rule::named_bucket,
-      &(make_random_indentation() + "[" + &text + "]"),
+      &(make_random_indentation() + "[" + &make_random_snake_case() + "]"),
     );
     assert_parse(
       Rule::named_bucket,
-      &(make_random_indentation() + "[" + &text + "]" + &command),
+      &(make_random_indentation() + "[" + &make_random_snake_case() + "]" + &command),
+    );
+
+    assert_parse(
+      Rule::named_bucket,
+      &(make_random_indentation() + "[" + &probability + &make_random_snake_case() + "]"),
+    );
+
+    assert_parse(
+      Rule::named_bucket,
+      &(make_random_indentation()
+        + "["
+        + &probability
+        + &make_random_snake_case()
+        + "]"
+        + &command),
     );
   }
 
@@ -311,6 +334,35 @@ mod test {
   }
   fn make_random_condition() -> String {
     make_random_identifier() + " " + &make_random_identifier()
+  }
+
+  fn make_random_snake_case() -> String {
+    let alphanumeric_size = rand::thread_rng().gen_range(1..20);
+    let underscore_size = rand::thread_rng().gen_range(1..5);
+
+    //Making alphanumeric string
+    let snake_case: Vec<u8> = rand::thread_rng()
+      .sample_iter(&Alphanumeric)
+      .take(alphanumeric_size)
+      .collect();
+
+    let mut snake_case = std::str::from_utf8(&snake_case).unwrap().to_string();
+
+    //Adding underscores
+    for _ in 0..underscore_size {
+      snake_case += "_";
+    }
+    shuffle_string(&mut snake_case);
+
+    //Making sure starting character is not a number
+    let mut starting_char = rand::thread_rng().sample(&Alphanumeric) as char;
+    while starting_char.is_numeric() {
+      starting_char = rand::thread_rng().sample(&Alphanumeric) as char;
+    }
+
+    snake_case = starting_char.to_string() + &snake_case;
+
+    snake_case.to_lowercase()
   }
 
   fn make_random_identifier() -> String {
