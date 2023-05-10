@@ -2,7 +2,8 @@ extern crate pest;
 #[macro_use]
 extern crate pest_derive;
 
-use pest::Parser;
+use pest::{iterators::Pair, Parser};
+use rand::Rng;
 
 #[derive(Parser)]
 #[grammar = "palabritas.pest"]
@@ -10,12 +11,101 @@ pub struct PalabritasParser;
 
 fn main() {
   let unparsed_file = include_str!("../../examples/story-example.cuentitos");
-  PalabritasParser::parse(Rule::File, unparsed_file)
+  let file = PalabritasParser::parse(Rule::File, unparsed_file)
     .expect("unsuccessful parse") // unwrap the parse result
     .next()
     .unwrap();
+  read_file(file);
 }
 
+fn read_file(file: Pair<Rule>) {
+  if file.as_rule() != Rule::File {
+    return;
+  }
+
+  for record in file.into_inner() {
+    if record.as_rule() == Rule::BlockContent {
+      read_block_content(record);
+    }
+  }
+}
+
+//WIP
+fn read_block_content(block_content: Pair<Rule>) {
+  if block_content.as_rule() != Rule::BlockContent {
+    return;
+  }
+
+  for record in block_content.into_inner() {
+    match record.as_rule() {
+      // (NamedBucket | Option | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
+      Rule::Text => {
+        if let Some(text) = read_text(record) {
+          println!("{}", text);
+        }
+      }
+      Rule::NamedBucket => {
+        println!("Option: {}", record.as_str())
+      }
+      Rule::EOI => {}
+      Rule::Command => {
+        println!("Command: {}", record.as_str())
+      }
+      Rule::Knot => {
+        println!("Knot: {}", record.as_str())
+      }
+      Rule::Stitch => {
+        println!("Stitch: {}", record.as_str())
+      }
+      Rule::Option => {
+        println!("Option: {}", record.as_str())
+      }
+      Rule::NewBlock => read_block_content(record),
+      _ => {
+        unreachable!()
+      }
+    }
+  }
+}
+
+fn read_text(text: Pair<Rule>) -> Option<&str> {
+  if text.as_rule() != Rule::Text {
+    return None;
+  }
+
+  for record in text.into_inner() {
+    if record.as_rule() == Rule::Probability {
+      if !run_probability(record) {
+        return None;
+      }
+    } else {
+      return Some(record.as_str());
+    }
+  }
+
+  None
+}
+
+fn run_probability(probability: Pair<Rule>) -> bool {
+  if probability.as_rule() != Rule::Probability {
+    return false;
+  }
+
+  for record in probability.into_inner() {
+    if record.as_rule() == Rule::Float {
+      let chance = record.as_str().parse::<f32>().unwrap();
+      return rand::thread_rng().gen::<f32>() < chance;
+    }
+    if record.as_rule() == Rule::Percentage {
+      let percentage = record.as_str()[0..record.as_str().len() - 1]
+        .parse::<u8>()
+        .unwrap();
+      return rand::thread_rng().gen::<f32>() < percentage as f32 / 100.0;
+    }
+  }
+
+  true
+}
 #[cfg(test)]
 mod test {
 
@@ -183,18 +273,19 @@ mod test {
 
   #[test]
   fn parse_command() {
-    //command = { (requirement | frequency | modifier | divert) }
-    let requirement = "req ".to_string() + &(make_random_condition());
+    //Command = {NEWLINE ~ Indentation* ~ (Requirement | Frequency | Modifier | Divert) }
+    let requirement = "\nreq ".to_string() + &(make_random_condition());
     assert_parse(Rule::Command, &(requirement));
 
     let integer = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string();
-    let frequency = "freq ".to_string() + &make_random_condition() + " " + &integer;
+    let frequency = "\nfreq ".to_string() + &make_random_condition() + " " + &integer;
     assert_parse(Rule::Command, &(frequency));
 
-    let modifier = "mod ".to_string() + &make_random_identifier() + " " + &make_random_identifier();
+    let modifier =
+      "\nmod ".to_string() + &make_random_identifier() + " " + &make_random_identifier();
     assert_parse(Rule::Command, &(modifier));
 
-    let divert = "->".to_string() + &make_random_identifier();
+    let divert = "\n->".to_string() + &make_random_identifier();
     assert_parse(Rule::Command, &(divert));
   }
 
@@ -215,7 +306,7 @@ mod test {
 
   #[test]
   fn parse_knot() {
-    //knot = {"===" ~ " "* ~ identifier ~ " "* ~"===" ~ " "*}
+    //{"===" ~ " "* ~ Identifier ~ " "* ~"===" ~ ( NEWLINE | BlockContent | Stitch )* }
     let identifier = make_random_identifier();
     assert_parse(Rule::Knot, &("===".to_string() + &identifier + "==="));
   }
@@ -263,22 +354,14 @@ mod test {
   #[test]
   fn parse_block_content() {
     //BlockContent = {
-    //  (Command | NamedBucket | Option | Knot | Stitch | Text)  ~  " "* ~ (NEWLINE | EOI) ~ NewBlock*
+    //  (NamedBucket | Option | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
     //}
-    let command = "req ".to_string() + &(make_random_condition());
-    assert_parse(Rule::BlockContent, &command);
 
     let named_bucket = "[".to_string() + &make_random_snake_case() + "]";
     assert_parse(Rule::BlockContent, &named_bucket);
 
     let option = "*".to_string() + &make_random_string();
     assert_parse(Rule::BlockContent, &option);
-
-    let knot = "===".to_string() + &make_random_identifier() + "===";
-    assert_parse(Rule::BlockContent, &knot);
-
-    let stitch = "=".to_string() + &make_random_identifier();
-    assert_parse(Rule::BlockContent, &stitch);
 
     let text = make_random_string();
     assert_parse(Rule::BlockContent, &text);
@@ -289,7 +372,7 @@ mod test {
 
   #[test]
   fn parse_file() {
-    //file = { SOI ~ (NEWLINE | BlockContent)* ~ EOI }
+    //File = { SOI ~ (NEWLINE | BlockContent | Knot )* ~ EOI }
     let unparsed_file = include_str!("../../examples/story-example.cuentitos");
     assert_parse(Rule::File, &unparsed_file);
   }
@@ -318,7 +401,7 @@ mod test {
       .collect();
 
     let mut snake_case = std::str::from_utf8(&snake_case).unwrap().to_string();
-    
+
     //Adding underscores
     for _ in 0..underscore_size {
       snake_case += "_";

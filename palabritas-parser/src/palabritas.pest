@@ -16,18 +16,18 @@ Frequency = { "freq" ~ " "+ ~ Condition ~ " "+ ~ ( Float | Integer ) }
 Modifier = { "mod" ~ " "+ ~ Identifier ~ " "+ ~ Value}
 Divert = { "->"  ~ " "* ~ Identifier ~ ("." ~ Identifier)? }
 
-Command = { (Requirement | Frequency | Modifier | Divert) } 
+Command = {NEWLINE ~ Indentation* ~ (Requirement | Frequency | Modifier | Divert) } 
 
 Probability = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
 
-Knot = {"===" ~ " "* ~ Identifier ~ " "* ~"==="}
+Knot = {"===" ~ " "* ~ Identifier ~ " "* ~"===" ~ ( NEWLINE | BlockContent | Stitch )* }
 Stitch = {"=" ~ " "* ~ Identifier}
 
 Text = { Probability? ~ String }
 Option = { "*" ~ " "* ~ Text }
 NamedBucket = { "[" ~ " "* ~ Probability? ~ SnakeCase ~ " "* ~ "]"}
 
-NewBlock = _{
+NewBlock = {
     // The first line in the block
     PEEK_ALL ~ PUSH( Indentation+ ) ~ BlockContent ~
     // Subsequent lines in the block
@@ -37,7 +37,7 @@ NewBlock = _{
 }
 
 BlockContent = {
-    (Command | NamedBucket | Option | Knot | Stitch | Text)  ~  " "* ~ (NEWLINE | EOI) ~ NewBlock*
+    (NamedBucket | Option | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
 }
 
-File = { SOI ~ (NEWLINE | BlockContent)* ~ EOI }
+File = { SOI ~ (NEWLINE | BlockContent | Knot )* ~ EOI }
