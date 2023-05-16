@@ -6,6 +6,7 @@ members = [
   "runtime",
   "runtime-c",
   "palabritas-parser",
+  "palabritas-common",
   "cli",
   "editor/src-tauri"
 ]
