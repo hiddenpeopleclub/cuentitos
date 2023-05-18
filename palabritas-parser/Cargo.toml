@@ -11,3 +11,4 @@ path = "src/main.rs"
 pest = "2.0"
 pest_derive = "2.0"
 rand = "0.8.5"
+palabritas-common = { path = "../palabritas-common" }

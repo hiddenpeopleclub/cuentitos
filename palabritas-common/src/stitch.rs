@@ -3,5 +3,5 @@ use crate::Content;
 #[derive(Default)]
 pub struct Stitch {
   pub identifier: String,
-  pub content: Vec<Box<dyn Content>>,
+  pub content: Vec<Content>,
 }

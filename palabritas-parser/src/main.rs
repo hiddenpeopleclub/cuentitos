@@ -2,7 +2,11 @@ extern crate pest;
 #[macro_use]
 extern crate pest_derive;
 
-use pest::Parser;
+use palabritas_common::{
+  Condition, Content, Divert, File, FloatProbability, Frequency, Modifier, Operator, Percentage,
+  Probability, Requirement,
+};
+use pest::{iterators::Pair, Parser};
 
 #[derive(Parser)]
 #[grammar = "palabritas.pest"]
@@ -14,6 +18,272 @@ fn main() {
     .expect("unsuccessful parse") // unwrap the parse result
     .next()
     .unwrap();
+}
+
+fn parse_file(token: Pair<Rule>) -> Option<File> {
+  if token.as_rule() != Rule::File {
+    return None;
+  }
+
+  let mut file = File::default();
+
+  for inner_token in token.into_inner() {
+    if inner_token.as_rule() == Rule::BlockContent {
+      if let Some(content) = parse_block_content(inner_token) {
+        file.content.push(content);
+      }
+    }
+  }
+
+  Some(file)
+}
+
+fn parse_block_content(token: Pair<Rule>) -> Option<Content> {
+  if token.as_rule() != Rule::BlockContent {
+    return None;
+  }
+  //    (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
+  let mut content = Content::default();
+  for inner_token in token.into_inner() {
+    match inner_token.as_rule() {
+      Rule::Text => {
+        if let Some(text) = parse_text(inner_token) {
+          content = text;
+        }
+      }
+      Rule::NamedBucket => {
+        println!("NamedBucket: {}", inner_token.as_str())
+      }
+      Rule::Choice => {
+        println!("Choice: {}", inner_token.as_str())
+      }
+      Rule::Command => {
+        add_command_to_content(inner_token, &mut content);
+      }
+      Rule::NewBlock => {
+        if let Some(inner_content) = parse_block_content(inner_token) {
+          content.content.push(inner_content);
+        }
+      }
+
+      _ => {}
+    }
+  }
+
+  Some(content)
+}
+
+fn parse_text(token: Pair<Rule>) -> Option<Content> {
+  if token.as_rule() != Rule::Text {
+    return None;
+  }
+
+  let mut content = Content::default();
+
+  for inner_token in token.into_inner() {
+    match inner_token.as_rule() {
+      Rule::Probability => {
+        content.probability = parse_probability(inner_token);
+      }
+      Rule::String => {
+        content.text = inner_token.as_str().to_string();
+      }
+      _ => {}
+    }
+  }
+
+  None
+}
+
+fn add_command_to_content(token: Pair<Rule>, content: &mut Content) {
+  if token.as_rule() != Rule::Command {
+    return;
+  }
+
+  for inner_token in token.into_inner() {
+    match inner_token.as_rule() {
+      //Command = {NEWLINE ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert) }
+      Rule::Requirement => {
+        if let Some(requirement) = parse_requirement(inner_token) {
+          content.requirements.push(requirement);
+        }
+      }
+      Rule::Frequency => {
+        if let Some(frequency) = parse_frequency(inner_token) {
+          content.frequency_changes.push(frequency);
+        }
+      }
+      Rule::Modifier => {
+        if let Some(modifier) = parse_modifier(inner_token) {
+          content.modifiers.push(modifier);
+        }
+      }
+      Rule::Divert => {
+        if let Some(divert) = parse_divert(inner_token) {
+          content.divert.push(divert);
+        }
+      }
+      _ => {}
+    }
+  }
+}
+
+fn parse_divert(token: Pair<Rule>) -> Option<Divert> {
+  if token.as_rule() != Rule::Divert {
+    return None;
+  }
+  //Divert = { "->"  ~ " "* ~ Identifier ~ ("." ~ Identifier)? }
+
+  let mut knot: Option<String> = None;
+  let mut stitch: Option<String> = None;
+
+  for inner_token in token.into_inner() {
+    if inner_token.as_rule() == Rule::Identifier {
+      if knot.is_none() {
+        knot = Some(inner_token.as_str().to_string());
+      } else {
+        stitch = Some(inner_token.as_str().to_string());
+      }
+    }
+  }
+
+  knot.as_ref()?;
+
+  Some(Divert {
+    knot: knot.unwrap(),
+    stitch,
+  })
+}
+
+fn parse_modifier(token: Pair<Rule>) -> Option<Modifier> {
+  if token.as_rule() != Rule::Modifier {
+    return None;
+  }
+  //Modifier = { "mod" ~ " "+ ~ Identifier ~ " "+ ~ Value}
+
+  let mut modifier = Modifier::default();
+  for inner_token in token.into_inner() {
+    match inner_token.as_rule() {
+      Rule::Identifier => {
+        modifier.variable.id = inner_token.as_str().to_string();
+        //TODO KIND
+      }
+
+      Rule::Value => {
+        modifier.new_value = inner_token.as_str().to_string();
+      }
+      _ => {}
+    }
+  }
+  Some(modifier)
+}
+
+fn parse_frequency(token: Pair<Rule>) -> Option<Frequency> {
+  if token.as_rule() != Rule::Frequency {
+    return None;
+  }
+
+  let mut frequency = Frequency::default();
+  for inner_token in token.into_inner() {
+    match inner_token.as_rule() {
+      Rule::Condition => {
+        if let Some(condition) = parse_condition(inner_token) {
+          frequency.condition = condition;
+        }
+      }
+
+      Rule::Float | Rule::Integer => {
+        let value = inner_token.as_str().parse::<f32>().unwrap();
+        frequency.change_value = value;
+      }
+      _ => {}
+    }
+  }
+
+  Some(frequency)
+}
+
+fn parse_requirement(token: Pair<Rule>) -> Option<Requirement> {
+  if token.as_rule() != Rule::Requirement {
+    return None;
+  }
+
+  for inner_token in token.into_inner() {
+    if inner_token.as_rule() == Rule::Condition {
+      if let Some(condition) = parse_condition(inner_token) {
+        return Some(Requirement { condition });
+      }
+    }
+  }
+  None
+}
+
+fn parse_condition(token: Pair<Rule>) -> Option<Condition> {
+  if token.as_rule() != Rule::Condition {
+    return None;
+  }
+  /*Condition = { Identifier ~ " "* ~ (ComparisonOperator ~ " "*)? ~ Value } */
+
+  let mut condition = Condition::default();
+
+  for inner_token in token.into_inner() {
+    match inner_token.as_rule() {
+      Rule::Identifier => {
+        condition.variable.id = inner_token.as_str().to_string();
+        //TODO KIND
+      }
+      Rule::ComparisonOperator => {
+        if let Some(operator) = parse_comparison_operator(inner_token) {
+          condition.operator = operator;
+        }
+      }
+      Rule::Value => {
+        condition.value = inner_token.as_str().to_string();
+      }
+      _ => {}
+    }
+  }
+  Some(condition)
+}
+
+fn parse_comparison_operator(token: Pair<Rule>) -> Option<Operator> {
+  if token.as_rule() != Rule::ComparisonOperator {
+    return None;
+  }
+
+  match token.as_str() {
+    "!=" => Some(Operator::NotEqual),
+    "!" => Some(Operator::NotEqual),
+    "=" => Some(Operator::Equal),
+    "<=" => Some(Operator::LessOrEqualThan),
+    ">=" => Some(Operator::GreaterOrEqualThan),
+    "<" => Some(Operator::LessThan),
+    ">" => Some(Operator::GreaterThan),
+    _ => None,
+  }
+}
+
+fn parse_probability(token: Pair<Rule>) -> Option<Box<dyn Probability>> {
+  if token.as_rule() != Rule::Probability {
+    return None;
+  }
+
+  for inner_token in token.into_inner() {
+    if inner_token.as_rule() == Rule::Float {
+      let value = inner_token.as_str().parse::<f32>().unwrap();
+      let probability = FloatProbability { value };
+
+      return Some(Box::new(probability));
+    }
+    if inner_token.as_rule() == Rule::Percentage {
+      let value = inner_token.as_str().parse::<u8>().unwrap();
+      let percentage = Percentage { value };
+
+      return Some(Box::new(percentage));
+    }
+  }
+
+  None
 }
 
 #[cfg(test)]

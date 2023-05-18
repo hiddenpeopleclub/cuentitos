@@ -1,11 +1,25 @@
-pub struct Condition{
-  pub operator: ComparisonOperator,
+use crate::Variable;
+
+#[derive(Default)]
+pub enum Operator {
+  #[default]
+  Equal,
+  NotEqual,
+  GreaterThan,
+  LessThan,
+  GreaterOrEqualThan,
+  LessOrEqualThan,
 }
 
-pub enum ComparisonOperator {
-  Equals,
-  HigherThan,
-  LessThan,
-  Depends,
-  MutEx,
+#[derive(Default)]
+pub struct Condition {
+  pub variable: Variable,
+  pub operator: Operator,
+  pub value: String,
+}
+
+impl Condition {
+  pub fn meets_condition(&self) -> bool {
+    true
+  }
 }

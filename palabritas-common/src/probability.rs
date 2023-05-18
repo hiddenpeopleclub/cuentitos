@@ -5,14 +5,13 @@ pub trait Probability {
   fn roll_chance(&self) -> bool;
 }
 
-pub struct Percentage{
-  value: u8,
+pub struct Percentage {
+  pub value: u8,
 }
 
-impl Probability for Percentage
-{
-  fn get_chance(&self) -> f32{
-    self.value as f32 /100.
+impl Probability for Percentage {
+  fn get_chance(&self) -> f32 {
+    self.value as f32 / 100.
   }
 
   fn roll_chance(&self) -> bool {
@@ -20,14 +19,12 @@ impl Probability for Percentage
   }
 }
 
-pub struct FloatPercentage{
-  value: f32,
+pub struct FloatProbability {
+  pub value: f32,
 }
 
-
-impl Probability for FloatPercentage
-{
-  fn get_chance(&self) -> f32{
+impl Probability for FloatProbability {
+  fn get_chance(&self) -> f32 {
     self.value
   }
 
