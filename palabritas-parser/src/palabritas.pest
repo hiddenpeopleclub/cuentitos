@@ -24,7 +24,7 @@ Knot = {"===" ~ " "* ~ Identifier ~ " "* ~"===" ~ " "* ~ NEWLINE ~ ( NEWLINE | B
 Stitch = {"=" ~ " "* ~ Identifier}
 
 Text = { Probability? ~ String }
-Choice = { "*" ~ " "* ~ Probability? ~ Text }
+Choice = { "*" ~ " "* ~ Probability? ~ String }
 NamedBucket = { "[" ~ " "* ~ Probability? ~ SnakeCase ~ " "* ~ "]" }
 
 NewBlock = {

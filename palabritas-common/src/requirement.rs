@@ -1,5 +1,6 @@
 use crate::Condition;
 
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct Requirement {
   pub condition: Condition,
 }

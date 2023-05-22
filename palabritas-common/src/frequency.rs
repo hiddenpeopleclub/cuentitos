@@ -1,6 +1,6 @@
 use crate::Condition;
 
-#[derive(Default)]
+#[derive(Debug, Default, PartialEq, Clone)]
 pub struct Frequency {
   pub condition: Condition,
   pub change_value: f32,

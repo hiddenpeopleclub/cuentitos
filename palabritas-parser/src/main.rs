@@ -3,8 +3,8 @@ extern crate pest;
 extern crate pest_derive;
 
 use palabritas_common::{
-  Condition, Content, Divert, File, FloatProbability, Frequency, Modifier, Operator, Percentage,
-  Probability, Requirement,
+  Condition, Content, ContentType, Divert, File, FloatProbability, Frequency, Modifier, Operator,
+  PercentageProbability, Probability, Requirement,
 };
 use pest::{iterators::Pair, Parser};
 
@@ -14,10 +14,12 @@ pub struct PalabritasParser;
 
 fn main() {
   let unparsed_file = include_str!("../../examples/story-example.cuentitos");
-  PalabritasParser::parse(Rule::File, unparsed_file)
+  let token = PalabritasParser::parse(Rule::File, unparsed_file)
     .expect("unsuccessful parse") // unwrap the parse result
     .next()
     .unwrap();
+
+  parse_file(token).unwrap();
 }
 
 fn parse_file(token: Pair<Rule>) -> Option<File> {
@@ -29,7 +31,7 @@ fn parse_file(token: Pair<Rule>) -> Option<File> {
 
   for inner_token in token.into_inner() {
     if inner_token.as_rule() == Rule::BlockContent {
-      if let Some(content) = parse_block_content(inner_token) {
+      if let Some(content) = parse_content(inner_token) {
         file.content.push(content);
       }
     }
@@ -38,7 +40,7 @@ fn parse_file(token: Pair<Rule>) -> Option<File> {
   Some(file)
 }
 
-fn parse_block_content(token: Pair<Rule>) -> Option<Content> {
+fn parse_content(token: Pair<Rule>) -> Option<Content> {
   if token.as_rule() != Rule::BlockContent {
     return None;
   }
@@ -52,20 +54,25 @@ fn parse_block_content(token: Pair<Rule>) -> Option<Content> {
         }
       }
       Rule::NamedBucket => {
-        println!("NamedBucket: {}", inner_token.as_str())
+        if let Some(named_bucket) = parse_named_bucket(inner_token) {
+          content = named_bucket;
+        }
       }
       Rule::Choice => {
-        println!("Choice: {}", inner_token.as_str())
+        if let Some(choice) = parse_choice(inner_token) {
+          content = choice;
+        }
       }
       Rule::Command => {
         add_command_to_content(inner_token, &mut content);
       }
       Rule::NewBlock => {
-        if let Some(inner_content) = parse_block_content(inner_token) {
-          content.content.push(inner_content);
+        if let Some(inner_block) = get_content_from_new_block(inner_token) {
+          if let Some(inner_content) = parse_content(inner_block) {
+            content.content.push(inner_content);
+          }
         }
       }
-
       _ => {}
     }
   }
@@ -73,12 +80,50 @@ fn parse_block_content(token: Pair<Rule>) -> Option<Content> {
   Some(content)
 }
 
-fn parse_text(token: Pair<Rule>) -> Option<Content> {
-  if token.as_rule() != Rule::Text {
+fn get_content_from_new_block(token: Pair<Rule>) -> Option<Pair<Rule>> {
+  if token.as_rule() != Rule::NewBlock {
     return None;
   }
 
-  let mut content = Content::default();
+  token
+    .into_inner()
+    .find(|inner_token| inner_token.as_rule() == Rule::BlockContent)
+}
+
+fn parse_named_bucket(token: Pair<Rule>) -> Option<Content> {
+  if token.as_rule() != Rule::NamedBucket {
+    return None;
+  }
+
+  let mut content = Content {
+    content_type: ContentType::NamedBucket,
+    ..Default::default()
+  };
+
+  for inner_token in token.into_inner() {
+    match inner_token.as_rule() {
+      Rule::Probability => {
+        content.probability = parse_probability(inner_token);
+      }
+      Rule::SnakeCase => {
+        content.text = inner_token.as_str().to_string();
+      }
+      _ => {}
+    }
+  }
+
+  Some(content)
+}
+
+fn parse_choice(token: Pair<Rule>) -> Option<Content> {
+  if token.as_rule() != Rule::Choice {
+    return None;
+  }
+
+  let mut content = Content {
+    content_type: ContentType::Choice,
+    ..Default::default()
+  };
 
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
@@ -92,7 +137,32 @@ fn parse_text(token: Pair<Rule>) -> Option<Content> {
     }
   }
 
-  None
+  Some(content)
+}
+
+fn parse_text(token: Pair<Rule>) -> Option<Content> {
+  if token.as_rule() != Rule::Text {
+    return None;
+  }
+
+  let mut content = Content {
+    content_type: ContentType::Text,
+    ..Default::default()
+  };
+
+  for inner_token in token.into_inner() {
+    match inner_token.as_rule() {
+      Rule::Probability => {
+        content.probability = parse_probability(inner_token);
+      }
+      Rule::String => {
+        content.text = inner_token.as_str().to_string();
+      }
+      _ => {}
+    }
+  }
+
+  Some(content)
 }
 
 fn add_command_to_content(token: Pair<Rule>, content: &mut Content) {
@@ -263,6 +333,7 @@ fn parse_comparison_operator(token: Pair<Rule>) -> Option<Operator> {
   }
 }
 
+//TODO: Integer
 fn parse_probability(token: Pair<Rule>) -> Option<Box<dyn Probability>> {
   if token.as_rule() != Rule::Probability {
     return None;
@@ -276,10 +347,12 @@ fn parse_probability(token: Pair<Rule>) -> Option<Box<dyn Probability>> {
       return Some(Box::new(probability));
     }
     if inner_token.as_rule() == Rule::Percentage {
-      let value = inner_token.as_str().parse::<u8>().unwrap();
-      let percentage = Percentage { value };
+      if let Some(integer) = inner_token.into_inner().next() {
+        let value = integer.as_str().parse::<u8>().unwrap();
+        let percentage = PercentageProbability { value };
 
-      return Some(Box::new(percentage));
+        return Some(Box::new(percentage));
+      }
     }
   }
 
@@ -289,13 +362,19 @@ fn parse_probability(token: Pair<Rule>) -> Option<Box<dyn Probability>> {
 #[cfg(test)]
 mod test {
 
+  use crate::{
+    add_command_to_content, get_content_from_new_block, parse_choice, parse_comparison_operator,
+    parse_condition, parse_content, parse_divert, parse_file, parse_frequency, parse_modifier,
+    parse_named_bucket, parse_probability, parse_requirement, parse_text, PalabritasParser, Rule,
+  };
+  use palabritas_common::{
+    Condition, Content, ContentType, Divert, FloatProbability, Frequency, Modifier, Operator,
+    PercentageProbability, Requirement, Variable,
+  };
+  use pest::iterators::Pair;
   use pest::Parser;
   use rand::distributions::Alphanumeric;
   use rand::{self, Rng};
-
-  #[derive(Parser)]
-  #[grammar = "palabritas.pest"]
-  pub struct PalabritasParser;
 
   const SPECIAL_CHARACTERS: [&str; 11] = [".", "_", "/", ",", ";", "'", " ", "?", "!", "¿", "¡"];
 
@@ -304,114 +383,534 @@ mod test {
   const INDENTATIONS: [&str; 2] = ["  ", "\t"];
 
   #[test]
-  fn parse_char() {
+  fn parse_file_correctly() {
+    let unparsed_file = include_str!("../../examples/story-example.cuentitos");
+    let token = short_parse(Rule::File, &unparsed_file);
+    parse_file(token).unwrap();
+    //TODO: compare with fixture
+  }
+
+  #[test]
+  fn parse_content_correctly() {
+    /*
+
+    BlockContent = {
+        (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
+    }
+
+    */
+
+    let float = rand::thread_rng().gen_range(i8::MIN as f32..i8::MAX as f32);
+    let probability_string = format!("({})", float);
+
+    let string = make_random_string();
+    let child_string = make_random_string();
+
+    let text_string = format!("{} {}", probability_string, string);
+
+    let probability_token = short_parse(Rule::Probability, &probability_string);
+    let probability = parse_probability(probability_token);
+
+    let knot = make_random_identifier();
+    let divert_string = format!("\n -> {}", knot);
+
+    let content_string = format!("{}{}\n\t{}", text_string, divert_string, child_string);
+
+    let expected_divert = Divert {
+      knot: knot.clone(),
+      stitch: None,
+    };
+
+    let child_content = Content {
+      text: child_string,
+      content_type: ContentType::Text,
+      ..Default::default()
+    };
+
+    let expected_content = Content {
+      text: string,
+      probability: probability,
+      content_type: ContentType::Text,
+      divert: vec![expected_divert],
+      content: vec![child_content],
+      ..Default::default()
+    };
+
+    let content_token = short_parse(Rule::BlockContent, &content_string);
+    let content = parse_content(content_token).unwrap();
+
+    assert_eq!(content, expected_content);
+  }
+  #[test]
+  fn get_content_from_new_block_correctly() {
+    let string = make_random_string();
+    let new_block_string = format!("\t{}", string);
+
+    let expected_content = Content {
+      text: string,
+      ..Default::default()
+    };
+
+    let new_block_token = short_parse(Rule::NewBlock, &new_block_string);
+    let content_token = get_content_from_new_block(new_block_token).unwrap();
+    let content = parse_content(content_token).unwrap();
+
+    assert_eq!(content, expected_content);
+  }
+  #[test]
+  fn parse_named_bucket_correctly() {
+    //NamedBucket = { "[" ~ " "* ~ Probability? ~ SnakeCase ~ " "* ~ "]" }
+
+    let float = rand::thread_rng().gen_range(i8::MIN as f32..i8::MAX as f32);
+    let probability_string = format!("({})", float);
+
+    let snake_case = make_random_snake_case();
+
+    let named_bucket_string = format!("[{} {}]", probability_string, snake_case);
+    let token = short_parse(Rule::NamedBucket, &named_bucket_string);
+    let named_bucket = parse_named_bucket(token).unwrap();
+
+    let probability_token = short_parse(Rule::Probability, &probability_string);
+    let probability = parse_probability(probability_token);
+
+    let expected_value = Content {
+      text: snake_case,
+      probability: probability,
+      content_type: ContentType::NamedBucket,
+      ..Default::default()
+    };
+    assert_eq!(named_bucket, expected_value);
+  }
+
+  #[test]
+  fn parse_choice_correctly() {
+    //Choice = { "*" ~ " "* ~ Probability? ~ String }
+
+    let float = rand::thread_rng().gen_range(i8::MIN as f32..i8::MAX as f32);
+    let probability_string = format!("({})", float);
+
+    let string = make_random_string();
+
+    let choice_string = format!("*{} {}", probability_string, string);
+    let token = short_parse(Rule::Choice, &choice_string);
+    let choice = parse_choice(token).unwrap();
+
+    let probability_token = short_parse(Rule::Probability, &probability_string);
+    let probability = parse_probability(probability_token);
+
+    let expected_value = Content {
+      text: string,
+      probability: probability,
+      content_type: ContentType::Choice,
+      ..Default::default()
+    };
+    assert_eq!(choice, expected_value);
+  }
+
+  #[test]
+  fn parse_text_correctly() {
+    //Text = { Probability? ~ String }
+
+    let float = rand::thread_rng().gen_range(i8::MIN as f32..i8::MAX as f32);
+    let probability_string = format!("({})", float);
+
+    let string = make_random_string();
+
+    let text_string = format!("{} {}", probability_string, string);
+    let token = short_parse(Rule::Text, &text_string);
+    let text = parse_text(token).unwrap();
+
+    let probability_token = short_parse(Rule::Probability, &probability_string);
+    let probability = parse_probability(probability_token);
+
+    let expected_value = Content {
+      text: string,
+      probability: probability,
+      content_type: ContentType::Text,
+      ..Default::default()
+    };
+    assert_eq!(text, expected_value);
+  }
+
+  #[test]
+  fn command_gets_added_to_content_correctly() {
+    let mut content = Content::default();
+    let mut expected_content = Content::default();
+
+    // //Command = {NEWLINE ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert) }
+
+    //Modifier
+    let identifier = make_random_identifier();
+    let new_value = rand::thread_rng().gen::<f32>().to_string();
+    let modifier_string = format!("\n mod {} {}", identifier, new_value);
+
+    let expected_modifier = Modifier {
+      variable: Variable {
+        id: identifier,
+        ..Default::default()
+      },
+      new_value,
+    };
+
+    expected_content.modifiers.push(expected_modifier);
+
+    let token = short_parse(Rule::Command, &modifier_string);
+    add_command_to_content(token, &mut content);
+
+    //Divert
+    let knot = make_random_identifier();
+    let divert_string = format!("\n -> {}", knot);
+
+    let expected_divert = Divert {
+      knot: knot.clone(),
+      stitch: None,
+    };
+    expected_content.divert.push(expected_divert);
+
+    let token = short_parse(Rule::Command, &divert_string);
+    add_command_to_content(token, &mut content);
+
+    //Frequency
+
+    let condition_string = make_random_condition();
+    let condition_token = short_parse(Rule::Condition, &condition_string);
+    let condition = parse_condition(condition_token).unwrap();
+
+    let change_value: f32 = rand::thread_rng().gen();
+    let frequency_string = format!("\n freq {} {}", condition_string, change_value);
+    let expected_frequency = Frequency {
+      condition,
+      change_value,
+    };
+
+    expected_content.frequency_changes.push(expected_frequency);
+
+    let token = short_parse(Rule::Command, &frequency_string);
+    add_command_to_content(token, &mut content);
+
+    //Requirement
+
+    let condition_string = make_random_condition();
+    let condition_token = short_parse(Rule::Condition, &condition_string);
+    let condition = parse_condition(condition_token).unwrap();
+
+    let requirement_string = format!("\n req {}", condition_string);
+    let expected_requirement = Requirement { condition };
+
+    expected_content.requirements.push(expected_requirement);
+
+    let token = short_parse(Rule::Command, &requirement_string);
+    add_command_to_content(token, &mut content);
+
+    assert_eq!(content, expected_content);
+  }
+  #[test]
+  fn parse_divert_correctly() {
+    //Divert = { "->"  ~ " "* ~ Identifier ~ ("." ~ Identifier)? }
+    let knot = make_random_identifier();
+    let divert_string = format!("-> {}", knot);
+
+    let expected_value = Divert {
+      knot: knot.clone(),
+      stitch: None,
+    };
+
+    let token = short_parse(Rule::Divert, &divert_string);
+    let divert = parse_divert(token).unwrap();
+
+    assert_eq!(divert, expected_value);
+
+    let stitch = make_random_identifier();
+
+    let divert_string = format!("-> {}.{}", knot, stitch);
+
+    let expected_value = Divert {
+      knot,
+      stitch: Some(stitch),
+    };
+
+    let token = short_parse(Rule::Divert, &divert_string);
+    let divert = parse_divert(token).unwrap();
+
+    assert_eq!(divert, expected_value);
+  }
+
+  #[test]
+  fn parse_modifier_correctly() {
+    //Modifier = { "mod" ~ " "+ ~ Identifier ~ " "+ ~ Value}
+    let identifier = make_random_identifier();
+    let new_value = rand::thread_rng().gen::<f32>().to_string();
+    let modifier_string = format!("mod {} {}", identifier, new_value);
+
+    let expected_value = Modifier {
+      variable: Variable {
+        id: identifier,
+        ..Default::default()
+      },
+      new_value,
+    };
+
+    let token = short_parse(Rule::Modifier, &modifier_string);
+    let modifier = parse_modifier(token).unwrap();
+
+    assert_eq!(modifier, expected_value);
+  }
+
+  #[test]
+  fn parse_frequency_correctly() {
+    //Frequency = { "freq" ~ " "+ ~ Condition ~ " "+ ~ ( Float | Integer ) }
+    let condition_string = make_random_condition();
+    let condition_token = short_parse(Rule::Condition, &condition_string);
+    let condition = parse_condition(condition_token).unwrap();
+
+    let change_value: f32 = rand::thread_rng().gen();
+    let frequency_string = format!("freq {} {}", condition_string, change_value);
+    let expected_value = Frequency {
+      condition,
+      change_value,
+    };
+
+    let token = short_parse(Rule::Frequency, &frequency_string);
+    let frequency = parse_frequency(token).unwrap();
+
+    assert_eq!(frequency, expected_value);
+  }
+
+  #[test]
+  fn parse_requirement_correctly() {
+    //Requirement = { "req" ~ " "+ ~ Condition }
+    let condition_string = make_random_condition();
+    let condition_token = short_parse(Rule::Condition, &condition_string);
+    let condition = parse_condition(condition_token).unwrap();
+
+    let requirement_string = format!("req {}", condition_string);
+    let expected_value = Requirement { condition };
+
+    let token = short_parse(Rule::Requirement, &requirement_string);
+    let requirement = parse_requirement(token).unwrap();
+
+    assert_eq!(requirement, expected_value);
+  }
+
+  #[test]
+  fn parse_condition_correctly() {
+    /*Condition = { Identifier ~ " "* ~ (ComparisonOperator ~ " "*)? ~ Value } */
+    let identifier = make_random_identifier();
+
+    let operator_string =
+      COMPARISON_OPERATORS[rand::thread_rng().gen_range(0..COMPARISON_OPERATORS.len())];
+    let operator_token = short_parse(Rule::ComparisonOperator, operator_string);
+    let operator = parse_comparison_operator(operator_token).unwrap();
+
+    let value: f32 = rand::thread_rng().gen();
+
+    let condition_string = format!("{} {} {}", identifier, operator_string, value);
+
+    let expected_value = Condition {
+      variable: Variable {
+        id: identifier,
+        ..Default::default()
+      },
+      operator: operator,
+      value: value.to_string(),
+    };
+
+    let token = short_parse(Rule::Condition, &condition_string);
+    let condition = parse_condition(token).unwrap();
+
+    assert_eq!(condition, expected_value);
+  }
+
+  #[test]
+  fn parse_operators_correctly() {
+    let token = short_parse(Rule::ComparisonOperator, "=");
+    assert_eq!(parse_comparison_operator(token).unwrap(), Operator::Equal);
+
+    let token = short_parse(Rule::ComparisonOperator, "!=");
+    assert_eq!(
+      parse_comparison_operator(token).unwrap(),
+      Operator::NotEqual
+    );
+
+    let token = short_parse(Rule::ComparisonOperator, "<");
+    assert_eq!(
+      parse_comparison_operator(token).unwrap(),
+      Operator::LessThan
+    );
+
+    let token = short_parse(Rule::ComparisonOperator, ">");
+    assert_eq!(
+      parse_comparison_operator(token).unwrap(),
+      Operator::GreaterThan
+    );
+
+    let token = short_parse(Rule::ComparisonOperator, "<=");
+    assert_eq!(
+      parse_comparison_operator(token).unwrap(),
+      Operator::LessOrEqualThan
+    );
+
+    let token = short_parse(Rule::ComparisonOperator, ">=");
+    assert_eq!(
+      parse_comparison_operator(token).unwrap(),
+      Operator::GreaterOrEqualThan
+    );
+
+    let token = short_parse(Rule::ComparisonOperator, "!");
+    assert_eq!(
+      parse_comparison_operator(token).unwrap(),
+      Operator::NotEqual
+    );
+  }
+  #[test]
+  fn percentage_probability_parse_correctly() {
+    //probability = { "(" ~ " "* ~ ( percentage | float | integer ) ~ " "* ~ ")" ~ " "* }
+    let percentage = rand::thread_rng().gen_range(u8::MIN..u8::MAX);
+    let expected_value: PercentageProbability = PercentageProbability { value: percentage };
+
+    let probability_string = format!("({}%)", percentage);
+
+    let token = short_parse(Rule::Probability, &probability_string);
+
+    let probability = parse_probability(token).unwrap();
+    let probability = probability
+      .as_any()
+      .downcast_ref::<PercentageProbability>()
+      .unwrap();
+
+    assert_eq!(*probability, expected_value);
+  }
+
+  #[test]
+  fn float_probability_parse_correctly() {
+    let float = rand::thread_rng().gen_range(i8::MIN as f32..i8::MAX as f32);
+    let expected_value = FloatProbability { value: float };
+
+    let probability_string = format!("({})", float);
+
+    let token = PalabritasParser::parse(Rule::Probability, &probability_string)
+      .expect("unsuccessful parse")
+      .next()
+      .unwrap();
+
+    let probability = parse_probability(token).unwrap();
+    let probability = probability
+      .as_any()
+      .downcast_ref::<FloatProbability>()
+      .unwrap();
+
+    assert_eq!(*probability, expected_value);
+  }
+
+  #[test]
+  fn parse_char_rule() {
     //char = { ASCII_ALPHANUMERIC | "." | "_" | "/" | "," | ";" | "'" | " " | "?" | "!" | "¿" | "¡"}
     let alphanumeric_char = (rand::thread_rng().sample(&Alphanumeric) as char).to_string();
-    assert_parse(Rule::Char, &alphanumeric_char);
+    assert_parse_rule(Rule::Char, &alphanumeric_char);
 
     for special_character in SPECIAL_CHARACTERS {
-      assert_parse(Rule::Char, special_character);
+      assert_parse_rule(Rule::Char, special_character);
     }
   }
 
   #[test]
-  fn parse_integer() {
+  fn parse_integer_rule() {
     //integer = { "-"? ~ ASCII_DIGIT+ }
     let integer = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string();
-    assert_parse(Rule::Integer, &integer);
+    assert_parse_rule(Rule::Integer, &integer);
   }
 
   #[test]
-  fn parse_float() {
+  fn parse_float_rule() {
     //float = { integer ~ "." ~ ASCII_DIGIT* }
     let float = rand::thread_rng()
       .gen_range(i8::MIN as f32..i8::MAX as f32)
       .to_string();
-    assert_parse(Rule::Float, &float);
+    assert_parse_rule(Rule::Float, &float);
   }
 
   #[test]
-  fn parse_percentage() {
+  fn parse_percentage_rule() {
     //percentage = { integer ~ "%" }
     let percentage = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string() + "%";
-    assert_parse(Rule::Percentage, &percentage);
+    assert_parse_rule(Rule::Percentage, &percentage);
   }
 
   #[test]
-  fn parse_indentation() {
+  fn parse_indentation_rule() {
     //indentation = { "  " | "\t" }
     for indentation in INDENTATIONS {
-      assert_parse(Rule::Indentation, &indentation);
+      assert_parse_rule(Rule::Indentation, &indentation);
     }
   }
 
   #[test]
-  fn parse_string() {
+  fn parse_string_rule() {
     //string = { char+ }
-    assert_parse(Rule::String, &make_random_string());
+    assert_parse_rule(Rule::String, &make_random_string());
   }
 
   #[test]
-  fn parse_comparison_operator() {
+  fn parse_comparison_operator_rule() {
     //comparison_operator = { "!=" | "=" | "<=" | ">=" | "<" | ">" | "!" }
     for operator in COMPARISON_OPERATORS {
-      assert_parse(Rule::ComparisonOperator, operator);
+      assert_parse_rule(Rule::ComparisonOperator, operator);
     }
   }
 
   #[test]
-  fn parse_snake_case() {
+  fn parse_snake_case_rule() {
     //snake_case = { ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | "_" | ASCII_DIGIT)* }
-    assert_parse(Rule::SnakeCase, &make_random_snake_case());
+    assert_parse_rule(Rule::SnakeCase, &make_random_snake_case());
   }
 
   #[test]
-  fn parse_identifier() {
+  fn parse_identifier_rule() {
     //identifier = { (ASCII_ALPHA | "_" ) ~ (ASCII_ALPHANUMERIC | "_")* }
-    assert_parse(Rule::Identifier, &make_random_identifier());
+    assert_parse_rule(Rule::Identifier, &make_random_identifier());
   }
 
   #[test]
-  fn parse_value() {
+  fn parse_value_rule() {
     //value = { identifier | float | percentage | integer}
     let identifier = make_random_identifier();
-    assert_parse(Rule::Value, &identifier);
+    assert_parse_rule(Rule::Value, &identifier);
 
     let float = rand::thread_rng()
       .gen_range(i8::MIN as f32..i8::MAX as f32)
       .to_string();
-    assert_parse(Rule::Value, &float);
+    assert_parse_rule(Rule::Value, &float);
 
     let percentage = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string() + "%";
-    assert_parse(Rule::Value, &percentage);
+    assert_parse_rule(Rule::Value, &percentage);
 
     let integer = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string();
-    assert_parse(Rule::Value, &integer);
+    assert_parse_rule(Rule::Value, &integer);
   }
 
   #[test]
-  fn parse_condition() {
+  fn parse_condition_rule() {
     //condition = { identifier ~ " "* ~ (comparison_operator ~ " "*)? ~ value }
     let identifier = make_random_identifier();
     let comparison_operator =
       COMPARISON_OPERATORS[rand::thread_rng().gen_range(0..COMPARISON_OPERATORS.len())];
     let value = make_random_identifier();
 
-    assert_parse(Rule::Condition, &(identifier.clone() + " " + &value));
-    assert_parse(
+    assert_parse_rule(Rule::Condition, &(identifier.clone() + " " + &value));
+    assert_parse_rule(
       Rule::Condition,
       &(identifier + comparison_operator + &value),
     );
   }
 
   #[test]
-  fn parse_requirement() {
+  fn parse_requirement_rule() {
     //requirement = { "req" ~ " "+ ~ condition }
     let condition = make_random_condition();
-    assert_parse(Rule::Requirement, &("req ".to_string() + &condition));
+    assert_parse_rule(Rule::Requirement, &("req ".to_string() + &condition));
   }
   #[test]
-  fn parse_frequency() {
+  fn parse_frequency_rule() {
     //frequency = { "freq" ~ " "+ ~ condition ~ " "+ ~ ( float | integer ) }
     let condition = make_random_condition();
     let integer = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string();
@@ -419,142 +918,142 @@ mod test {
       .gen_range(i8::MIN as f32..i8::MAX as f32)
       .to_string();
 
-    assert_parse(
+    assert_parse_rule(
       Rule::Frequency,
       &("freq ".to_string() + &condition + " " + &integer),
     );
-    assert_parse(
+    assert_parse_rule(
       Rule::Frequency,
       &("freq ".to_string() + &condition + " " + &float),
     );
   }
 
   #[test]
-  fn parse_modifier() {
+  fn parse_modifier_rule() {
     //modifier = { "mod" ~ " "+ ~ identifier ~ " "+ ~ value}
     let identifier = make_random_identifier();
     let value = make_random_identifier();
 
-    assert_parse(
+    assert_parse_rule(
       Rule::Modifier,
       &("mod ".to_string() + &identifier + " " + &value),
     );
   }
 
   #[test]
-  fn parse_divert() {
+  fn parse_divert_rule() {
     //divert = { "->"  ~ " "* ~ identifier ~ ("." ~ identifier)? }
     let knot = make_random_identifier();
     let stitch = make_random_identifier();
 
-    assert_parse(Rule::Divert, &("->".to_string() + &knot));
-    assert_parse(Rule::Divert, &("->".to_string() + &knot + "." + &stitch));
+    assert_parse_rule(Rule::Divert, &("->".to_string() + &knot));
+    assert_parse_rule(Rule::Divert, &("->".to_string() + &knot + "." + &stitch));
   }
 
   #[test]
-  fn parse_command() {
+  fn parse_command_rule() {
     //Command = {NEWLINE ~ Indentation* ~ (Requirement | Frequency | Modifier | Divert) }
     let requirement = "\nreq ".to_string() + &(make_random_condition());
-    assert_parse(Rule::Command, &(requirement));
+    assert_parse_rule(Rule::Command, &(requirement));
 
     let integer = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string();
     let frequency = "\nfreq ".to_string() + &make_random_condition() + " " + &integer;
-    assert_parse(Rule::Command, &(frequency));
+    assert_parse_rule(Rule::Command, &(frequency));
 
     let modifier =
       "\nmod ".to_string() + &make_random_identifier() + " " + &make_random_identifier();
-    assert_parse(Rule::Command, &(modifier));
+    assert_parse_rule(Rule::Command, &(modifier));
 
     let divert = "\n->".to_string() + &make_random_identifier();
-    assert_parse(Rule::Command, &(divert));
+    assert_parse_rule(Rule::Command, &(divert));
   }
 
   #[test]
-  fn parse_probability() {
+  fn parse_probability_rule() {
     //probability = { "(" ~ " "* ~ ( percentage | float | integer ) ~ " "* ~ ")" ~ " "* }
     let percentage = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string() + "%";
-    assert_parse(Rule::Probability, &("(".to_string() + &percentage + ")"));
+    assert_parse_rule(Rule::Probability, &("(".to_string() + &percentage + ")"));
 
     let float = rand::thread_rng()
       .gen_range(i8::MIN as f32..i8::MAX as f32)
       .to_string();
-    assert_parse(Rule::Probability, &("(".to_string() + &float + ")"));
+    assert_parse_rule(Rule::Probability, &("(".to_string() + &float + ")"));
 
     let integer = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string();
-    assert_parse(Rule::Probability, &("(".to_string() + &integer + ")"));
+    assert_parse_rule(Rule::Probability, &("(".to_string() + &integer + ")"));
   }
 
   #[test]
-  fn parse_knot() {
+  fn parse_knot_rule() {
     //Knot = {"===" ~ " "* ~ Identifier ~ " "* ~"===" ~ " "* ~ NEWLINE ~ ( NEWLINE | BlockContent | Stitch | NamedBucket )* }
     let identifier = make_random_identifier();
-    assert_parse(Rule::Knot, &("===".to_string() + &identifier + "===\n"));
+    assert_parse_rule(Rule::Knot, &("===".to_string() + &identifier + "===\n"));
   }
 
   #[test]
-  fn parse_stitch() {
+  fn parse_stitch_rule() {
     //stitch = {"=" ~ " "* ~ identifier ~ " "*}
     let identifier = make_random_identifier();
-    assert_parse(Rule::Stitch, &("=".to_string() + &identifier));
+    assert_parse_rule(Rule::Stitch, &("=".to_string() + &identifier));
   }
 
   #[test]
-  fn parse_text() {
+  fn parse_text_rule() {
     //text = { probability? ~ string }
     let integer = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string();
     let probability = "(".to_string() + &integer + ")";
-    assert_parse(Rule::Text, &make_random_string());
-    assert_parse(Rule::Text, &(probability + &make_random_string()));
+    assert_parse_rule(Rule::Text, &make_random_string());
+    assert_parse_rule(Rule::Text, &(probability + &make_random_string()));
   }
 
   #[test]
-  fn parse_choice() {
+  fn parse_choice_rule() {
     //choice = { "*" ~ " "* ~ text }
     let text = make_random_string();
-    assert_parse(Rule::Choice, &("*".to_string() + &text));
+    assert_parse_rule(Rule::Choice, &("*".to_string() + &text));
   }
 
   #[test]
-  fn parse_named_bucket() {
+  fn parse_named_bucket_rule() {
     //named_bucket = { "[" ~ " "* ~ probability? ~ snake_case ~ " "* ~ "]"}
     let integer = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string();
     let probability = "(".to_string() + &integer + ")";
 
-    assert_parse(
+    assert_parse_rule(
       Rule::NamedBucket,
       &("[".to_string() + &make_random_snake_case() + "]"),
     );
 
-    assert_parse(
+    assert_parse_rule(
       Rule::NamedBucket,
       &("[".to_string() + &probability + &make_random_snake_case() + "]"),
     );
   }
 
   #[test]
-  fn parse_block_content() {
+  fn parse_block_content_rule() {
     //BlockContent = {
     // (choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
     //}
 
     let choice = "*".to_string() + &make_random_string();
-    assert_parse(Rule::BlockContent, &choice);
+    assert_parse_rule(Rule::BlockContent, &choice);
 
     let text = make_random_string();
-    assert_parse(Rule::BlockContent, &text);
+    assert_parse_rule(Rule::BlockContent, &text);
 
     let new_block = "\n  ".to_string() + &make_random_string();
-    assert_parse(Rule::BlockContent, &(text + &new_block));
+    assert_parse_rule(Rule::BlockContent, &(text + &new_block));
   }
 
   #[test]
-  fn parse_file() {
+  fn parse_file_rule() {
     //File = { SOI ~ (NEWLINE | BlockContent | Knot )* ~ EOI }
     let unparsed_file = include_str!("../../examples/story-example.cuentitos");
-    assert_parse(Rule::File, &unparsed_file);
+    assert_parse_rule(Rule::File, &unparsed_file);
   }
 
-  fn assert_parse(rule: Rule, input: &str) {
+  fn assert_parse_rule(rule: Rule, input: &str) {
     let pair = PalabritasParser::parse(rule, input)
       .expect("unsuccessful parse")
       .next()
@@ -643,7 +1142,7 @@ mod test {
     }
 
     shuffle_string(&mut string);
-    string
+    string.trim().to_string()
   }
 
   fn shuffle_string(string: &mut String) {
@@ -659,5 +1158,12 @@ mod test {
     }
 
     *string = final_string;
+  }
+
+  fn short_parse(rule: Rule, input: &str) -> Pair<Rule> {
+    PalabritasParser::parse(rule, input)
+      .expect("unsuccessful parse")
+      .next()
+      .unwrap()
   }
 }

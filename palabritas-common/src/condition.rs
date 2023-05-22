@@ -1,6 +1,6 @@
 use crate::Variable;
 
-#[derive(Default)]
+#[derive(Default, Debug, Eq, PartialEq, Clone)]
 pub enum Operator {
   #[default]
   Equal,
@@ -11,7 +11,7 @@ pub enum Operator {
   LessOrEqualThan,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug, Eq, PartialEq, Clone)]
 pub struct Condition {
   pub variable: Variable,
   pub operator: Operator,
