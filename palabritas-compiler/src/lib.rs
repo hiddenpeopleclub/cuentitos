@@ -24,35 +24,27 @@ impl fmt::Display for CompileError {
   }
 }
 
-
-pub fn compile<T, U>(source_path: T, destination_path: U) 
+pub fn compile<T, U>(source_path: T, destination_path: U)
 where
   T: AsRef<Path>,
   U: AsRef<Path>,
 {
- 
-  println!("abt to");
-  println!("path: {:?}",source_path.as_ref());
   let db = parse_file_from_path(source_path).unwrap();
-  
-  println!("ok from file");
+
   let mut buf: Vec<u8> = Vec::new();
   let mut serializer = Serializer::new(&mut buf);
 
   db.serialize(&mut serializer).unwrap();
-  
+
   let destination_path = destination_path.as_ref().to_path_buf();
   let mut file = File::create(destination_path).unwrap();
 
   file.write_all(&buf).unwrap();
 }
 
-
-
 #[cfg(test)]
 mod test {
-    use crate::compile;
-
+  use crate::compile;
 
   #[test]
   fn compile_works_correctly() {

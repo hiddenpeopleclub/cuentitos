@@ -35,9 +35,9 @@ impl PartialEq for Content {
       if content_1.probability.is_some() != content_2.probability.is_some() {
         return true;
       }
-      
+
       if content_1.probability.is_some() && content_2.probability.is_some() {
-          if let Some(self_probability) = content_1
+        if let Some(self_probability) = content_1
           .probability
           .as_ref()
           .unwrap()
@@ -63,7 +63,6 @@ impl PartialEq for Content {
     }
   }
 }
-
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum ContentType {

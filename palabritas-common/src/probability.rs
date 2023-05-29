@@ -1,7 +1,7 @@
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::fmt::Debug;
-use serde::{Deserialize, Serialize};
 
 #[typetag::serde(tag = "type")]
 pub trait Probability: Debug {

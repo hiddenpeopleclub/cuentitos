@@ -11,7 +11,6 @@ pub enum Operator {
   LessThan,
   GreaterOrEqualThan,
   LessOrEqualThan,
-
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
