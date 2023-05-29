@@ -1,6 +1,7 @@
 use crate::{Content, Knot};
+use serde::{Deserialize, Serialize};
 
-#[derive(Default)]
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct File {
   pub knots: Vec<Knot>,
   pub content: Vec<Content>,

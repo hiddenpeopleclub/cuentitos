@@ -1,6 +1,8 @@
 use crate::Variable;
 
-#[derive(Default, Debug, Eq, PartialEq, Clone)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum Operator {
   #[default]
   Equal,
@@ -9,9 +11,10 @@ pub enum Operator {
   LessThan,
   GreaterOrEqualThan,
   LessOrEqualThan,
+
 }
 
-#[derive(Default, Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Condition {
   pub variable: Variable,
   pub operator: Operator,

@@ -1,6 +1,7 @@
 use crate::Condition;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Default, PartialEq, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Frequency {
   pub condition: Condition,
   pub change_value: f32,

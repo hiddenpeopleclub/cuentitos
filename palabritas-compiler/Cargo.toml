@@ -1,0 +1,17 @@
+[package]
+name = "palabritas-compiler"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1.0.144", features = ["derive"] }
+rmp-serde = "1.1.1"
+clap = { version = "4.0.17", features = ["derive"] }
+palabritas-common = { path = "../palabritas-common" }
+palabritas-parser = { path = "../palabritas-parser" }
+regex = "1.7.0"
+strum = "0.24.1"
+csv = "1.1"

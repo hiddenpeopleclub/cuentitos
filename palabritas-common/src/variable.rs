@@ -1,6 +1,8 @@
 pub type VariableId = String;
 
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum VariableKind {
   #[default]
   Integer,
@@ -11,7 +13,7 @@ pub enum VariableKind {
   },
 }
 
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Variable {
   pub id: VariableId,
   pub kind: VariableKind,

@@ -1,8 +1,9 @@
 use crate::{
   Divert, FloatProbability, Frequency, Modifier, PercentageProbability, Probability, Requirement,
 };
+use serde::{Deserialize, Serialize};
 
-#[derive(Default, Debug)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Content {
   pub content: Vec<Content>,
   pub probability: Option<Box<dyn Probability>>,
@@ -63,7 +64,8 @@ impl PartialEq for Content {
   }
 }
 
-#[derive(Debug, Default, PartialEq, Clone)]
+
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum ContentType {
   #[default]
   Text,

@@ -2,6 +2,8 @@ extern crate pest;
 #[macro_use]
 extern crate pest_derive;
 
+use std::path::Path;
+
 use palabritas_common::{
   Condition, Content, ContentType, Divert, File, FloatProbability, Frequency, Modifier, Operator,
   PercentageProbability, Probability, Requirement,
@@ -12,17 +14,19 @@ use pest::{iterators::Pair, Parser};
 #[grammar = "palabritas.pest"]
 pub struct PalabritasParser;
 
-fn main() {
-  let unparsed_file = include_str!("../../examples/story-example.cuentitos");
-  let token = PalabritasParser::parse(Rule::File, unparsed_file)
+pub fn parse_file_from_path<P>(path: P) -> Option<File>
+where
+  P: AsRef<Path>{
+    let str = std::fs::read_to_string(path).expect("cannot read file");
+    let token = PalabritasParser::parse(Rule::File, &str)
     .expect("unsuccessful parse") // unwrap the parse result
     .next()
     .unwrap();
 
-  parse_file(token).unwrap();
+  parse_file(token)
 }
 
-fn parse_file(token: Pair<Rule>) -> Option<File> {
+pub fn parse_file(token: Pair<Rule>) -> Option<File> {
   if token.as_rule() != Rule::File {
     return None;
   }
@@ -365,7 +369,7 @@ mod test {
   use crate::{
     add_command_to_content, get_content_from_new_block, parse_choice, parse_comparison_operator,
     parse_condition, parse_content, parse_divert, parse_file, parse_frequency, parse_modifier,
-    parse_named_bucket, parse_probability, parse_requirement, parse_text, PalabritasParser, Rule,
+    parse_named_bucket, parse_probability, parse_requirement, parse_text, PalabritasParser, Rule, parse_file_from_path,
   };
   use palabritas_common::{
     Condition, Content, ContentType, Divert, FloatProbability, Frequency, Modifier, Operator,
@@ -381,6 +385,12 @@ mod test {
   const COMPARISON_OPERATORS: [&str; 7] = ["=", "!=", "<", ">", "<=", ">=", "!"];
 
   const INDENTATIONS: [&str; 2] = ["  ", "\t"];
+
+  #[test]
+  fn parse_file_from_path_correctly() {
+    parse_file_from_path("../examples/story-example.cuentitos").unwrap();
+    //TODO: compare with fixture
+  }
 
   #[test]
   fn parse_file_correctly() {

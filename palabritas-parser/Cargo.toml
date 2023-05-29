@@ -3,9 +3,8 @@ name = "palabritas-parser"
 version = "0.2.0"
 edition = "2021"
 
-[[bin]]
-name = "palabritas-parser"
-path = "src/main.rs"
+[lib]
+path = "src/lib.rs"
 
 [dependencies]
 pest = "2.0"

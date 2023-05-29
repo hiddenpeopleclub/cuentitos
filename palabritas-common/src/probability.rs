@@ -1,17 +1,21 @@
 use rand::Rng;
 use std::any::Any;
 use std::fmt::Debug;
+use serde::{Deserialize, Serialize};
+
+#[typetag::serde(tag = "type")]
 pub trait Probability: Debug {
   fn get_chance(&self) -> f32;
   fn roll_chance(&self) -> bool;
   fn as_any(&self) -> &dyn Any;
 }
 
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct PercentageProbability {
   pub value: u8,
 }
 
+#[typetag::serde]
 impl Probability for PercentageProbability {
   fn get_chance(&self) -> f32 {
     self.value as f32 / 100.
@@ -25,11 +29,12 @@ impl Probability for PercentageProbability {
   }
 }
 
-#[derive(Debug, Default, PartialEq, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
 pub struct FloatProbability {
   pub value: f32,
 }
 
+#[typetag::serde]
 impl Probability for FloatProbability {
   fn get_chance(&self) -> f32 {
     self.value

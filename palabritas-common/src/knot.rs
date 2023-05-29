@@ -1,6 +1,7 @@
 use crate::{Content, Stitch};
+use serde::{Deserialize, Serialize};
 
-#[derive(Default)]
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Knot {
   pub identifier: String,
   pub content: Vec<Content>,
