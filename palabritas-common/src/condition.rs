@@ -22,6 +22,7 @@ pub struct Condition {
 
 impl Condition {
   pub fn meets_condition(&self) -> bool {
+    //TODO
     true
   }
 }

@@ -5,8 +5,8 @@ extern crate pest_derive;
 use std::path::Path;
 
 use palabritas_common::{
-  Condition, Content, ContentType, Divert, File, FloatProbability, Frequency, Modifier, Operator,
-  PercentageProbability, Probability, Requirement,
+  Condition, Content, ContentType, Database, Divert, FloatProbability, Frequency, Modifier,
+  Operator, PercentageProbability, Probability, Requirement,
 };
 use pest::{iterators::Pair, Parser};
 
@@ -14,35 +14,35 @@ use pest::{iterators::Pair, Parser};
 #[grammar = "palabritas.pest"]
 pub struct PalabritasParser;
 
-pub fn parse_file_from_path<P>(path: P) -> Option<File>
+pub fn parse_database_from_path<P>(path: P) -> Option<Database>
 where
   P: AsRef<Path>,
 {
-  let str = std::fs::read_to_string(path).expect("cannot read file");
-  let token = PalabritasParser::parse(Rule::File, &str)
+  let str = std::fs::read_to_string(path).expect("cannot read Database");
+  let token = PalabritasParser::parse(Rule::Database, &str)
     .expect("unsuccessful parse") // unwrap the parse result
     .next()
     .unwrap();
 
-  parse_file(token)
+  parse_database(token)
 }
 
-pub fn parse_file(token: Pair<Rule>) -> Option<File> {
-  if token.as_rule() != Rule::File {
+pub fn parse_database(token: Pair<Rule>) -> Option<Database> {
+  if token.as_rule() != Rule::Database {
     return None;
   }
 
-  let mut file = File::default();
+  let mut database = Database::default();
 
   for inner_token in token.into_inner() {
     if inner_token.as_rule() == Rule::BlockContent {
       if let Some(content) = parse_content(inner_token) {
-        file.content.push(content);
+        database.content.push(content);
       }
     }
   }
 
-  Some(file)
+  Some(database)
 }
 
 fn parse_content(token: Pair<Rule>) -> Option<Content> {
@@ -72,8 +72,8 @@ fn parse_content(token: Pair<Rule>) -> Option<Content> {
         add_command_to_content(inner_token, &mut content);
       }
       Rule::NewBlock => {
-        if let Some(inner_block) = get_content_from_new_block(inner_token) {
-          if let Some(inner_content) = parse_content(inner_block) {
+        for inner_content_token in get_content_from_new_block(inner_token) {
+          if let Some(inner_content) = parse_content(inner_content_token) {
             content.content.push(inner_content);
           }
         }
@@ -85,14 +85,19 @@ fn parse_content(token: Pair<Rule>) -> Option<Content> {
   Some(content)
 }
 
-fn get_content_from_new_block(token: Pair<Rule>) -> Option<Pair<Rule>> {
+fn get_content_from_new_block(token: Pair<Rule>) -> Vec<Pair<Rule>> {
+  let mut content = Vec::default();
+
   if token.as_rule() != Rule::NewBlock {
-    return None;
+    return content;
   }
 
-  token
-    .into_inner()
-    .find(|inner_token| inner_token.as_rule() == Rule::BlockContent)
+  for inner_token in token.into_inner() {
+    if inner_token.as_rule() == Rule::BlockContent {
+      content.push(inner_token);
+    }
+  }
+  content
 }
 
 fn parse_named_bucket(token: Pair<Rule>) -> Option<Content> {
@@ -369,7 +374,7 @@ mod test {
 
   use crate::{
     add_command_to_content, get_content_from_new_block, parse_choice, parse_comparison_operator,
-    parse_condition, parse_content, parse_divert, parse_file, parse_file_from_path,
+    parse_condition, parse_content, parse_database, parse_database_from_path, parse_divert,
     parse_frequency, parse_modifier, parse_named_bucket, parse_probability, parse_requirement,
     parse_text, PalabritasParser, Rule,
   };
@@ -389,16 +394,16 @@ mod test {
   const INDENTATIONS: [&str; 2] = ["  ", "\t"];
 
   #[test]
-  fn parse_file_from_path_correctly() {
-    parse_file_from_path("../examples/story-example.cuentitos").unwrap();
+  fn parse_database_from_path_correctly() {
+    parse_database_from_path("../examples/story-example.cuentitos").unwrap();
     //TODO: compare with fixture
   }
 
   #[test]
-  fn parse_file_correctly() {
-    let unparsed_file = include_str!("../../examples/story-example.cuentitos");
-    let token = short_parse(Rule::File, &unparsed_file);
-    parse_file(token).unwrap();
+  fn parse_database_correctly() {
+    let unparsed_Database = include_str!("../../examples/story-example.cuentitos");
+    let token = short_parse(Rule::Database, &unparsed_Database);
+    parse_database(token).unwrap();
     //TODO: compare with fixture
   }
 
@@ -464,8 +469,8 @@ mod test {
     };
 
     let new_block_token = short_parse(Rule::NewBlock, &new_block_string);
-    let content_token = get_content_from_new_block(new_block_token).unwrap();
-    let content = parse_content(content_token).unwrap();
+    let content_token = get_content_from_new_block(new_block_token);
+    let content = parse_content(content_token[0].clone()).unwrap();
 
     assert_eq!(content, expected_content);
   }
@@ -1059,10 +1064,10 @@ mod test {
   }
 
   #[test]
-  fn parse_file_rule() {
-    //File = { SOI ~ (NEWLINE | BlockContent | Knot )* ~ EOI }
-    let unparsed_file = include_str!("../../examples/story-example.cuentitos");
-    assert_parse_rule(Rule::File, &unparsed_file);
+  fn parse_Database_rule() {
+    //Database = { SOI ~ (NEWLINE | BlockContent | Knot )* ~ EOI }
+    let unparsed_Database = include_str!("../../examples/story-example.cuentitos");
+    assert_parse_rule(Rule::Database, &unparsed_Database);
   }
 
   fn assert_parse_rule(rule: Rule, input: &str) {

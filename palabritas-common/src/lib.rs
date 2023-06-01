@@ -1,5 +1,5 @@
-mod file;
-pub use file::*;
+mod database;
+pub use database::*;
 
 mod knot;
 pub use knot::*;
@@ -30,3 +30,11 @@ pub use divert::*;
 
 mod modifier;
 pub use modifier::*;
+
+mod output_text;
+pub use output_text::*;
+
+mod readable;
+pub use readable::*;
+
+pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;

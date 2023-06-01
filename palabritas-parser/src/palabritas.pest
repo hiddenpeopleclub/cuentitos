@@ -2,8 +2,8 @@ Char = { ASCII_ALPHANUMERIC | "." | "_" | "/" | "," | ";" | "'" | " " | "?" | "!
 Integer = { "-"? ~ ASCII_DIGIT+ }
 Float = { Integer ~ "." ~ ASCII_DIGIT* }
 Percentage = { Integer ~ "%" }
-Indentation = { "  " | "\t" }
-String = { Char+ }
+Indentation = { "\t" }
+String = @{ Char+ }
 ComparisonOperator = { "!=" | "=" | "<=" | ">=" | "<" | ">" | "!" }
 
 SnakeCase = { ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | "_" | ASCII_DIGIT)* }
@@ -21,7 +21,7 @@ Command = {NEWLINE ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier 
 Probability = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
 
 Knot = {"===" ~ " "* ~ Identifier ~ " "* ~"===" ~ " "* ~ NEWLINE ~ ( NEWLINE | BlockContent | Stitch )* }
-Stitch = {"=" ~ " "* ~ Identifier}
+Stitch = { "=" ~ " "* ~ Identifier ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*}
 
 Text = { Probability? ~ String }
 Choice = { "*" ~ " "* ~ Probability? ~ String }
@@ -40,4 +40,4 @@ BlockContent = {
     (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
 }
 
-File = { SOI ~ (NEWLINE | BlockContent | Knot )* ~ EOI }
+Database = { SOI ~ (NEWLINE | BlockContent | Knot )* ~ EOI }

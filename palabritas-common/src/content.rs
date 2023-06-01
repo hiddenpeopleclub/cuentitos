@@ -1,5 +1,6 @@
 use crate::{
-  Divert, FloatProbability, Frequency, Modifier, PercentageProbability, Probability, Requirement,
+  Divert, FloatProbability, Frequency, Modifier, OutputText, PercentageProbability, Probability,
+  Readable, Requirement,
 };
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +14,8 @@ pub struct Content {
   pub frequency_changes: Vec<Frequency>,
   pub modifiers: Vec<Modifier>,
   pub divert: Vec<Divert>,
+  #[serde(skip)]
+  pub cursor: usize,
 }
 
 impl PartialEq for Content {
@@ -64,6 +67,90 @@ impl PartialEq for Content {
   }
 }
 
+impl Readable for Content {
+  fn get_next_output(&mut self) -> Option<OutputText> {
+    if self.cursor == 0 && self.content_type != ContentType::Text {
+      self.cursor += 1;
+    }
+
+    if self.cursor > self.content.len() {
+      return None;
+    }
+
+    if self.cursor == 0 {
+      let output = Some(OutputText {
+        text: self.text.clone(),
+        choices: self.get_choices(),
+      });
+      self.cursor += 1;
+      return output;
+    }
+
+    if !self.content[self.cursor - 1].meets_requirements() {
+      self.cursor += 1;
+      return self.get_next_output();
+    }
+
+    let output = self.content[self.cursor - 1].get_next_output();
+    self.cursor += 1;
+
+    output
+  }
+
+  fn pick_choice(&mut self, choice: usize) -> Option<OutputText> {
+    if !self.is_in_choice() {
+      return None;
+    }
+
+    let output = self.content[self.cursor - 1].pick_choice(choice);
+
+    if output.is_none()
+      && self.cursor + choice - 1 < self.content.len()
+      && self.content[self.cursor + choice - 1].content_type == ContentType::Choice
+    {
+      self.cursor += choice;
+      return self.get_next_output();
+    }
+
+    output
+  }
+
+  fn is_in_choice(&self) -> bool {
+    if self.cursor == 0 || self.cursor > self.content.len() {
+      return false;
+    }
+
+    if self.content[self.cursor - 1].content_type == ContentType::Choice {
+      return true;
+    }
+    self.content[self.cursor - 1].is_in_choice()
+  }
+}
+
+impl Content {
+  pub fn meets_requirements(&self) -> bool {
+    for requirement in &self.requirements {
+      if !requirement.meets_requirement() {
+        return false;
+      }
+    }
+    true
+  }
+
+  pub fn get_choices(&self) -> Vec<String> {
+    let mut choices = Vec::default();
+
+    for i in 0..self.content.len() {
+      if self.content[i].content_type == ContentType::Choice {
+        choices.push(self.content[i].text.clone());
+      } else {
+        break;
+      }
+    }
+
+    choices
+  }
+}
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum ContentType {
   #[default]
