@@ -2,7 +2,7 @@ Char = { ASCII_ALPHANUMERIC | "." | "_" | "/" | "," | ";" | "'" | " " | "?" | "!
 Integer = { "-"? ~ ASCII_DIGIT+ }
 Float = { Integer ~ "." ~ ASCII_DIGIT* }
 Percentage = { Integer ~ "%" }
-Indentation = { "\t" }
+Indentation = { "  " }
 String = @{ Char+ }
 ComparisonOperator = { "!=" | "=" | "<=" | ">=" | "<" | ">" | "!" }
 
@@ -20,7 +20,7 @@ Command = {NEWLINE ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier 
 
 Probability = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
 
-Knot = {"===" ~ " "* ~ Identifier ~ " "* ~"===" ~ " "* ~ NEWLINE ~ ( NEWLINE | BlockContent | Stitch )* }
+Knot = {"===" ~ " "* ~ Identifier ~ " "* ~"===" ~ " "* ~ NEWLINE ~ ( NEWLINE | Block | Stitch )* }
 Stitch = { "=" ~ " "* ~ Identifier ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*}
 
 Text = { Probability? ~ String }
@@ -29,15 +29,15 @@ NamedBucket = { "[" ~ " "* ~ Probability? ~ SnakeCase ~ " "* ~ "]" }
 
 NewBlock = {
     // The first line in the block
-    PEEK_ALL ~ PUSH( Indentation+ ) ~ BlockContent ~
+    PEEK_ALL ~ PUSH( Indentation+ ) ~ Block ~
     // Subsequent lines in the block
-    (PEEK_ALL ~ BlockContent)* ~
+    (PEEK_ALL ~ Block)* ~
     // Remove the last layer of indentation from the stack when exiting the block
     DROP
 }
 
-BlockContent = {
+Block = {
     (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
 }
 
-Database = { SOI ~ (NEWLINE | BlockContent | Knot )* ~ EOI }
+File = { SOI ~ (NEWLINE | Block | Knot )* ~ EOI }

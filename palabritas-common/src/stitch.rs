@@ -1,8 +1,8 @@
-use crate::Content;
+use crate::Block;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Stitch {
   pub identifier: String,
-  pub content: Vec<Content>,
+  pub blocks: Vec<Block>,
 }

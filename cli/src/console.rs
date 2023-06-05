@@ -25,9 +25,9 @@ impl Console {
     let metadata = fs::metadata(&path).expect("unable to read metadata");
     let mut buffer = vec![0; metadata.len() as usize];
     f.read_exact(&mut buffer).expect("buffer overflow");
-    let database = Database::from_u8(&buffer).unwrap();
+    let file = cuentitos_runtime::File::from_u8(&buffer).unwrap();
 
-    let mut runtime = Runtime::new(database);
+    let mut runtime = Runtime::new(file);
 
     loop {
       let input = Self::prompt("> ");
@@ -35,20 +35,27 @@ impl Console {
 
       match args.next() {
         Some("n") => {
-          let event = runtime.next_event();
-          match event {
-            Some(event) => {
-              println!("{}", event.title);
-              println!("---");
-              println!("{}", event.description);
-            }
-            None => {}
+          if let Some(output_text) = runtime.next_output() {
+            print_output_text(output_text);
           }
         }
         Some("q") => break,
-        Some(&_) => {}
+        Some(str) => {
+          if let Ok(choice) = str.parse::<usize>() {
+            if let Some(output_text) = runtime.pick_choice(choice) {
+              print_output_text(output_text);
+            }
+          }
+        }
         None => {}
       }
     }
+  }
+}
+
+fn print_output_text(output_text: OutputText) {
+  println!("{}", output_text.text);
+  for choice in output_text.choices {
+    println!("  *{}", choice);
   }
 }

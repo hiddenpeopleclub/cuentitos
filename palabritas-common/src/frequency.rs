@@ -2,15 +2,15 @@ use crate::Condition;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
-pub struct Frequency {
+pub struct FrequencyModifier {
   pub condition: Condition,
-  pub change_value: f32,
+  pub value: f32,
 }
 
-impl Frequency {
+impl FrequencyModifier {
   pub fn change_frequency(&self) -> f32 {
     match self.condition.meets_condition() {
-      true => self.change_value,
+      true => self.value,
       false => 0.,
     }
   }
