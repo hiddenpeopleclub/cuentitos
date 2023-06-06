@@ -2,7 +2,7 @@ use crate::{Block, Result};
 use rmp_serde::Deserializer;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub struct File {
   pub blocks: Vec<Block>,
 }

@@ -37,57 +37,64 @@ pub fn parse_file(token: Pair<Rule>) -> Option<File> {
   let mut index = 0;
   for inner_token in token.into_inner() {
     if inner_token.as_rule() == Rule::Block {
-      index += 1;
-      if let Some(blocks) = parse_blocks(index, inner_token) {
-        file.blocks.push(blocks);
+      let mut blocks = parse_blocks(&mut index, inner_token);
+      if !blocks.is_empty() {
+        if let Some(navigation) = blocks[0].get_navigation_mut() {
+          navigation.next = Some(index + 1);
+        }
       }
+      file.blocks.append(&mut blocks);
+      index += 1;
     }
   }
 
   Some(file)
 }
 
-fn parse_blocks(index: usize, token: Pair<Rule>) -> Option<Block> {
+fn parse_blocks(index: &mut usize, token: Pair<Rule>) -> Vec<Block> {
+  let mut blocks = Vec::default();
   if token.as_rule() != Rule::Block {
-    return None;
+    return blocks;
   }
   //    (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
-  let mut block = Block::default();
+  blocks.push(Block::default());
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Text => {
-        if let Some(text) = parse_text(index, inner_token) {
-          block = text;
+        if let Some(text) = parse_text(*index, inner_token) {
+          blocks[0] = text;
         }
       }
       /*Rule::NamedBucket => {
         if let Some(named_bucket) = parse_named_bucket(inner_token) {
           block = named_bucket;
         }
-      }
+      } */
       Rule::Choice => {
-        if let Some(choice) = parse_choice(inner_token) {
-          block = choice;
+        if let Some(choice) = parse_choice(*index, inner_token) {
+          blocks[0] = choice;
         }
-      } */
+      }
       Rule::Command => {
-        add_command_to_block(inner_token, &mut block);
-      } /*
+        add_command_to_block(inner_token, &mut blocks[0]);
+      }
       Rule::NewBlock => {
-      for inner_blocks_token in get_blocks_from_new_block(inner_token) {
-      if let Some(inner_blocks) = parse_blocks(inner_blocks_token) {
-      //block.children.push(inner_blocks);
+        for inner_blocks_token in get_blocks_from_new_block(inner_token) {
+          *index += 1;
+          if let Some(navigation) = blocks[0].get_navigation_mut() {
+            navigation.children.push(*index);
+          }
+          blocks.append(&mut parse_blocks(index, inner_blocks_token));
+        }
       }
-      }
-      } */
       _ => {}
     }
   }
 
-  Some(block)
+  blocks
 }
 
-/*fn get_blocks_from_new_block(token: Pair<Rule>) -> Vec<Pair<Rule>> {
+fn get_blocks_from_new_block(token: Pair<Rule>) -> Vec<Pair<Rule>> {
   let mut blocks = Vec::default();
 
   if token.as_rule() != Rule::NewBlock {
@@ -100,7 +107,7 @@ fn parse_blocks(index: usize, token: Pair<Rule>) -> Option<Block> {
     }
   }
   blocks
-}*/
+}
 /*
 fn parse_named_bucket(token: Pair<Rule>) -> Option<Block> {
   if token.as_rule() != Rule::NamedBucket {
@@ -126,32 +133,37 @@ fn parse_named_bucket(token: Pair<Rule>) -> Option<Block> {
 
   Some(blocks)
 }
-
-fn parse_choice(token: Pair<Rule>) -> Option<Block> {
+*/
+fn parse_choice(index: usize, token: Pair<Rule>) -> Option<Block> {
   if token.as_rule() != Rule::Choice {
     return None;
   }
 
-  let mut blocks = Block {
-    blocks_type: BlockType::Choice,
+  let mut text = String::default();
+  let mut settings = BlockSettings::default();
+  let navigation = Navigation {
+    index,
     ..Default::default()
   };
-
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Probability => {
-        blocks.probability = parse_probability(inner_token);
+        settings.frequency = parse_probability(inner_token);
       }
       Rule::String => {
-        blocks.text = inner_token.as_str().to_string();
+        text = inner_token.as_str().to_string();
       }
       _ => {}
     }
   }
 
-  Some(blocks)
+  Some(Block::Choice {
+    i18n_id: text,
+    settings,
+    navigation,
+  })
 }
-*/
+
 fn parse_text(index: usize, token: Pair<Rule>) -> Option<Block> {
   if token.as_rule() != Rule::Text {
     return None;
@@ -161,7 +173,6 @@ fn parse_text(index: usize, token: Pair<Rule>) -> Option<Block> {
   let mut settings = BlockSettings::default();
   let navigation = Navigation {
     index,
-    next: Some(index + 1),
     ..Default::default()
   };
   for inner_token in token.into_inner() {
@@ -219,13 +230,6 @@ fn add_command_to_block(token: Pair<Rule>, block: &mut Block) {
   match block {
     Block::Text {
       i18n_id: _,
-      navigation: _,
-      ref mut settings,
-    } => {
-      add_command_to_settings(token, settings);
-    }
-    Block::Bucket {
-      name: _,
       navigation: _,
       ref mut settings,
     } => {
@@ -406,7 +410,7 @@ mod test {
   use crate::{
     add_command_to_block, parse_comparison_operator, parse_condition, parse_file,
     parse_file_from_path, parse_frequency, parse_modifier, parse_probability, parse_requirement,
-    parse_text, PalabritasParser, Rule,
+    parse_text, PalabritasParser, Rule, parse_choice,
   };
   use palabritas_common::{
     Block, BlockSettings, Condition, FrequencyModifier, Modifier, Navigation, Operator,
@@ -528,7 +532,7 @@ mod test {
       };
       assert_eq!(named_bucket, expected_value);
     }
-
+ */
     #[test]
     fn parse_choice_correctly() {
       //Choice = { "*" ~ " "* ~ Probability? ~ String }
@@ -540,20 +544,28 @@ mod test {
 
       let choice_string = format!("*{} {}", probability_string, string);
       let token = short_parse(Rule::Choice, &choice_string);
-      let choice = parse_choice(token).unwrap();
+      let choice = parse_choice(0, token).unwrap();
 
       let probability_token = short_parse(Rule::Probability, &probability_string);
       let probability = parse_probability(probability_token);
 
-      let expected_value = Block {
-        text: string,
-        probability: probability,
-        blocks_type: BlockType::Choice,
+      let expected_navigation = Navigation {
+        index: 0,
         ..Default::default()
+      };
+  
+      let expected_settings = BlockSettings {
+        frequency: probability,
+        ..Default::default()
+      };
+      let expected_value = Block::Choice {
+        i18n_id: string,
+        navigation: expected_navigation,
+        settings: expected_settings,
       };
       assert_eq!(choice, expected_value);
     }
-  */
+ 
   #[test]
   fn parse_text_correctly() {
     //Text = { Probability? ~ String }
@@ -572,7 +584,6 @@ mod test {
 
     let expected_navigation = Navigation {
       index: 0,
-      next: Some(1),
       ..Default::default()
     };
 
