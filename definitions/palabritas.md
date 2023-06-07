@@ -313,6 +313,9 @@ You wake up feeling refreshed. Let's see what this day brings.
   You get to the farmer's market. It's very early and some stands are still being set up.
 ```
 
+### Finishing the game
+`-> END`
+
 ## Configuration
 ### Variables
 #### Bool
