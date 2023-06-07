@@ -66,7 +66,7 @@ You could add options on probabilistic branches, but let's keep going for now.
 
 Another interesting feature is the ability to create `probabilistic buckets`.
 
-A bucket is a set of probable paths that the engine will pick one every time is asked to render that bucket. Let's do a probabilistic bucket with the second option.
+A bucket is a set of probable paths where the engine will pick one every time is asked to render that bucket. Let's do a probabilistic bucket with the second option.
 
 ```cuentitos
   * I visit a popular street market to experience the city's unique flavors and energy.
@@ -112,15 +112,15 @@ You can also create what we call `named buckets`. These buckets support probabil
 
 ```cuentitos
     (50) At the bustling street market, you discover a food stand offering mouthwatering delicacies. 
-      [(50) happy_vendor]
+      [morning_vendor]
         req time_of_day morning
-        (50%) You notice the stand owner, their eyes sparkling with joy as they animatedly describe their homemade offerings to an eager customer.
-        (50%) You see the owner beaming with joy, their infectious smile and animated gestures inviting customers to try their delectable creations.
-      [(50) tired_vendor]
-        req time_of_day morning
-        (50%) You come across a vendor with furrowed brows and a tense expression, their voice raised as they heatedly argue with a customer over a transaction at their stand.
-        (50%) You spot a visibly agitated vendor, their clenched fists and piercing glare making it clear that they're unhappy with the current situation unfolding before them.
-      [tired_vendor]
+        [(100) happy_vendor]
+          (50%) You notice the stand owner, their eyes sparkling with joy as they animatedly describe their homemade offerings to an eager customer.
+          (50%) You see the owner beaming with joy, their infectious smile and animated gestures inviting customers to try their delectable creations.
+        [(25) tired_vendor]
+          (50%) You come across a vendor with furrowed brows and a tense expression, their voice raised as they heatedly argue with a customer over a transaction at their stand.
+          (50%) You spot a visibly agitated vendor, their clenched fists and piercing glare making it clear that they're unhappy with the current situation unfolding before them.
+      [night_vendor]
         req time_of_day night
         (50%) You observe a vendor at a small food stand, their shoulders slumped and eyes slightly glazed as they quietly serve customers, mustering just enough energy to complete each transaction.
         (50%) The vendor at a nearby food stand appears worn, their movements slow and deliberate, as they attempt to maintain a smile while attending to the seemingly endless stream of customers.

@@ -8,15 +8,15 @@ As you take your first steps in this urban jungle, you feel a mix of emotions, h
     This serene oasis gives you the confidence to face the challenges ahead as you acclimate to your new life in the bustling city.
   * I visit a popular street market to experience the city's unique flavors and energy.
     (50) At the bustling street market, you discover a food stand offering mouthwatering delicacies. 
-      [(50%) happy_vendor]
+      [morning_vendor]
         req time_of_day morning
-        (50%) You notice the stand owner, their eyes sparkling with joy as they animatedly describe their homemade offerings to an eager customer.
-        (50%) You see the owner beaming with joy, their infectious smile and animated gestures inviting customers to try their delectable creations.
-      [(50%) tired_vendor]
-        req time_of_day morning
-        (50%) You come across a vendor with furrowed brows and a tense expression, their voice raised as they heatedly argue with a customer over a transaction at their stand.
-        (50%) You spot a visibly agitated vendor, their clenched fists and piercing glare making it clear that they're unhappy with the current situation unfolding before them.
-      [tired_vendor]
+        [(100) happy_vendor]
+          (50%) You notice the stand owner, their eyes sparkling with joy as they animatedly describe their homemade offerings to an eager customer.
+          (50%) You see the owner beaming with joy, their infectious smile and animated gestures inviting customers to try their delectable creations.
+        [(25) tired_vendor]
+          (50%) You come across a vendor with furrowed brows and a tense expression, their voice raised as they heatedly argue with a customer over a transaction at their stand.
+          (50%) You spot a visibly agitated vendor, their clenched fists and piercing glare making it clear that they're unhappy with the current situation unfolding before them.
+      [night_vendor]
         req time_of_day night
         (50%) You observe a vendor at a small food stand, their shoulders slumped and eyes slightly glazed as they quietly serve customers, mustering just enough energy to complete each transaction.
         (50%) The vendor at a nearby food stand appears worn, their movements slow and deliberate, as they attempt to maintain a smile while attending to the seemingly endless stream of customers.
