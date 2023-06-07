@@ -74,16 +74,15 @@ You decide to focus on the now...
       mod energy 10
       mod time -7.5
       -> second_day
+-> END
 
-=== second_day ===
-You wake up feeling refreshed. Let's see what this day brings.
-  * Explore a museum
-    -> second_day.museum
-  * Go to the Farmer's Market
-    -> second_day.farmers_market
-
-= museum
+# second_day
+  You wake up feeling refreshed. Let's see what this day brings.
+    * Explore a museum
+      -> second_day.museum
+    * Go to the Farmer's Market
+      -> second_day.farmers_market
+## museum
   You get to the museum door. You watch through the window. It seems crowded.
-
-= farmers_market
+## farmers_market
   You get to the farmer's market. It's very early and some stands are still being set up.
