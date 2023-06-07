@@ -2,19 +2,18 @@ use crate::{FrequencyModifier, Modifier, Requirement};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq, Clone)]
+pub struct BlockDefinition {
+    i18n_id: String,
+    navigation: Navigation,
+    settings: BlockSettings,  
+}
+
 pub enum Block {
   #[default]
   None,
-  Text {
-    i18n_id: String,
-    navigation: Navigation,
-    settings: BlockSettings,
-  },
-  Choice {
-    i18n_id: String,
-    navigation: Navigation,
-    settings: BlockSettings,
-  },
+  Text(Definition),
+  Choice(Definition),
+  Bucket(BucketDefinition)
 }
 
 impl Block {
