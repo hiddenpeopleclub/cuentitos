@@ -319,5 +319,3 @@ You wake up feeling refreshed. Let's see what this day brings.
 #### Integer
 #### Float
 #### Enum
-## Reputations
-## Items

@@ -62,10 +62,10 @@ You decide to focus on the now...
     req energy >10
     [call]
       (30) The phone rings twice, and dad picks up. You have a good chat.
-        req energy>20
+        req energy >20
         mod energy -10
       (10) The phone rings twice, and mom picks up. You have a good chat.
-        req energy>20
+        req energy >20
         freq time_of_day morning 100
         mod energy -10
       (40) The phone rings ten times, nobody is at home.
