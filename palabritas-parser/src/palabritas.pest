@@ -20,8 +20,8 @@ Command = {NEWLINE ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier 
 
 Probability = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
 
-Knot = {"===" ~ " "* ~ Identifier ~ " "* ~"===" ~ " "* ~ NEWLINE ~ ( NEWLINE | Block | Stitch )* }
-Stitch = { "=" ~ " "* ~ Identifier ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*}
+Section = {"#" ~ " "* ~ Identifier ~ " "* ~ NEWLINE ~ ( NEWLINE | Block | Subsection )* }
+Subsection = { "##" ~ " "* ~ Identifier ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*}
 
 Text = { Probability? ~ String }
 Choice = { "*" ~ " "* ~ Probability? ~ String }
@@ -40,4 +40,4 @@ Block = {
     (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
 }
 
-File = { SOI ~ (NEWLINE | Block | Knot )* ~ EOI }
+File = { SOI ~ (NEWLINE | Block | Section )* ~ EOI }

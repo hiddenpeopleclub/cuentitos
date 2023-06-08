@@ -5,8 +5,8 @@ extern crate pest_derive;
 use std::path::Path;
 
 use palabritas_common::{
-  Block, BlockSettings, Condition, File, FrequencyModifier, Modifier, Navigation, Operator,
-  Requirement,
+  Block, BlockId, BlockSettings, Condition, Definition, File, FrequencyModifier, Modifier,
+  NavigationNext, Operator, Requirement,
 };
 use pest::{iterators::Pair, Parser};
 
@@ -32,37 +32,59 @@ pub fn parse_file(token: Pair<Rule>) -> Option<File> {
     return None;
   }
 
-  let mut file = File::default();
-
-  let mut index = 0;
+  let mut blocks: Vec<Vec<Block>> = Vec::default();
   for inner_token in token.into_inner() {
     if inner_token.as_rule() == Rule::Block {
-      let mut blocks = parse_blocks(&mut index, inner_token);
-      if !blocks.is_empty() {
-        if let Some(navigation) = blocks[0].get_navigation_mut() {
-          navigation.next = Some(index + 1);
-        }
-      }
-      file.blocks.append(&mut blocks);
-      index += 1;
+      parse_block(inner_token, &mut blocks, 0);
     }
   }
 
-  Some(file)
+  if blocks.is_empty() {
+    return None;
+  }
+
+  if let Some(last) = blocks[0].last_mut() {
+    if let Some(navigation) = last.get_navigation_mut() {
+      navigation.next = NavigationNext::EOF;
+    }
+  }
+
+  let mut ordered_blocks = Vec::default();
+
+  for child_level in 0..blocks.len() {
+    let mut index_offset = 0;
+    for childs_in_level in blocks.iter().take(child_level + 1) {
+      index_offset += childs_in_level.len();
+    }
+
+    for block in &mut blocks[child_level] {
+      if let Some(block_nav) = block.get_navigation_mut() {
+        for mut child in &mut block_nav.children {
+          child.0 += index_offset;
+        }
+      }
+
+      ordered_blocks.push(block.clone());
+    }
+  }
+
+  Some(File {
+    blocks: ordered_blocks,
+  })
 }
 
-fn parse_blocks(index: &mut usize, token: Pair<Rule>) -> Vec<Block> {
-  let mut blocks = Vec::default();
+fn parse_block(token: Pair<Rule>, blocks: &mut Vec<Vec<Block>>, child_order: usize) {
   if token.as_rule() != Rule::Block {
-    return blocks;
+    return;
   }
+
   //    (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
-  blocks.push(Block::default());
+  let mut block = Block::default();
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Text => {
-        if let Some(text) = parse_text(*index, inner_token) {
-          blocks[0] = text;
+        if let Some(text) = parse_text(inner_token) {
+          block = text;
         }
       }
       /*Rule::NamedBucket => {
@@ -71,27 +93,32 @@ fn parse_blocks(index: &mut usize, token: Pair<Rule>) -> Vec<Block> {
         }
       } */
       Rule::Choice => {
-        if let Some(choice) = parse_choice(*index, inner_token) {
-          blocks[0] = choice;
+        if let Some(choice) = parse_choice(inner_token) {
+          block = choice;
         }
       }
       Rule::Command => {
-        add_command_to_block(inner_token, &mut blocks[0]);
+        add_command_to_block(inner_token, &mut block);
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
-          *index += 1;
-          if let Some(navigation) = blocks[0].get_navigation_mut() {
-            navigation.children.push(*index);
+          if let Some(navigation) = block.get_navigation_mut() {
+            parse_block(inner_blocks_token, blocks, child_order + 1);
+            navigation
+              .children
+              .push(BlockId(blocks[child_order + 1].len() - 1));
           }
-          blocks.append(&mut parse_blocks(index, inner_blocks_token));
         }
       }
       _ => {}
     }
   }
 
-  blocks
+  while child_order >= blocks.len() {
+    blocks.push(Vec::default());
+  }
+
+  blocks[child_order].push(block);
 }
 
 fn get_blocks_from_new_block(token: Pair<Rule>) -> Vec<Pair<Rule>> {
@@ -134,17 +161,14 @@ fn parse_named_bucket(token: Pair<Rule>) -> Option<Block> {
   Some(blocks)
 }
 */
-fn parse_choice(index: usize, token: Pair<Rule>) -> Option<Block> {
+fn parse_choice(token: Pair<Rule>) -> Option<Block> {
   if token.as_rule() != Rule::Choice {
     return None;
   }
 
   let mut text = String::default();
   let mut settings = BlockSettings::default();
-  let navigation = Navigation {
-    index,
-    ..Default::default()
-  };
+
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Probability => {
@@ -157,24 +181,20 @@ fn parse_choice(index: usize, token: Pair<Rule>) -> Option<Block> {
     }
   }
 
-  Some(Block::Choice {
+  Some(Block::Choice(Definition {
     i18n_id: text,
     settings,
-    navigation,
-  })
+    ..Default::default()
+  }))
 }
 
-fn parse_text(index: usize, token: Pair<Rule>) -> Option<Block> {
+fn parse_text(token: Pair<Rule>) -> Option<Block> {
   if token.as_rule() != Rule::Text {
     return None;
   }
 
   let mut text = String::default();
   let mut settings = BlockSettings::default();
-  let navigation = Navigation {
-    index,
-    ..Default::default()
-  };
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Probability => {
@@ -187,11 +207,11 @@ fn parse_text(index: usize, token: Pair<Rule>) -> Option<Block> {
     }
   }
 
-  Some(Block::Text {
+  Some(Block::Text(Definition {
     i18n_id: text,
     settings,
-    navigation,
-  })
+    ..Default::default()
+  }))
 }
 
 fn add_command_to_settings(token: Pair<Rule>, settings: &mut BlockSettings) {
@@ -228,18 +248,18 @@ fn add_command_to_settings(token: Pair<Rule>, settings: &mut BlockSettings) {
 }
 fn add_command_to_block(token: Pair<Rule>, block: &mut Block) {
   match block {
-    Block::Text {
+    Block::Text(Definition {
       i18n_id: _,
       navigation: _,
       ref mut settings,
-    } => {
+    }) => {
       add_command_to_settings(token, settings);
     }
-    Block::Choice {
+    Block::Choice(Definition {
       i18n_id: _,
       navigation: _,
       ref mut settings,
-    } => {
+    }) => {
       add_command_to_settings(token, settings);
     }
     _ => {}
@@ -408,12 +428,12 @@ fn parse_probability(token: Pair<Rule>) -> Option<u64> {
 mod test {
 
   use crate::{
-    add_command_to_block, parse_comparison_operator, parse_condition, parse_file,
+    add_command_to_block, parse_choice, parse_comparison_operator, parse_condition, parse_file,
     parse_file_from_path, parse_frequency, parse_modifier, parse_probability, parse_requirement,
-    parse_text, PalabritasParser, Rule, parse_choice,
+    parse_text, PalabritasParser, Rule,
   };
   use palabritas_common::{
-    Block, BlockSettings, Condition, FrequencyModifier, Modifier, Navigation, Operator,
+    Block, BlockSettings, Condition, Definition, FrequencyModifier, Modifier, Navigation, Operator,
     Requirement, Variable,
   };
   use pest::iterators::Pair;
@@ -532,40 +552,39 @@ mod test {
       };
       assert_eq!(named_bucket, expected_value);
     }
- */
-    #[test]
-    fn parse_choice_correctly() {
-      //Choice = { "*" ~ " "* ~ Probability? ~ String }
+  */
+  #[test]
+  fn parse_choice_correctly() {
+    //Choice = { "*" ~ " "* ~ Probability? ~ String }
 
-      let float = rand::thread_rng().gen_range(i8::MIN as f32..i8::MAX as f32);
-      let probability_string = format!("({})", float);
+    let float = rand::thread_rng().gen_range(i8::MIN as f32..i8::MAX as f32);
+    let probability_string = format!("({})", float);
 
-      let string = make_random_string();
+    let string = make_random_string();
 
-      let choice_string = format!("*{} {}", probability_string, string);
-      let token = short_parse(Rule::Choice, &choice_string);
-      let choice = parse_choice(0, token).unwrap();
+    let choice_string = format!("*{} {}", probability_string, string);
+    let token = short_parse(Rule::Choice, &choice_string);
+    let choice = parse_choice(token).unwrap();
 
-      let probability_token = short_parse(Rule::Probability, &probability_string);
-      let probability = parse_probability(probability_token);
+    let probability_token = short_parse(Rule::Probability, &probability_string);
+    let probability = parse_probability(probability_token);
 
-      let expected_navigation = Navigation {
-        index: 0,
-        ..Default::default()
-      };
-  
-      let expected_settings = BlockSettings {
-        frequency: probability,
-        ..Default::default()
-      };
-      let expected_value = Block::Choice {
-        i18n_id: string,
-        navigation: expected_navigation,
-        settings: expected_settings,
-      };
-      assert_eq!(choice, expected_value);
-    }
- 
+    let expected_navigation = Navigation {
+      ..Default::default()
+    };
+
+    let expected_settings = BlockSettings {
+      frequency: probability,
+      ..Default::default()
+    };
+    let expected_value = Block::Choice(Definition {
+      i18n_id: string,
+      navigation: expected_navigation,
+      settings: expected_settings,
+    });
+    assert_eq!(choice, expected_value);
+  }
+
   #[test]
   fn parse_text_correctly() {
     //Text = { Probability? ~ String }
@@ -577,13 +596,12 @@ mod test {
 
     let text_string = format!("{} {}", probability_string, string);
     let token = short_parse(Rule::Text, &text_string);
-    let text = parse_text(0, token).unwrap();
+    let text = parse_text(token).unwrap();
 
     let probability_token = short_parse(Rule::Probability, &probability_string);
     let probability = parse_probability(probability_token);
 
     let expected_navigation = Navigation {
-      index: 0,
       ..Default::default()
     };
 
@@ -591,22 +609,23 @@ mod test {
       frequency: probability,
       ..Default::default()
     };
-    let expected_value = Block::Text {
+
+    let expected_value = Block::Text(Definition {
       i18n_id: string,
       navigation: expected_navigation,
       settings: expected_settings,
-    };
+    });
     assert_eq!(text, expected_value);
   }
 
   #[test]
   fn command_gets_added_to_blocks_correctly() {
     let text_id = make_random_string();
-    let mut block = Block::Text {
+    let mut block = Block::Text(Definition {
       i18n_id: text_id.clone(),
       navigation: Navigation::default(),
       settings: BlockSettings::default(),
-    };
+    });
 
     let mut block_settings = BlockSettings::default();
     // //Command = {NEWLINE ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert) }
@@ -674,11 +693,11 @@ mod test {
     let token = short_parse(Rule::Command, &requirement_string);
     add_command_to_block(token, &mut block);
 
-    let expected_block = Block::Text {
+    let expected_block = Block::Text(Definition {
       i18n_id: text_id,
       navigation: Navigation::default(),
       settings: block_settings,
-    };
+    });
 
     assert_eq!(block, expected_block);
   }
@@ -1063,17 +1082,17 @@ mod test {
   }
 
   #[test]
-  fn parse_knot_rule() {
+  fn parse_section_rule() {
     //Knot = {"===" ~ " "* ~ Identifier ~ " "* ~"===" ~ " "* ~ NEWLINE ~ ( NEWLINE | BlockBlock | Stitch | NamedBucket )* }
     let identifier = make_random_identifier();
-    assert_parse_rule(Rule::Knot, &("===".to_string() + &identifier + "===\n"));
+    assert_parse_rule(Rule::Section, &("#".to_string() + &identifier + "\n"));
   }
 
   #[test]
-  fn parse_stitch_rule() {
+  fn parse_subsection_rule() {
     //stitch = {"=" ~ " "* ~ identifier ~ " "*}
     let identifier = make_random_identifier();
-    assert_parse_rule(Rule::Stitch, &("=".to_string() + &identifier));
+    assert_parse_rule(Rule::Subsection, &("##".to_string() + &identifier));
   }
 
   #[test]

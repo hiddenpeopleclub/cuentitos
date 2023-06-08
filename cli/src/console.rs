@@ -34,15 +34,19 @@ impl Console {
       let mut args = input.split(' ');
 
       match args.next() {
-        Some("n") => {
-          if let Some(output_text) = runtime.next_output() {
+        Some("") => {
+          if let Some(output_text) = runtime.next_block() {
             print_output_text(output_text);
           }
         }
         Some("q") => break,
         Some(str) => {
           if let Ok(choice) = str.parse::<usize>() {
-            if let Some(output_text) = runtime.pick_choice(choice) {
+            if choice == 0 {
+              println!("invalid option");
+              continue;
+            }
+            if let Some(output_text) = runtime.pick_choice(choice - 1) {
               print_output_text(output_text);
             }
           }
@@ -53,9 +57,9 @@ impl Console {
   }
 }
 
-fn print_output_text(output_text: OutputText) {
+fn print_output_text(output_text: Block) {
   println!("{}", output_text.text);
-  for choice in output_text.choices {
-    println!("  *{}", choice);
+  for i in 0..output_text.choices.len() {
+    println!("  ({}){}", i + 1, output_text.choices[i]);
   }
 }

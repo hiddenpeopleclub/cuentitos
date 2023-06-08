@@ -28,10 +28,4 @@ pub use divert::*;
 mod modifier;
 pub use modifier::*;
 
-mod output_text;
-pub use output_text::*;
-
-mod readable;
-pub use readable::*;
-
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
