@@ -5,7 +5,7 @@ extern crate pest_derive;
 use std::path::Path;
 
 use palabritas_common::{
-  Block, BlockSettings, Condition, Definition, File, FrequencyModifier, Modifier, NavigationNext,
+  Block, BlockSettings, Condition, BlockSettings, File, FrequencyModifier, Modifier, NavigationNext,
   Operator, Requirement,
 };
 use pest::{iterators::Pair, Parser};
@@ -44,9 +44,7 @@ pub fn parse_file(token: Pair<Rule>) -> Option<File> {
   }
 
   if let Some(last) = blocks[0].last_mut() {
-    if let Some(navigation) = last.get_navigation_mut() {
-      navigation.next = NavigationNext::EOF;
-    }
+    last.get_settings_mut().next = NavigationNext::EOF; 
   }
 
   let mut ordered_blocks = Vec::default();
@@ -58,10 +56,9 @@ pub fn parse_file(token: Pair<Rule>) -> Option<File> {
     }
 
     for block in &mut blocks[child_level] {
-      if let Some(block_nav) = block.get_navigation_mut() {
-        for child in &mut block_nav.children {
-          *child += index_offset;
-        }
+      let mut settings = block.get_settings_mut();
+      for child in &mut settings.children {
+        *child += index_offset;
       }
 
       ordered_blocks.push(block.clone());
@@ -102,10 +99,9 @@ fn parse_block(token: Pair<Rule>, blocks: &mut Vec<Vec<Block>>, child_order: usi
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
-          if let Some(navigation) = block.get_navigation_mut() {
-            parse_block(inner_blocks_token, blocks, child_order + 1);
-            navigation.children.push(blocks[child_order + 1].len() - 1);
-          }
+          let mut settings = block.get_settings_mut();
+          parse_block(inner_blocks_token, blocks, child_order + 1);
+          settings.children.push(blocks[child_order + 1].len() - 1);
         }
       }
       _ => {}

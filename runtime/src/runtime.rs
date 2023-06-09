@@ -1,5 +1,6 @@
+use std::println;
+
 use palabritas_common::BlockId;
-use palabritas_common::Definition;
 use palabritas_common::File;
 use rand_pcg::Pcg32;
 use serde::{Deserialize, Serialize};
@@ -66,14 +67,11 @@ impl Runtime {
   fn get_next_block_output(&self) -> Option<Block> {
     let id = self.block_stack.last().unwrap();
     let block = self.get_block(*id);
-    if let palabritas_common::Block::Text(Definition {
-      i18n_id,
-      navigation: _,
-      settings: _,
-    }) = block
+    if let palabritas_common::Block::Text{ id, settings } = block
     {
+      println!("USE I18n!!!");
       return Some(Block {
-        text: i18n_id.clone(),
+        text: id.clone(),
         choices: self.get_choices_strings(),
       });
     }
@@ -115,18 +113,18 @@ impl Runtime {
 
     if let Some(last_navigation) = last_block.get_navigation() {
       match &last_navigation.next {
-        palabritas_common::NavigationNext::None => {}
-        palabritas_common::NavigationNext::BlockId(other_id) => {
+        palabritas_common::NextBlock::None => {}
+        palabritas_common::NextBlock::BlockId(other_id) => {
           self.block_stack.pop();
           self.block_stack.push(*other_id);
           return;
         }
-        palabritas_common::NavigationNext::EOF => {
+        palabritas_common::NextBlock::EOF => {
           println!("Story finished\n");
           self.block_stack = vec![0];
           return;
         }
-        palabritas_common::NavigationNext::Section(_) => todo!(),
+        palabritas_common::NextBlock::Section(_) => todo!(),
       }
     }
 
@@ -165,13 +163,11 @@ impl Runtime {
     let choices = self.get_choices();
 
     let mut choices_strings = Vec::default();
-
+    println!("USE I18n!!!")
     for choice in choices {
-      if let palabritas_common::Block::Choice(Definition {
-        i18n_id,
-        navigation: _,
-        settings: _,
-      }) = self.get_block(choice)
+      if let palabritas_common::Block::Choice{ 
+        id, settings 
+      } = self.get_block(choice)
       {
         choices_strings.push(i18n_id.clone());
       }

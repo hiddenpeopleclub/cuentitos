@@ -1,88 +1,52 @@
-use crate::{FrequencyModifier, Modifier, Requirement};
+use crate::{I18nId, FrequencyModifier, Modifier, Requirement};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Clone)]
-pub struct Definition {
-  pub i18n_id: String,
-  pub navigation: Navigation,
-  pub settings: BlockSettings,
-}
+pub type BlockId = usize;
+pub type SectionId = usize;
+pub type BucketName = String;
 
-#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Clone)]
-pub struct BucketDefinition {
-  pub name: Option<String>,
-  pub navigation: Navigation,
-  pub settings: BlockSettings,
-}
-
-#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Clone)]
-pub enum Block {
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
+pub enum NextBlock {
   #[default]
   None,
-  Text(Definition),
-  Choice(Definition),
-  Bucket(BucketDefinition),
+  BlockId(BlockId),
+  EndOfFile,
+  Section(SectionId),
 }
 
-impl Block {
-  pub fn get_navigation(&self) -> Option<&Navigation> {
-    match self {
-      Block::None => None,
-      Block::Text(definition) => Some(&definition.navigation),
-      Block::Choice(definition) => Some(&definition.navigation),
-      Block::Bucket(definition) => Some(&definition.navigation),
-    }
-  }
-
-  pub fn get_navigation_mut(&mut self) -> Option<&mut Navigation> {
-    match self {
-      Block::None => None,
-      Block::Text(definition) => Some(&mut definition.navigation),
-      Block::Choice(definition) => Some(&mut definition.navigation),
-      Block::Bucket(definition) => Some(&mut definition.navigation),
-    }
-  }
-
-  pub fn get_settings(&self) -> Option<&BlockSettings> {
-    match self {
-      Block::None => None,
-      Block::Text(definition) => Some(&definition.settings),
-      Block::Choice(definition) => Some(&definition.settings),
-      Block::Bucket(definition) => Some(&definition.settings),
-    }
-  }
-
-  pub fn get_settings_mut(&mut self) -> Option<&mut BlockSettings> {
-    match self {
-      Block::None => None,
-      Block::Text(definition) => Some(&mut definition.settings),
-      Block::Choice(definition) => Some(&mut definition.settings),
-      Block::Bucket(definition) => Some(&mut definition.settings),
-    }
-  }
-}
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Clone)]
 pub struct BlockSettings {
+  pub children: Vec<BlockId>,
+  pub next: NextBlock,
   pub frequency: Option<u64>,
   pub frequency_modifiers: Vec<FrequencyModifier>,
   pub requirements: Vec<Requirement>,
   pub modifiers: Vec<Modifier>,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
-pub struct Navigation {
-  pub children: Vec<BlockId>,
-  pub next: NavigationNext,
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub enum Block {
+  Text(I18nId,BlockSettings),
+  Choice(I18nId,BlockSettings),
+  Bucket(Option<BucketName>,BlockSettings),
 }
 
-pub type BlockId = usize;
-pub type SectionId = usize;
-
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
-pub enum NavigationNext {
-  #[default]
-  None,
-  BlockId(BlockId),
-  EOF,
-  Section(SectionId),
+impl Block {
+  pub fn get_settings_mut(&mut self) -> &mut BlockSettings {
+    match self {
+      Block::Text(_, settings) => settings,
+      Block::Choice(_,settings) => settings,
+      Block::Bucket(_,settings) => settings,
+    }
+  }
 }
+
+impl Default for Block {
+  fn default() -> Self {
+    Block::Text (
+      String::default(),
+      BlockSettings::default()
+    )
+  }
+}
+
