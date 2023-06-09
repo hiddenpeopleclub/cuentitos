@@ -313,7 +313,8 @@ If the subsection is within the current section, you can ignore the section name
   You get to the farmer's market. It's very early and some stands are still being set up.
 ```
 
-You can also add requirements and probabilities to sections and sub-sections themselves as if they were any piece of text.
+You can also add requirements and probabilities to sections and sub-sections 
+themselves as if they were any piece of text.
 
 For example:
 ```cuentitos
@@ -325,9 +326,37 @@ For example:
 ### Finishing the game
 `-> END`
 
+## Comments
+A line that starts with `//` is ignored.
+
+## Functions
+You can dynamically communicate with your runtime by the way of functions.
+To run a function you start and finish a line with backticks.
+
+Example:
+
+```cuentitos
+# second_day_happy
+  You wake up feeling refreshed. Let's see what this day brings.
+  `play_sound alarm`
+```
+
+The runtime will receive a function call with "alarm" as a parameter.
+
+Since this is dynamic, the compiler can't check if the types are the right ones, you'll have to do this yourself.
+
+You can use an arbitrary amount of parameters, they will be passed to the runtime as a vector.
+
+```cuentitos
+`play_sound alarm 0.3`
+```
+It's up to the runtime how to interpret `0.3` in this case, and cuentitos will just pass it through.
+You can always use variables as a way to communicate with the runtime and check for types in compile time.
+
 ## Configuration
 ### Variables
 #### Bool
 #### Integer
 #### Float
 #### Enum
+#### String

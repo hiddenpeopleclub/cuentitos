@@ -78,6 +78,7 @@ You decide to focus on the now...
 
 # second_day_happy
   You wake up feeling refreshed. Let's see what this day brings.
+  `play_sound alarm 0.3`
     * Explore a museum
       -> second_day.museum
     * Go to the Farmer's Market
