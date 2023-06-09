@@ -404,12 +404,7 @@ fn parse_probability(token: Pair<Rule>) -> Option<f32> {
 
 #[cfg(test)]
 mod test {
-
-  use crate::{
-    add_command_to_block, parse_choice, parse_comparison_operator, parse_condition, parse_file,
-    parse_database_from_path, parse_frequency, parse_modifier, parse_probability, parse_requirement,
-    parse_text, PalabritasParser, Rule,
-  };
+  use crate::*;
   use cuentitos_common::{
     Block, BlockSettings, Condition, FrequencyModifier, Modifier, Operator, Requirement, Variable,
   };
