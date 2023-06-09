@@ -54,18 +54,18 @@ impl Runtime {
       return None;
     }
 
-    if choices[choice].0 >= self.file.blocks.len() {
+    if choices[choice] >= self.file.blocks.len() {
       println!("Invalid option");
       return None;
     }
 
-    self.block_stack.push(choices[choice].clone());
+    self.block_stack.push(choices[choice]);
     self.next_block()
   }
 
   fn get_next_block_output(&self) -> Option<Block> {
     let id = self.block_stack.last().unwrap();
-    let block = self.get_block(id);
+    let block = self.get_block(*id);
     if let palabritas_common::Block::Text(Definition {
       i18n_id,
       navigation: _,
@@ -83,25 +83,25 @@ impl Runtime {
 
   fn update_stack(&mut self) {
     if self.block_stack.is_empty() {
-      self.block_stack.push(BlockId(0));
+      self.block_stack.push(0);
       return;
     }
 
     let last_block_id = self.block_stack.last().unwrap();
 
-    if last_block_id.0 >= self.file.blocks.len() {
+    if last_block_id >= &self.file.blocks.len() {
       return;
     }
 
-    let last_block = self.get_block(last_block_id);
+    let last_block = self.get_block(*last_block_id);
 
     if let Some(last_navigation) = last_block.get_navigation() {
       if !last_navigation.children.is_empty() {
-        if let palabritas_common::Block::Choice(_) = self.get_block(&last_navigation.children[0]) {
+        if let palabritas_common::Block::Choice(_) = self.get_block(last_navigation.children[0]) {
           println!("Make a choice\n");
           return;
         }
-        self.block_stack.push(last_navigation.children[0].clone());
+        self.block_stack.push(last_navigation.children[0]);
         return;
       }
     }
@@ -109,21 +109,21 @@ impl Runtime {
   }
 
   fn pop_stack_and_find_next(&mut self) {
-    let last_block_id = self.block_stack.last().unwrap().clone();
+    let last_block_id = *self.block_stack.last().unwrap();
 
-    let last_block = self.get_block(&last_block_id).clone();
+    let last_block = self.get_block(last_block_id).clone();
 
     if let Some(last_navigation) = last_block.get_navigation() {
       match &last_navigation.next {
         palabritas_common::NavigationNext::None => {}
         palabritas_common::NavigationNext::BlockId(other_id) => {
           self.block_stack.pop();
-          self.block_stack.push(other_id.clone());
+          self.block_stack.push(*other_id);
           return;
         }
         palabritas_common::NavigationNext::EOF => {
           println!("Story finished\n");
-          self.block_stack = vec![BlockId(0)];
+          self.block_stack = vec![0];
           return;
         }
         palabritas_common::NavigationNext::Section(_) => todo!(),
@@ -133,23 +133,23 @@ impl Runtime {
     self.block_stack.pop();
 
     if self.block_stack.is_empty() {
-      self.block_stack.push(BlockId(last_block_id.0 + 1));
+      self.block_stack.push(last_block_id + 1);
       return;
     }
 
     if let Some(parent_navigation) =
-      self.file.blocks[self.block_stack.last().unwrap().0].get_navigation()
+      self.file.blocks[*self.block_stack.last().unwrap()].get_navigation()
     {
       let mut child_found = false;
       for child in &parent_navigation.children {
         if child_found {
-          if let palabritas_common::Block::Choice(_) = self.get_block(child) {
+          if let palabritas_common::Block::Choice(_) = self.get_block(*child) {
             continue;
           }
-          self.block_stack.push(child.clone());
+          self.block_stack.push(*child);
           return;
         }
-        if child.0 == last_block_id.0 {
+        if *child == last_block_id {
           child_found = true;
         }
       }
@@ -157,8 +157,8 @@ impl Runtime {
     self.pop_stack_and_find_next()
   }
 
-  fn get_block(&self, id: &BlockId) -> &palabritas_common::Block {
-    &self.file.blocks[id.0]
+  fn get_block(&self, id: BlockId) -> &palabritas_common::Block {
+    &self.file.blocks[id]
   }
 
   fn get_choices_strings(&self) -> Vec<String> {
@@ -171,7 +171,7 @@ impl Runtime {
         i18n_id,
         navigation: _,
         settings: _,
-      }) = self.get_block(&choice)
+      }) = self.get_block(choice)
       {
         choices_strings.push(i18n_id.clone());
       }
@@ -187,8 +187,8 @@ impl Runtime {
       return choices;
     }
 
-    let last_block_id = self.block_stack.last().unwrap().clone();
-    let last_block = self.get_block(&last_block_id).clone();
+    let last_block_id = self.block_stack.last().unwrap();
+    let last_block = self.get_block(*last_block_id).clone();
 
     let navigation = last_block.get_navigation();
 
@@ -199,9 +199,9 @@ impl Runtime {
     let navigation = navigation.unwrap();
 
     for child in &navigation.children {
-      if child.0 < self.file.blocks.len() {
-        if let palabritas_common::Block::Choice(_) = self.get_block(child) {
-          choices.push(child.clone())
+      if *child < self.file.blocks.len() {
+        if let palabritas_common::Block::Choice(_) = self.get_block(*child) {
+          choices.push(*child)
         }
       }
     }
@@ -213,9 +213,7 @@ impl Runtime {
 mod test {
 
   use crate::Runtime;
-  use palabritas_common::{
-    Block, BlockId, BlockSettings, Definition, File, Navigation, NavigationNext,
-  };
+  use palabritas_common::{Block, BlockSettings, Definition, File, Navigation, NavigationNext};
 
   #[test]
   fn new_runtime_works_correctly() {
@@ -229,7 +227,7 @@ mod test {
   #[test]
   fn get_choices_works_correctly() {
     let navigation = Navigation {
-      children: vec![BlockId(1), BlockId(2), BlockId(3)],
+      children: vec![1, 2, 3],
       next: NavigationNext::None,
     };
     let parent = palabritas_common::Block::Text(Definition {
@@ -272,18 +270,18 @@ mod test {
     };
     let runtime = Runtime {
       file,
-      block_stack: vec![BlockId(0)],
+      block_stack: vec![0],
       ..Default::default()
     };
 
     let choices = runtime.get_choices();
-    let expected_result = vec![BlockId(1), BlockId(2)];
+    let expected_result = vec![1, 2];
     assert_eq!(choices, expected_result);
   }
   #[test]
   fn get_choices_strings_works_correctly() {
     let navigation: Navigation = Navigation {
-      children: vec![BlockId(1), BlockId(2), BlockId(3)],
+      children: vec![1, 2, 3],
       next: NavigationNext::None,
     };
     let parent = Block::Text(Definition {
@@ -326,7 +324,7 @@ mod test {
     };
     let runtime = Runtime {
       file,
-      block_stack: vec![BlockId(0)],
+      block_stack: vec![0],
       ..Default::default()
     };
     let choices = runtime.get_choices_strings();
@@ -336,7 +334,7 @@ mod test {
   #[test]
   fn updates_stack_to_first_child_correctly() {
     let navigation = Navigation {
-      children: vec![BlockId(1), BlockId(2)],
+      children: vec![1, 2],
       next: NavigationNext::None,
     };
     let parent = Block::Text(Definition {
@@ -371,17 +369,17 @@ mod test {
 
     let mut runtime = Runtime {
       file,
-      block_stack: vec![BlockId(0)],
+      block_stack: vec![0],
       ..Default::default()
     };
     runtime.update_stack();
-    assert_eq!(*runtime.block_stack.last().unwrap(), BlockId(1));
+    assert_eq!(*runtime.block_stack.last().unwrap(), 1);
   }
 
   #[test]
   fn update_stack_to_next_sibling_correctly() {
     let navigation = Navigation {
-      children: vec![BlockId(2), BlockId(3), BlockId(4)],
+      children: vec![2, 3, 4],
       next: NavigationNext::None,
     };
 
@@ -443,22 +441,22 @@ mod test {
 
     let mut runtime = Runtime {
       file,
-      block_stack: vec![BlockId(0), BlockId(2)],
+      block_stack: vec![0, 2],
       ..Default::default()
     };
 
     runtime.update_stack();
-    assert_eq!(*runtime.block_stack.last().unwrap(), BlockId(3));
+    assert_eq!(*runtime.block_stack.last().unwrap(), 3);
     runtime.update_stack();
-    assert_eq!(*runtime.block_stack.last().unwrap(), BlockId(4));
+    assert_eq!(*runtime.block_stack.last().unwrap(), 4);
     runtime.update_stack();
-    assert_eq!(*runtime.block_stack.last().unwrap(), BlockId(1));
+    assert_eq!(*runtime.block_stack.last().unwrap(), 1);
   }
 
   #[test]
   fn get_next_block_output_works_correctly() {
     let navigation = Navigation {
-      children: vec![BlockId(1), BlockId(2)],
+      children: vec![1, 2],
       next: NavigationNext::None,
     };
     let parent = Block::Text(Definition {
@@ -468,7 +466,7 @@ mod test {
     });
 
     let navigation = Navigation {
-      children: vec![BlockId(1), BlockId(2), BlockId(3)],
+      children: vec![1, 2, 3],
       next: NavigationNext::None,
     };
     let choice_1 = Block::Choice(Definition {
@@ -478,7 +476,7 @@ mod test {
     });
 
     let navigation = Navigation {
-      children: vec![BlockId(1), BlockId(2), BlockId(3)],
+      children: vec![1, 2, 3],
       next: NavigationNext::None,
     };
     let choice_2 = Block::Choice(Definition {
@@ -493,7 +491,7 @@ mod test {
 
     let runtime = Runtime {
       file,
-      block_stack: vec![BlockId(0)],
+      block_stack: vec![0],
       ..Default::default()
     };
 
@@ -509,7 +507,7 @@ mod test {
   #[test]
   fn next_block_works_correctly() {
     let navigation = Navigation {
-      children: vec![BlockId(1), BlockId(2)],
+      children: vec![1, 2],
       next: NavigationNext::None,
     };
     let parent = Block::Text(Definition {
@@ -519,7 +517,7 @@ mod test {
     });
 
     let navigation = Navigation {
-      children: vec![BlockId(1), BlockId(2), BlockId(3)],
+      children: vec![1, 2, 3],
       next: NavigationNext::None,
     };
     let choice_1 = Block::Choice(Definition {
@@ -529,7 +527,7 @@ mod test {
     });
 
     let navigation = Navigation {
-      children: vec![BlockId(1), BlockId(2), BlockId(3)],
+      children: vec![1, 2, 3],
       next: NavigationNext::None,
     };
     let choice_2 = Block::Choice(Definition {
@@ -553,7 +551,7 @@ mod test {
     });
 
     assert_eq!(output, expected_output);
-    assert_eq!(runtime.block_stack, vec![BlockId(0)]);
+    assert_eq!(runtime.block_stack, vec![0]);
   }
 
   #[test]

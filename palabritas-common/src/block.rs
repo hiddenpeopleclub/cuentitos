@@ -75,11 +75,8 @@ pub struct Navigation {
   pub next: NavigationNext,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
-pub struct BlockId(pub usize);
-
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
-pub struct SectionId(pub String);
+pub type BlockId = usize;
+pub type SectionId = usize;
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub enum NavigationNext {
