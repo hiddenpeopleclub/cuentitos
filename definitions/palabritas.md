@@ -300,17 +300,26 @@ If the subsection is within the current section, you can ignore the section name
 
 ```cuentitos
 ## second_day
-You wake up feeling refreshed. Let's see what this day brings.
-  * Explore a museum
-    -> second_day.museum
-  * Go to the Farmer's Market
-    -> farmers_market
+  You wake up feeling refreshed. Let's see what this day brings.
+    * Explore a museum
+      -> second_day/museum
+    * Go to the Farmer's Market
+      -> farmers_market
 
 ## museum
   You get to the museum door. You watch through the window. It seems crowded.
 
 ## farmers_market
   You get to the farmer's market. It's very early and some stands are still being set up.
+```
+
+You can also add requirements and probabilities to sections and sub-sections themselves as if they were any piece of text.
+
+For example:
+```cuentitos
+## second_day
+  req day 2
+  You wake up feeling refreshed. Let's see what this day brings.
 ```
 
 ### Finishing the game

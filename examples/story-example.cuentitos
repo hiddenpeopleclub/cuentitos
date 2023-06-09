@@ -76,7 +76,7 @@ You decide to focus on the now...
       -> second_day
 -> END
 
-# second_day
+# second_day_happy
   You wake up feeling refreshed. Let's see what this day brings.
     * Explore a museum
       -> second_day.museum
