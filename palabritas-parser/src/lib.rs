@@ -5,8 +5,8 @@ extern crate pest_derive;
 use std::path::Path;
 
 use palabritas_common::{
-  Block, BlockSettings, Condition, BlockSettings, File, FrequencyModifier, Modifier, NavigationNext,
-  Operator, Requirement,
+  Block, BlockSettings, Condition, File, FrequencyModifier, Modifier, NextBlock, Operator,
+  Requirement,
 };
 use pest::{iterators::Pair, Parser};
 
@@ -44,7 +44,7 @@ pub fn parse_file(token: Pair<Rule>) -> Option<File> {
   }
 
   if let Some(last) = blocks[0].last_mut() {
-    last.get_settings_mut().next = NavigationNext::EOF; 
+    last.get_settings_mut().next = NextBlock::EndOfFile;
   }
 
   let mut ordered_blocks = Vec::default();
@@ -56,7 +56,7 @@ pub fn parse_file(token: Pair<Rule>) -> Option<File> {
     }
 
     for block in &mut blocks[child_level] {
-      let mut settings = block.get_settings_mut();
+      let settings = block.get_settings_mut();
       for child in &mut settings.children {
         *child += index_offset;
       }
@@ -99,7 +99,7 @@ fn parse_block(token: Pair<Rule>, blocks: &mut Vec<Vec<Block>>, child_order: usi
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
-          let mut settings = block.get_settings_mut();
+          let settings = block.get_settings_mut();
           parse_block(inner_blocks_token, blocks, child_order + 1);
           settings.children.push(blocks[child_order + 1].len() - 1);
         }
@@ -175,11 +175,7 @@ fn parse_choice(token: Pair<Rule>) -> Option<Block> {
     }
   }
 
-  Some(Block::Choice(Definition {
-    i18n_id: text,
-    settings,
-    ..Default::default()
-  }))
+  Some(Block::Choice { id: text, settings })
 }
 
 fn parse_text(token: Pair<Rule>) -> Option<Block> {
@@ -201,11 +197,7 @@ fn parse_text(token: Pair<Rule>) -> Option<Block> {
     }
   }
 
-  Some(Block::Text(Definition {
-    i18n_id: text,
-    settings,
-    ..Default::default()
-  }))
+  Some(Block::Text { id: text, settings })
 }
 
 fn add_command_to_settings(token: Pair<Rule>, settings: &mut BlockSettings) {
@@ -242,18 +234,10 @@ fn add_command_to_settings(token: Pair<Rule>, settings: &mut BlockSettings) {
 }
 fn add_command_to_block(token: Pair<Rule>, block: &mut Block) {
   match block {
-    Block::Text(Definition {
-      i18n_id: _,
-      navigation: _,
-      ref mut settings,
-    }) => {
+    Block::Text { id: _, settings } => {
       add_command_to_settings(token, settings);
     }
-    Block::Choice(Definition {
-      i18n_id: _,
-      navigation: _,
-      ref mut settings,
-    }) => {
+    Block::Choice { id: _, settings } => {
       add_command_to_settings(token, settings);
     }
     _ => {}
@@ -427,8 +411,7 @@ mod test {
     parse_text, PalabritasParser, Rule,
   };
   use palabritas_common::{
-    Block, BlockSettings, Condition, Definition, FrequencyModifier, Modifier, Navigation, Operator,
-    Requirement, Variable,
+    Block, BlockSettings, Condition, FrequencyModifier, Modifier, Operator, Requirement, Variable,
   };
   use pest::iterators::Pair;
   use pest::Parser;
@@ -563,19 +546,14 @@ mod test {
     let probability_token = short_parse(Rule::Probability, &probability_string);
     let probability = parse_probability(probability_token);
 
-    let expected_navigation = Navigation {
-      ..Default::default()
-    };
-
     let expected_settings = BlockSettings {
       frequency: probability,
       ..Default::default()
     };
-    let expected_value = Block::Choice(Definition {
-      i18n_id: string,
-      navigation: expected_navigation,
+    let expected_value = Block::Choice {
+      id: string,
       settings: expected_settings,
-    });
+    };
     assert_eq!(choice, expected_value);
   }
 
@@ -595,31 +573,25 @@ mod test {
     let probability_token = short_parse(Rule::Probability, &probability_string);
     let probability = parse_probability(probability_token);
 
-    let expected_navigation = Navigation {
-      ..Default::default()
-    };
-
     let expected_settings = BlockSettings {
       frequency: probability,
       ..Default::default()
     };
 
-    let expected_value = Block::Text(Definition {
-      i18n_id: string,
-      navigation: expected_navigation,
+    let expected_value = Block::Text {
+      id: string,
       settings: expected_settings,
-    });
+    };
     assert_eq!(text, expected_value);
   }
 
   #[test]
   fn command_gets_added_to_blocks_correctly() {
     let text_id = make_random_string();
-    let mut block = Block::Text(Definition {
-      i18n_id: text_id.clone(),
-      navigation: Navigation::default(),
+    let mut block = Block::Text {
+      id: text_id.clone(),
       settings: BlockSettings::default(),
-    });
+    };
 
     let mut block_settings = BlockSettings::default();
     // //Command = {NEWLINE ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert) }
@@ -687,11 +659,10 @@ mod test {
     let token = short_parse(Rule::Command, &requirement_string);
     add_command_to_block(token, &mut block);
 
-    let expected_block = Block::Text(Definition {
-      i18n_id: text_id,
-      navigation: Navigation::default(),
+    let expected_block = Block::Text {
+      id: text_id,
       settings: block_settings,
-    });
+    };
 
     assert_eq!(block, expected_block);
   }

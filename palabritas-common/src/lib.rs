@@ -30,6 +30,5 @@ pub use modifier::*;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-
 mod i18n;
 pub use i18n::*;

@@ -1,4 +1,4 @@
-use crate::{I18nId, FrequencyModifier, Modifier, Requirement};
+use crate::{FrequencyModifier, I18nId, Modifier, Requirement};
 use serde::{Deserialize, Serialize};
 
 pub type BlockId = usize;
@@ -26,27 +26,42 @@ pub struct BlockSettings {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub enum Block {
-  Text(I18nId,BlockSettings),
-  Choice(I18nId,BlockSettings),
-  Bucket(Option<BucketName>,BlockSettings),
+  Text {
+    id: I18nId,
+    settings: BlockSettings,
+  },
+  Choice {
+    id: I18nId,
+    settings: BlockSettings,
+  },
+  Bucket {
+    name: Option<BucketName>,
+    settings: BlockSettings,
+  },
 }
 
 impl Block {
   pub fn get_settings_mut(&mut self) -> &mut BlockSettings {
     match self {
-      Block::Text(_, settings) => settings,
-      Block::Choice(_,settings) => settings,
-      Block::Bucket(_,settings) => settings,
+      Block::Text { id: _, settings } => settings,
+      Block::Choice { id: _, settings } => settings,
+      Block::Bucket { name: _, settings } => settings,
+    }
+  }
+  pub fn get_settings(&self) -> &BlockSettings {
+    match self {
+      Block::Text { id: _, settings } => settings,
+      Block::Choice { id: _, settings } => settings,
+      Block::Bucket { name: _, settings } => settings,
     }
   }
 }
 
 impl Default for Block {
   fn default() -> Self {
-    Block::Text (
-      String::default(),
-      BlockSettings::default()
-    )
+    Block::Text {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    }
   }
 }
-
