@@ -538,7 +538,7 @@ mod test {
       settings,
     };
 
-    let file = File {
+    let file = Database {
       blocks: vec![
         text_with_no_chances,
         text_with_100_chances,
