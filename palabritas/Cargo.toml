@@ -1,5 +1,5 @@
 [package]
-name = "palabritas-parser"
+name = "palabritas"
 version = "0.2.0"
 edition = "2021"
 
@@ -10,4 +10,4 @@ path = "src/lib.rs"
 pest = "2.0"
 pest_derive = "2.0"
 rand = "0.8.5"
-palabritas-common = { path = "../palabritas-common" }
+cuentitos-common = { path = "../common" }

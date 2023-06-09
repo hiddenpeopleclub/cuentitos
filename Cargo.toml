@@ -2,8 +2,8 @@
 resolver = "2"
 members = [
   "runtime",
-  "palabritas-parser",
-  "palabritas-common",
-  "palabritas-compiler",
+  "palabritas",
+  "compiler",
+  "common",
   "cli",
 ]

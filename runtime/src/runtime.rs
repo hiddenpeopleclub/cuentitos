@@ -1,7 +1,7 @@
 use std::println;
 
-use palabritas_common::BlockId;
-use palabritas_common::File;
+use cuentitos_common::BlockId;
+use cuentitos_common::Database;
 use rand::Rng;
 use rand::SeedableRng;
 use rand_pcg::Pcg32;
@@ -15,7 +15,7 @@ pub struct Block {
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Runtime {
-  pub file: File,
+  pub file: Database,
   pub block_stack: Vec<BlockId>,
   #[serde(skip)]
   rng: Option<Pcg32>,
@@ -23,7 +23,7 @@ pub struct Runtime {
 }
 
 impl Runtime {
-  pub fn new(file: File) -> Runtime {
+  pub fn new(file: Database) -> Runtime {
     Runtime {
       file,
       ..Default::default()
@@ -106,7 +106,7 @@ impl Runtime {
   fn get_next_block_output(&self) -> Option<Block> {
     let id = self.block_stack.last().unwrap();
     let block = self.get_block(*id);
-    if let palabritas_common::Block::Text { id, settings: _ } = block {
+    if let cuentitos_common::Block::Text { id, settings: _ } = block {
       println!("USE I18n!!!");
       return Some(Block {
         text: id.clone(),
@@ -133,7 +133,7 @@ impl Runtime {
 
     let settings = last_block.get_settings();
     if !settings.children.is_empty() {
-      if let palabritas_common::Block::Choice { id: _, settings: _ } =
+      if let cuentitos_common::Block::Choice { id: _, settings: _ } =
         self.get_block(settings.children[0])
       {
         println!("Make a choice\n");
@@ -153,18 +153,18 @@ impl Runtime {
 
     let last_settings = last_block.get_settings();
     match &last_settings.next {
-      palabritas_common::NextBlock::None => {}
-      palabritas_common::NextBlock::BlockId(other_id) => {
+      cuentitos_common::NextBlock::None => {}
+      cuentitos_common::NextBlock::BlockId(other_id) => {
         self.block_stack.pop();
         self.block_stack.push(*other_id);
         return;
       }
-      palabritas_common::NextBlock::EndOfFile => {
+      cuentitos_common::NextBlock::EndOfFile => {
         println!("Story finished\n");
         self.block_stack = vec![0];
         return;
       }
-      palabritas_common::NextBlock::Section(_) => todo!(),
+      cuentitos_common::NextBlock::Section(_) => todo!(),
     }
 
     self.block_stack.pop();
@@ -178,7 +178,7 @@ impl Runtime {
     let mut child_found = false;
     for child in &parent_settings.children {
       if child_found {
-        if let palabritas_common::Block::Choice { id: _, settings: _ } = self.get_block(*child) {
+        if let cuentitos_common::Block::Choice { id: _, settings: _ } = self.get_block(*child) {
           continue;
         }
         self.block_stack.push(*child);
@@ -192,7 +192,7 @@ impl Runtime {
     self.pop_stack_and_find_next()
   }
 
-  fn get_block(&self, id: BlockId) -> &palabritas_common::Block {
+  fn get_block(&self, id: BlockId) -> &cuentitos_common::Block {
     &self.file.blocks[id]
   }
 
@@ -202,7 +202,7 @@ impl Runtime {
     let mut choices_strings = Vec::default();
     println!("USE I18n!!!");
     for choice in choices {
-      if let palabritas_common::Block::Choice { id, settings: _ } = self.get_block(choice) {
+      if let cuentitos_common::Block::Choice { id, settings: _ } = self.get_block(choice) {
         choices_strings.push(id.clone());
       }
     }
@@ -224,7 +224,7 @@ impl Runtime {
 
     for child in &settings.children {
       if *child < self.file.blocks.len() {
-        if let palabritas_common::Block::Choice { id: _, settings: _ } = self.get_block(*child) {
+        if let cuentitos_common::Block::Choice { id: _, settings: _ } = self.get_block(*child) {
           choices.push(*child)
         }
       }
@@ -239,11 +239,11 @@ mod test {
   use std::vec;
 
   use crate::Runtime;
-  use palabritas_common::{Block, BlockSettings, File};
+  use cuentitos_common::{Block, BlockSettings, Database};
 
   #[test]
   fn new_runtime_works_correctly() {
-    let file = File {
+    let file = Database {
       blocks: vec![Block::default()],
     };
     let runtime = Runtime::new(file.clone());
@@ -277,7 +277,7 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    let file = File {
+    let file = Database {
       blocks: vec![parent.clone(), choice_1, choice_2, child_text],
     };
 
@@ -318,7 +318,7 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    let file = File {
+    let file = Database {
       blocks: vec![parent.clone(), choice_1, choice_2, child_text],
     };
     let runtime = Runtime {
@@ -351,7 +351,7 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    let file = File {
+    let file = Database {
       blocks: vec![parent.clone(), child_1.clone(), child_2.clone()],
     };
 
@@ -396,7 +396,7 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    let file = File {
+    let file = Database {
       blocks: vec![
         parent.clone(),
         sibling.clone(),
@@ -441,7 +441,7 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    let file = File {
+    let file = Database {
       blocks: vec![parent.clone(), choice_1.clone(), choice_2],
     };
 
@@ -482,7 +482,7 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    let file = File {
+    let file = Database {
       blocks: vec![parent.clone(), choice_1.clone(), choice_2.clone()],
     };
     let mut runtime = Runtime {
@@ -502,7 +502,7 @@ mod test {
 
   #[test]
   fn next_output_doesnt_work_with_empty_file() {
-    let mut runtime = Runtime::new(File::default());
+    let mut runtime = Runtime::new(Database::default());
     assert_eq!(runtime.next_block(), None);
   }
 

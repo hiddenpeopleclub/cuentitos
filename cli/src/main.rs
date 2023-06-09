@@ -31,7 +31,7 @@ where
   T: AsRef<Path>,
   U: AsRef<Path>,
 {
-  palabritas_compiler::compile(&source_path, destination_path);
+  cuentitos_compiler::compile(&source_path, destination_path);
 }
 
 fn main() {

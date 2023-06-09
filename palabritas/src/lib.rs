@@ -4,8 +4,8 @@ extern crate pest_derive;
 
 use std::path::Path;
 
-use palabritas_common::{
-  Block, BlockSettings, Condition, File, FrequencyModifier, Modifier, NextBlock, Operator,
+use cuentitos_common::{
+  Block, BlockSettings, Condition, Database, FrequencyModifier, Modifier, NextBlock, Operator,
   Requirement,
 };
 use pest::{iterators::Pair, Parser};
@@ -14,7 +14,7 @@ use pest::{iterators::Pair, Parser};
 #[grammar = "palabritas.pest"]
 pub struct PalabritasParser;
 
-pub fn parse_file_from_path<P>(path: P) -> Option<File>
+pub fn parse_database_from_path<P>(path: P) -> Option<Database>
 where
   P: AsRef<Path>,
 {
@@ -27,7 +27,7 @@ where
   parse_file(token)
 }
 
-pub fn parse_file(token: Pair<Rule>) -> Option<File> {
+pub fn parse_file(token: Pair<Rule>) -> Option<Database> {
   if token.as_rule() != Rule::File {
     return None;
   }
@@ -65,7 +65,7 @@ pub fn parse_file(token: Pair<Rule>) -> Option<File> {
     }
   }
 
-  Some(File {
+  Some(Database {
     blocks: ordered_blocks,
   })
 }
@@ -407,10 +407,10 @@ mod test {
 
   use crate::{
     add_command_to_block, parse_choice, parse_comparison_operator, parse_condition, parse_file,
-    parse_file_from_path, parse_frequency, parse_modifier, parse_probability, parse_requirement,
+    parse_database_from_path, parse_frequency, parse_modifier, parse_probability, parse_requirement,
     parse_text, PalabritasParser, Rule,
   };
-  use palabritas_common::{
+  use cuentitos_common::{
     Block, BlockSettings, Condition, FrequencyModifier, Modifier, Operator, Requirement, Variable,
   };
   use pest::iterators::Pair;
@@ -426,7 +426,7 @@ mod test {
 
   #[test]
   fn parse_file_from_path_correctly() {
-    parse_file_from_path("../examples/story-example.cuentitos").unwrap();
+    parse_database_from_path("../examples/story-example.cuentitos").unwrap();
     //TODO: compare with fixture
   }
 

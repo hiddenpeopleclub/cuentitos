@@ -1,4 +1,4 @@
-use palabritas_parser::parse_file_from_path;
+use palabritas::parse_database_from_path;
 use rmp_serde::Serializer;
 use serde::Serialize;
 use std::error;
@@ -29,7 +29,7 @@ where
   T: AsRef<Path>,
   U: AsRef<Path>,
 {
-  let db = parse_file_from_path(source_path).unwrap();
+  let db = parse_database_from_path(source_path).unwrap();
 
   let mut buf: Vec<u8> = Vec::new();
   let mut serializer = Serializer::new(&mut buf);
@@ -48,6 +48,6 @@ mod test {
 
   #[test]
   fn compile_works_correctly() {
-    compile("../examples/story-example.cuentitos", "F:/cuentitos.db");
+    compile("../examples/story-example.cuentitos", "cuentitos.db");
   }
 }
