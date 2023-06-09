@@ -166,7 +166,7 @@ fn parse_choice(token: Pair<Rule>) -> Option<Block> {
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Probability => {
-        settings.frequency = parse_probability(inner_token);
+        settings.chance = parse_probability(inner_token);
       }
       Rule::String => {
         text = inner_token.as_str().to_string();
@@ -188,7 +188,7 @@ fn parse_text(token: Pair<Rule>) -> Option<Block> {
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Probability => {
-        settings.frequency = parse_probability(inner_token);
+        settings.chance = parse_probability(inner_token);
       }
       Rule::String => {
         text = inner_token.as_str().to_string();
@@ -380,7 +380,7 @@ fn parse_comparison_operator(token: Pair<Rule>) -> Option<Operator> {
 }
 
 //TODO: Integer
-fn parse_probability(token: Pair<Rule>) -> Option<u64> {
+fn parse_probability(token: Pair<Rule>) -> Option<f32> {
   if token.as_rule() != Rule::Probability {
     return None;
   }
@@ -389,12 +389,12 @@ fn parse_probability(token: Pair<Rule>) -> Option<u64> {
     if inner_token.as_rule() == Rule::Float {
       let value = inner_token.as_str().parse::<f32>().unwrap();
 
-      return Some((value * 100.) as u64);
+      return Some(value);
     }
     if inner_token.as_rule() == Rule::Percentage {
       if let Some(integer) = inner_token.into_inner().next() {
         let value = integer.as_str().parse::<u64>().unwrap();
-        return Some(value);
+        return Some(value as f32 / 100.);
       }
     }
   }
@@ -547,7 +547,7 @@ mod test {
     let probability = parse_probability(probability_token);
 
     let expected_settings = BlockSettings {
-      frequency: probability,
+      chance: probability,
       ..Default::default()
     };
     let expected_value = Block::Choice {
@@ -574,7 +574,7 @@ mod test {
     let probability = parse_probability(probability_token);
 
     let expected_settings = BlockSettings {
-      frequency: probability,
+      chance: probability,
       ..Default::default()
     };
 

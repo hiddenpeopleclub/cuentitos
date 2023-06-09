@@ -18,7 +18,7 @@ pub enum NextBlock {
 pub struct BlockSettings {
   pub children: Vec<BlockId>,
   pub next: NextBlock,
-  pub frequency: Option<u64>,
+  pub chance: Option<f32>,
   pub frequency_modifiers: Vec<FrequencyModifier>,
   pub requirements: Vec<Requirement>,
   pub modifiers: Vec<Modifier>,

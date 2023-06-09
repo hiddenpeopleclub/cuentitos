@@ -2,6 +2,8 @@ use std::println;
 
 use palabritas_common::BlockId;
 use palabritas_common::File;
+use rand::Rng;
+use rand::SeedableRng;
 use rand_pcg::Pcg32;
 use serde::{Deserialize, Serialize};
 
@@ -28,6 +30,11 @@ impl Runtime {
     }
   }
 
+  pub fn set_seed(&mut self, seed: u64) {
+    self.seed = seed;
+    self.rng = Some(Pcg32::seed_from_u64(seed));
+  }
+
   pub fn next_block(&mut self) -> Option<Block> {
     if self.file.blocks.is_empty() {
       return None;
@@ -35,7 +42,27 @@ impl Runtime {
 
     self.update_stack();
 
+    while !self.roll_chances_for_next_block() {
+      self.update_stack();
+    }
+
     self.get_next_block_output()
+  }
+
+  pub fn roll_chances_for_next_block(&mut self) -> bool {
+    if let Some(last_block) = self.block_stack.last() {
+      let chance = self.get_block(*last_block).get_settings().chance;
+      match chance {
+        Some(chance) => {
+          if let Some(random_number) = self.random_float() {
+            return random_number < chance;
+          }
+          return false;
+        }
+        None => return true,
+      }
+    }
+    false
   }
 
   pub fn pick_choice(&mut self, choice: usize) -> Option<Block> {
@@ -62,6 +89,18 @@ impl Runtime {
 
     self.block_stack.push(choices[choice]);
     self.next_block()
+  }
+
+  fn random_float(&mut self) -> Option<f32> {
+    if self.rng.is_none() {
+      self.rng = Some(Pcg32::from_entropy())
+    }
+
+    let mut rng = self.rng.as_ref()?.clone();
+    let num = rng.gen();
+
+    self.rng = Some(rng);
+    Some(num)
   }
 
   fn get_next_block_output(&self) -> Option<Block> {
@@ -196,6 +235,8 @@ impl Runtime {
 
 #[cfg(test)]
 mod test {
+
+  use std::vec;
 
   use crate::Runtime;
   use palabritas_common::{Block, BlockSettings, File};
@@ -463,5 +504,57 @@ mod test {
   fn next_output_doesnt_work_with_empty_file() {
     let mut runtime = Runtime::new(File::default());
     assert_eq!(runtime.next_block(), None);
+  }
+
+  #[test]
+  fn roll_chances_for_next_block_works_correctly() {
+    let settings = BlockSettings {
+      chance: None,
+      ..Default::default()
+    };
+
+    let text_with_no_chances = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let settings = BlockSettings {
+      chance: Some(1.),
+      ..Default::default()
+    };
+
+    let text_with_100_chances = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let settings = BlockSettings {
+      chance: Some(0.),
+      ..Default::default()
+    };
+
+    let text_with_0_chances = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let file = File {
+      blocks: vec![
+        text_with_no_chances,
+        text_with_100_chances,
+        text_with_0_chances,
+      ],
+    };
+    let mut runtime = Runtime {
+      file,
+      block_stack: vec![0],
+      ..Default::default()
+    };
+
+    assert_eq!(runtime.roll_chances_for_next_block(), true);
+    runtime.update_stack();
+    assert_eq!(runtime.roll_chances_for_next_block(), true);
+    runtime.update_stack();
+    assert_eq!(runtime.roll_chances_for_next_block(), false);
   }
 }
