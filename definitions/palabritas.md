@@ -66,7 +66,7 @@ You could add options on probabilistic branches, but let's keep going for now.
 
 Another interesting feature is the ability to create `probabilistic buckets`.
 
-A bucket is a set of probable paths that the engine will pick one every time is asked to render that bucket. Let's do a probabilistic bucket with the second option.
+A bucket is a set of probable paths where the engine will pick one every time is asked to render that bucket. Let's do a probabilistic bucket with the second option.
 
 ```cuentitos
   * I visit a popular street market to experience the city's unique flavors and energy.
@@ -112,15 +112,15 @@ You can also create what we call `named buckets`. These buckets support probabil
 
 ```cuentitos
     (50) At the bustling street market, you discover a food stand offering mouthwatering delicacies. 
-      [(50) happy_vendor]
+      [morning_vendor]
         req time_of_day morning
-        (50%) You notice the stand owner, their eyes sparkling with joy as they animatedly describe their homemade offerings to an eager customer.
-        (50%) You see the owner beaming with joy, their infectious smile and animated gestures inviting customers to try their delectable creations.
-      [(50) tired_vendor]
-        req time_of_day morning
-        (50%) You come across a vendor with furrowed brows and a tense expression, their voice raised as they heatedly argue with a customer over a transaction at their stand.
-        (50%) You spot a visibly agitated vendor, their clenched fists and piercing glare making it clear that they're unhappy with the current situation unfolding before them.
-      [tired_vendor]
+        [(100) happy_vendor]
+          (50%) You notice the stand owner, their eyes sparkling with joy as they animatedly describe their homemade offerings to an eager customer.
+          (50%) You see the owner beaming with joy, their infectious smile and animated gestures inviting customers to try their delectable creations.
+        [(25) tired_vendor]
+          (50%) You come across a vendor with furrowed brows and a tense expression, their voice raised as they heatedly argue with a customer over a transaction at their stand.
+          (50%) You spot a visibly agitated vendor, their clenched fists and piercing glare making it clear that they're unhappy with the current situation unfolding before them.
+      [night_vendor]
         req time_of_day night
         (50%) You observe a vendor at a small food stand, their shoulders slumped and eyes slightly glazed as they quietly serve customers, mustering just enough energy to complete each transaction.
         (50%) The vendor at a nearby food stand appears worn, their movements slow and deliberate, as they attempt to maintain a smile while attending to the seemingly endless stream of customers.
@@ -270,18 +270,18 @@ The next thing we want to talk about is modifying state.
 
 For that we use the `mod` command with the variable name (in this case `energy` and `time`) and the value modification we want to apply. In this case we added `10` to `energy` and subtracted `7.5` to `time`. From this we infer that `energy` is a variable of type `integer` and `time` is of type `float`. We also supoprt `bool` and `enum`, check the `Configuration` section below.
 
-## Knots, diverts and stitches
+## Sections, diverts and subsections
 
-Being heavily inspired by [Ink](https://www.inklestudios.com/ink/), we shamelessly stole the idea of `knots` and `diverts` and `stitches` from there.
+Being heavily inspired by [Ink](https://www.inklestudios.com/ink/), we shamelessly stole the idea of `knots`(`sections`), `diverts` and `stitches` (`subsections`) from there.
 
-A `knot` is a section of the story that you assign a name to so that you can move to it easily. You define knots by wrapping a snake_case identifier with three equal signs.
+A `section` is a part of the story that you assign a name to so that you can move to it easily. You define sections by wrapping a `snake_case` identifier with a hash simbol (`#`), as you'd do in markdown.
 
 ```cuentitos
-=== second_day ===
+# second_day
 You wake up feeling refreshed.
 ```
 
-Then you can go to a knot by using the arrow (divert) command `->`.
+Then you can go to a section by using the arrow (divert) command `->`.
 
 ```cuentitos
   * I go to bed
@@ -291,27 +291,67 @@ Then you can go to a knot by using the arrow (divert) command `->`.
     -> second_day
 ```
 
-Once the story hits `-> second_day`, the player will be directed to that knot.
+Once the story hits `-> second_day`, the player will be directed to that section.
 
-A `stitch` is a section within a `knot` and it's defined by using a single `=`.
-You can access a stitch by using the name of the knot, then a dot and then the stich name (`second_day.museum` in the example below).
+A `subsection` is a section within a `section` and it's defined by using multiple hashes `##`, `###`, etc.
+You can access a subsection by using the name of the section, then a slask and then the subsection name (`second_day/museum` in the example below).
 
-If the stick is within the current knot, you can ignore the knot name (`farmers_market` in the example below).
+If the subsection is within the current section, you can ignore the section name (`farmers_market` in the example below).
 
 ```cuentitos
-=== second_day ===
-You wake up feeling refreshed. Let's see what this day brings.
-  * Explore a museum
-    -> second_day.museum
-  * Go to the Farmer's Market
-    -> farmers_market
+## second_day
+  You wake up feeling refreshed. Let's see what this day brings.
+    * Explore a museum
+      -> second_day/museum
+    * Go to the Farmer's Market
+      -> farmers_market
 
-= museum
+## museum
   You get to the museum door. You watch through the window. It seems crowded.
 
-= farmers_market
+## farmers_market
   You get to the farmer's market. It's very early and some stands are still being set up.
 ```
+
+You can also add requirements and probabilities to sections and sub-sections 
+themselves as if they were any piece of text.
+
+For example:
+```cuentitos
+## second_day
+  req day 2
+  You wake up feeling refreshed. Let's see what this day brings.
+```
+
+### Finishing the game
+`-> END`
+
+## Comments
+A line that starts with `//` is ignored.
+
+## Functions
+You can dynamically communicate with your runtime by the way of functions.
+To run a function you start and finish a line with backticks.
+
+Example:
+
+```cuentitos
+# second_day_happy
+  You wake up feeling refreshed. Let's see what this day brings.
+  `play_sound alarm`
+```
+
+The runtime will receive a function call with "alarm" as a parameter.
+
+Since this is dynamic, the compiler can't check if the types are the right ones, you'll have to do this yourself.
+
+You can use an arbitrary amount of parameters, they will be passed to the runtime as a vector.
+
+```cuentitos
+`play_sound alarm 0.3`
+```
+It's up to the runtime how to interpret `0.3` in this case, and cuentitos will just pass it through.
+You can always use variables as a way to communicate with the runtime and check for types in compile time.
 
 ## Configuration
 ### Variables
@@ -319,5 +359,4 @@ You wake up feeling refreshed. Let's see what this day brings.
 #### Integer
 #### Float
 #### Enum
-## Reputations
-## Items
+#### String

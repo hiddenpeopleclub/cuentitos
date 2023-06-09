@@ -1,22 +1,22 @@
 You've just arrived in the bustling city, full of excitement and anticipation for your new job. 
 The skyline reaches for the clouds, and the sounds of traffic and people surround you. 
 As you take your first steps in this urban jungle, you feel a mix of emotions, hoping to find your place in this new environment.
-	* I take a walk through a nearby park to relax and acclimate to the city.
+  * I take a walk through a nearby park to relax and acclimate to the city.
     As you stroll through the nearby park, the soothing sounds of rustling leaves and chirping birds help calm your senses. 
     You find a quiet bench to sit on, taking a moment to breathe deeply and gather your thoughts. 
     (50%) A solitary figure sits on the bench, engrossed in a book, seemingly unfazed by the surrounding city noise.
     This serene oasis gives you the confidence to face the challenges ahead as you acclimate to your new life in the bustling city.
-	* I visit a popular street market to experience the city's unique flavors and energy.
+  * I visit a popular street market to experience the city's unique flavors and energy.
     (50) At the bustling street market, you discover a food stand offering mouthwatering delicacies. 
-      [(50%) happy_vendor]
+      [morning_vendor]
         req time_of_day morning
-        (50%) You notice the stand owner, their eyes sparkling with joy as they animatedly describe their homemade offerings to an eager customer.
-        (50%) You see the owner beaming with joy, their infectious smile and animated gestures inviting customers to try their delectable creations.
-      [(50%) tired_vendor]
-        req time_of_day morning
-        (50%) You come across a vendor with furrowed brows and a tense expression, their voice raised as they heatedly argue with a customer over a transaction at their stand.
-        (50%) You spot a visibly agitated vendor, their clenched fists and piercing glare making it clear that they're unhappy with the current situation unfolding before them.
-      [tired_vendor]
+        [(100) happy_vendor]
+          (50%) You notice the stand owner, their eyes sparkling with joy as they animatedly describe their homemade offerings to an eager customer.
+          (50%) You see the owner beaming with joy, their infectious smile and animated gestures inviting customers to try their delectable creations.
+        [(25) tired_vendor]
+          (50%) You come across a vendor with furrowed brows and a tense expression, their voice raised as they heatedly argue with a customer over a transaction at their stand.
+          (50%) You spot a visibly agitated vendor, their clenched fists and piercing glare making it clear that they're unhappy with the current situation unfolding before them.
+      [night_vendor]
         req time_of_day night
         (50%) You observe a vendor at a small food stand, their shoulders slumped and eyes slightly glazed as they quietly serve customers, mustering just enough energy to complete each transaction.
         (50%) The vendor at a nearby food stand appears worn, their movements slow and deliberate, as they attempt to maintain a smile while attending to the seemingly endless stream of customers.
@@ -62,10 +62,10 @@ You decide to focus on the now...
     req energy >10
     [call]
       (30) The phone rings twice, and dad picks up. You have a good chat.
-        req energy>20
+        req energy >20
         mod energy -10
       (10) The phone rings twice, and mom picks up. You have a good chat.
-        req energy>20
+        req energy >20
         freq time_of_day morning 100
         mod energy -10
       (40) The phone rings ten times, nobody is at home.
@@ -74,16 +74,20 @@ You decide to focus on the now...
       mod energy 10
       mod time -7.5
       -> second_day
+-> END
 
-=== second_day ===
-You wake up feeling refreshed. Let's see what this day brings.
-  * Explore a museum
-    -> second_day.museum
-  * Go to the Farmer's Market
-    -> second_day.farmers_market
+// This is a comment
 
-= museum
+# second_day_happy
+  You wake up feeling refreshed. Let's see what this day brings.
+  `play_sound alarm 0.3`
+    * Explore a museum
+      -> second_day.museum
+    * Go to the Farmer's Market
+      -> second_day.farmers_market
+
+## museum
   You get to the museum door. You watch through the window. It seems crowded.
 
-= farmers_market
+## farmers_market
   You get to the farmer's market. It's very early and some stands are still being set up.

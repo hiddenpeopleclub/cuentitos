@@ -25,30 +25,41 @@ impl Console {
     let metadata = fs::metadata(&path).expect("unable to read metadata");
     let mut buffer = vec![0; metadata.len() as usize];
     f.read_exact(&mut buffer).expect("buffer overflow");
-    let database = Database::from_u8(&buffer).unwrap();
+    let file = cuentitos_runtime::Database::from_u8(&buffer).unwrap();
 
-    let mut runtime = Runtime::new(database);
+    let mut runtime = Runtime::new(file);
 
     loop {
       let input = Self::prompt("> ");
       let mut args = input.split(' ');
 
       match args.next() {
-        Some("n") => {
-          let event = runtime.next_event();
-          match event {
-            Some(event) => {
-              println!("{}", event.title);
-              println!("---");
-              println!("{}", event.description);
-            }
-            None => {}
+        Some("") => {
+          if let Some(output_text) = runtime.next_block() {
+            print_output_text(output_text);
           }
         }
         Some("q") => break,
-        Some(&_) => {}
+        Some(str) => {
+          if let Ok(choice) = str.parse::<usize>() {
+            if choice == 0 {
+              println!("invalid option");
+              continue;
+            }
+            if let Some(output_text) = runtime.pick_choice(choice - 1) {
+              print_output_text(output_text);
+            }
+          }
+        }
         None => {}
       }
     }
+  }
+}
+
+fn print_output_text(output_text: Block) {
+  println!("{}", output_text.text);
+  for i in 0..output_text.choices.len() {
+    println!("  ({}){}", i + 1, output_text.choices[i]);
   }
 }
