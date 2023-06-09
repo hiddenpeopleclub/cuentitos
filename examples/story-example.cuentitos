@@ -76,6 +76,8 @@ You decide to focus on the now...
       -> second_day
 -> END
 
+// This is a comment
+
 # second_day_happy
   You wake up feeling refreshed. Let's see what this day brings.
   `play_sound alarm 0.3`
@@ -83,7 +85,9 @@ You decide to focus on the now...
       -> second_day.museum
     * Go to the Farmer's Market
       -> second_day.farmers_market
+
 ## museum
   You get to the museum door. You watch through the window. It seems crowded.
+
 ## farmers_market
   You get to the farmer's market. It's very early and some stands are still being set up.
