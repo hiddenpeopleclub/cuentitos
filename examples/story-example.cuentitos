@@ -79,9 +79,12 @@ You decide to focus on the now...
 // This is a comment
 
 # second_day_happy
+  A new day in the new city.
+    unique
   You wake up feeling refreshed. Let's see what this day brings.
   `play_sound alarm 0.3`
     * Explore a museum
+      tag dangerous
       -> second_day.museum
     * Go to the Farmer's Market
       -> second_day.farmers_market
