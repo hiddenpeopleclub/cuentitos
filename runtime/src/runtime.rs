@@ -1,6 +1,7 @@
 use std::println;
 
 use cuentitos_common::BlockId;
+use cuentitos_common::BlockSettings;
 use cuentitos_common::Database;
 use rand::Rng;
 use rand::SeedableRng;
@@ -51,15 +52,15 @@ impl Runtime {
 
   pub fn roll_chances_for_next_block(&mut self) -> bool {
     if let Some(last_block) = self.block_stack.last() {
-      let chance = self.get_block(*last_block).get_settings().chance;
-      match chance {
-        Some(chance) => {
+      match self.get_block(*last_block).get_settings().probability {
+        cuentitos_common::Probability::None => return true,
+        cuentitos_common::Probability::Frequency(_) => return true,
+        cuentitos_common::Probability::Chance(chance) => {
           if let Some(random_number) = self.random_float() {
             return random_number < chance;
           }
           return false;
         }
-        None => return true,
       }
     }
     false
@@ -103,6 +104,18 @@ impl Runtime {
     Some(num)
   }
 
+  fn random_with_max(&mut self, max: u32) -> Option<u32> {
+    if self.rng.is_none() {
+      self.rng = Some(Pcg32::from_entropy())
+    }
+
+    let mut rng = self.rng.as_ref()?.clone();
+    let num = rng.gen_range(0..max);
+
+    self.rng = Some(rng);
+    Some(num)
+  }
+
   fn get_next_block_output(&self) -> Option<Block> {
     let id = self.block_stack.last().unwrap();
     let block = self.get_block(*id);
@@ -133,17 +146,49 @@ impl Runtime {
 
     let settings = last_block.get_settings();
     if !settings.children.is_empty() {
-      if let cuentitos_common::Block::Choice { id: _, settings: _ } =
-        self.get_block(settings.children[0])
-      {
-        println!("Make a choice\n");
-        return;
+      match self.get_block(settings.children[0]) {
+        cuentitos_common::Block::Text { id: _, settings: _ } => {
+          self.block_stack.push(settings.children[0]);
+          return;
+        }
+        cuentitos_common::Block::Choice { id: _, settings: _ } => {
+          println!("Make a choice\n");
+          return;
+        }
+        cuentitos_common::Block::Bucket { name: _, settings } => {
+          self.pick_random_path_from_bucket(&settings.clone());
+          return;
+        }
       }
-      self.block_stack.push(settings.children[0]);
-      return;
     }
 
     self.pop_stack_and_find_next();
+  }
+
+  fn pick_random_path_from_bucket(&mut self, settings: &BlockSettings) {
+    let mut total_frequency = 0;
+    for child in &settings.children {
+      if let cuentitos_common::Probability::Frequency(frequency) =
+        self.get_block(*child).get_settings().probability
+      {
+        total_frequency += frequency;
+      }
+    }
+
+    //TODO remove unwrap
+    let mut random_number = self.random_with_max(total_frequency).unwrap();
+
+    for child in &settings.children {
+      if let cuentitos_common::Probability::Frequency(frequency) =
+        self.get_block(*child).get_settings().probability
+      {
+        if random_number <= frequency {
+          self.block_stack.push(*child);
+          return;
+        }
+        random_number -= frequency;
+      }
+    }
   }
 
   fn pop_stack_and_find_next(&mut self) {
@@ -174,10 +219,20 @@ impl Runtime {
       return;
     }
 
-    let parent_settings = self.file.blocks[*self.block_stack.last().unwrap()].get_settings();
+    let parent = &self.file.blocks[*self.block_stack.last().unwrap()].clone();
+    let parent_settings = parent.get_settings();
     let mut child_found = false;
     for child in &parent_settings.children {
       if child_found {
+        match self.get_block(*child).clone() {
+          cuentitos_common::Block::Text { id: _, settings: _ } => self.block_stack.push(*child),
+          cuentitos_common::Block::Choice { id: _, settings: _ } => {
+            continue;
+          }
+          cuentitos_common::Block::Bucket { name: _, settings } => {
+            self.pick_random_path_from_bucket(&settings)
+          }
+        }
         if let cuentitos_common::Block::Choice { id: _, settings: _ } = self.get_block(*child) {
           continue;
         }
@@ -509,7 +564,6 @@ mod test {
   #[test]
   fn roll_chances_for_next_block_works_correctly() {
     let settings = BlockSettings {
-      chance: None,
       ..Default::default()
     };
 
@@ -519,7 +573,7 @@ mod test {
     };
 
     let settings = BlockSettings {
-      chance: Some(1.),
+      probability: cuentitos_common::Probability::Chance(1.),
       ..Default::default()
     };
 
@@ -529,7 +583,7 @@ mod test {
     };
 
     let settings = BlockSettings {
-      chance: Some(0.),
+      probability: cuentitos_common::Probability::Chance(0.),
       ..Default::default()
     };
 
