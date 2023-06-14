@@ -2,11 +2,12 @@ extern crate pest;
 #[macro_use]
 extern crate pest_derive;
 
+use core::panic;
 use std::path::Path;
 
 use cuentitos_common::{
   Block, BlockSettings, Condition, Database, FrequencyModifier, Modifier, NextBlock, Operator,
-  Requirement,
+  Probability, Requirement,
 };
 use pest::{iterators::Pair, Parser};
 
@@ -77,6 +78,7 @@ fn parse_block(token: Pair<Rule>, blocks: &mut Vec<Vec<Block>>, child_order: usi
 
   //    (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
   let mut block = Block::default();
+
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Text => {
@@ -84,11 +86,11 @@ fn parse_block(token: Pair<Rule>, blocks: &mut Vec<Vec<Block>>, child_order: usi
           block = text;
         }
       }
-      /*Rule::NamedBucket => {
+      Rule::NamedBucket => {
         if let Some(named_bucket) = parse_named_bucket(inner_token) {
           block = named_bucket;
         }
-      } */
+      }
       Rule::Choice => {
         if let Some(choice) = parse_choice(inner_token) {
           block = choice;
@@ -108,11 +110,148 @@ fn parse_block(token: Pair<Rule>, blocks: &mut Vec<Vec<Block>>, child_order: usi
     }
   }
 
+  if let Block::Bucket {
+    name: _,
+    settings: _,
+  } = block
+  {
+    update_children_probabilities_to_frequency(&block, blocks, child_order);
+  } else if is_child_unnamed_bucket(&block, blocks, child_order) {
+    make_childs_bucket(&mut block, blocks, child_order);
+  }
+
   while child_order >= blocks.len() {
     blocks.push(Vec::default());
   }
 
   blocks[child_order].push(block);
+}
+
+fn is_child_unnamed_bucket(block: &Block, blocks: &Vec<Vec<Block>>, child_order: usize) -> bool {
+  let children = &block.get_settings().children;
+
+  if children.len() < 2 || child_order + 1 >= blocks.len() {
+    return false;
+  }
+
+  let mut total_chance = 0.;
+  let mut is_frequency: bool = false;
+  for i in 0..blocks[child_order + 1].len() {
+    for child in children {
+      if *child == i {
+        match blocks[child_order + 1][i].get_settings().probability {
+          cuentitos_common::Probability::None => {
+            return false;
+          }
+          cuentitos_common::Probability::Frequency(_) => {
+            is_frequency = true;
+          }
+          cuentitos_common::Probability::Chance(value) => {
+            total_chance += value;
+          }
+        }
+      }
+    }
+  }
+
+  if is_frequency && total_chance > 0. {
+    //TODO: Make a proper error
+    let block_str = match block {
+      Block::Text { id, settings: _ } => id,
+      Block::Choice { id, settings: _ } => id,
+      Block::Bucket { name, settings: _ } => {
+        if let Some(name) = name {
+          name
+        } else {
+          ""
+        }
+      }
+    };
+    panic!(
+      "Buckets cannot combine frequencies and percentage or float values.\n{}",
+      block_str
+    )
+  }
+
+  if is_frequency {
+    return true;
+  }
+
+  total_chance == 1.
+}
+
+fn make_childs_bucket(block: &mut Block, blocks: &mut Vec<Vec<Block>>, child_order: usize) {
+  if child_order + 1 >= blocks.len() {
+    return;
+  }
+
+  update_children_probabilities_to_frequency(block, blocks, child_order);
+  let bucket_children: Vec<usize> = move_children_to_lower_level(block, blocks, child_order);
+
+  let bucket = Block::Bucket {
+    name: None,
+    settings: BlockSettings {
+      children: bucket_children,
+      ..Default::default()
+    },
+  };
+
+  blocks[child_order + 1].push(bucket);
+
+  block.get_settings_mut().children = vec![blocks[child_order + 1].len() - 1];
+}
+
+fn move_children_to_lower_level(
+  block: &Block,
+  blocks: &mut Vec<Vec<Block>>,
+  child_order: usize,
+) -> Vec<usize> {
+  if child_order + 2 <= blocks.len() {
+    blocks.push(Vec::default());
+  }
+
+  let mut new_children = Vec::default();
+  if child_order + 1 >= blocks.len() {
+    return new_children;
+  }
+
+  let children = &block.get_settings().children;
+
+  for i in (0..blocks[child_order + 1].len()).rev() {
+    for child in children {
+      if *child == i {
+        let moving_child = blocks[child_order + 1].remove(i);
+        move_children_to_lower_level(&moving_child, blocks, child_order + 1);
+        blocks[child_order + 2].push(moving_child);
+      }
+    }
+  }
+
+  for i in 0..children.len() {
+    new_children.push(blocks[child_order + 2].len() - i - 1);
+  }
+
+  new_children.reverse();
+
+  new_children
+}
+fn update_children_probabilities_to_frequency(
+  block: &Block,
+  blocks: &mut Vec<Vec<Block>>,
+  child_order: usize,
+) {
+  if child_order + 1 >= blocks.len() {
+    return;
+  }
+  let children = &block.get_settings().children;
+
+  for child in children.iter().rev() {
+    let child = &mut blocks[child_order + 1][*child];
+    let mut child_settings = child.get_settings_mut();
+    if let Probability::Chance(chance) = child_settings.probability {
+      child_settings.probability = Probability::Frequency((chance * 100.) as u32);
+    }
+  }
 }
 
 fn get_blocks_from_new_block(token: Pair<Rule>) -> Vec<Pair<Rule>> {
@@ -129,32 +268,29 @@ fn get_blocks_from_new_block(token: Pair<Rule>) -> Vec<Pair<Rule>> {
   }
   blocks
 }
-/*
+
 fn parse_named_bucket(token: Pair<Rule>) -> Option<Block> {
   if token.as_rule() != Rule::NamedBucket {
     return None;
   }
 
-  let mut blocks = Block {
-   // blocks_type: BlockType::NamedBucket,
-    ..Default::default()
-  };
-
+  let mut name = None;
+  let mut settings = BlockSettings::default();
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Probability => {
-        blocks.probability = parse_probability(inner_token);
+        settings.probability = parse_probability(inner_token);
       }
       Rule::SnakeCase => {
-        blocks.text = inner_token.as_str().to_string();
+        name = Some(inner_token.as_str().to_string());
       }
       _ => {}
     }
   }
 
-  Some(blocks)
+  Some(Block::Bucket { name, settings })
 }
-*/
+
 fn parse_choice(token: Pair<Rule>) -> Option<Block> {
   if token.as_rule() != Rule::Choice {
     return None;
@@ -166,7 +302,7 @@ fn parse_choice(token: Pair<Rule>) -> Option<Block> {
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Probability => {
-        settings.chance = parse_probability(inner_token);
+        settings.probability = parse_probability(inner_token);
       }
       Rule::String => {
         text = inner_token.as_str().to_string();
@@ -188,7 +324,7 @@ fn parse_text(token: Pair<Rule>) -> Option<Block> {
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Probability => {
-        settings.chance = parse_probability(inner_token);
+        settings.probability = parse_probability(inner_token);
       }
       Rule::String => {
         text = inner_token.as_str().to_string();
@@ -379,27 +515,32 @@ fn parse_comparison_operator(token: Pair<Rule>) -> Option<Operator> {
   }
 }
 
-//TODO: Integer
-fn parse_probability(token: Pair<Rule>) -> Option<f32> {
+fn parse_probability(token: Pair<Rule>) -> Probability {
   if token.as_rule() != Rule::Probability {
-    return None;
+    return Probability::None;
   }
 
   for inner_token in token.into_inner() {
-    if inner_token.as_rule() == Rule::Float {
-      let value = inner_token.as_str().parse::<f32>().unwrap();
-
-      return Some(value);
-    }
-    if inner_token.as_rule() == Rule::Percentage {
-      if let Some(integer) = inner_token.into_inner().next() {
-        let value = integer.as_str().parse::<u64>().unwrap();
-        return Some(value as f32 / 100.);
+    match inner_token.as_rule() {
+      Rule::Float => {
+        let value = inner_token.as_str().parse::<f32>().unwrap();
+        return Probability::Chance(value);
       }
+      Rule::Percentage => {
+        if let Some(integer) = inner_token.into_inner().next() {
+          let value = integer.as_str().parse::<u64>().unwrap();
+          return Probability::Chance(value as f32 / 100.);
+        }
+      }
+      Rule::Integer => {
+        let value = inner_token.as_str().parse::<u32>().unwrap();
+        return Probability::Frequency(value);
+      }
+      _ => {}
     }
   }
 
-  None
+  Probability::None
 }
 
 #[cfg(test)]
@@ -542,7 +683,7 @@ mod test {
     let probability = parse_probability(probability_token);
 
     let expected_settings = BlockSettings {
-      chance: probability,
+      probability,
       ..Default::default()
     };
     let expected_value = Block::Choice {
@@ -569,7 +710,7 @@ mod test {
     let probability = parse_probability(probability_token);
 
     let expected_settings = BlockSettings {
-      chance: probability,
+      probability,
       ..Default::default()
     };
 
