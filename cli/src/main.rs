@@ -14,7 +14,6 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
   Compile {
-    #[clap(default_value = ".")]
     source_path: std::path::PathBuf,
     #[clap(default_value = "./build/cuentitos.db")]
     build_path: std::path::PathBuf,

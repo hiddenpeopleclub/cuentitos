@@ -2,7 +2,7 @@ use std::println;
 
 use cuentitos_common::BlockId;
 use cuentitos_common::BlockSettings;
-use cuentitos_common::Database;
+use cuentitos_common::File;
 use rand::Rng;
 use rand::SeedableRng;
 use rand_pcg::Pcg32;
@@ -16,7 +16,7 @@ pub struct Block {
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Runtime {
-  pub file: Database,
+  pub file: File,
   pub block_stack: Vec<BlockId>,
   #[serde(skip)]
   rng: Option<Pcg32>,
@@ -24,7 +24,7 @@ pub struct Runtime {
 }
 
 impl Runtime {
-  pub fn new(file: Database) -> Runtime {
+  pub fn new(file: File) -> Runtime {
     Runtime {
       file,
       ..Default::default()
@@ -294,11 +294,11 @@ mod test {
   use std::vec;
 
   use crate::Runtime;
-  use cuentitos_common::{Block, BlockSettings, Database};
+  use cuentitos_common::{Block, BlockSettings, File};
 
   #[test]
   fn new_runtime_works_correctly() {
-    let file = Database {
+    let file = File {
       blocks: vec![Block::default()],
     };
     let runtime = Runtime::new(file.clone());
@@ -332,7 +332,7 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    let file = Database {
+    let file = File {
       blocks: vec![parent.clone(), choice_1, choice_2, child_text],
     };
 
@@ -373,7 +373,7 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    let file = Database {
+    let file = File {
       blocks: vec![parent.clone(), choice_1, choice_2, child_text],
     };
     let runtime = Runtime {
@@ -406,7 +406,7 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    let file = Database {
+    let file = File {
       blocks: vec![parent.clone(), child_1.clone(), child_2.clone()],
     };
 
@@ -451,7 +451,7 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    let file = Database {
+    let file = File {
       blocks: vec![
         parent.clone(),
         sibling.clone(),
@@ -496,7 +496,7 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    let file = Database {
+    let file = File {
       blocks: vec![parent.clone(), choice_1.clone(), choice_2],
     };
 
@@ -537,7 +537,7 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    let file = Database {
+    let file = File {
       blocks: vec![parent.clone(), choice_1.clone(), choice_2.clone()],
     };
     let mut runtime = Runtime {
@@ -557,8 +557,58 @@ mod test {
 
   #[test]
   fn next_output_doesnt_work_with_empty_file() {
-    let mut runtime = Runtime::new(Database::default());
+    let mut runtime = Runtime::new(File::default());
     assert_eq!(runtime.next_block(), None);
+  }
+
+  #[test]
+  fn pick_random_path_from_bucket_works_correctly() {
+    let settings = BlockSettings {
+      children: vec![1, 2],
+      ..Default::default()
+    };
+
+    let bucket = Block::Bucket {
+      name: None,
+      settings,
+    };
+
+    let settings = BlockSettings {
+      probability: cuentitos_common::Probability::Frequency(50),
+      ..Default::default()
+    };
+
+    let text_1 = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let settings = BlockSettings {
+      probability: cuentitos_common::Probability::Frequency(50),
+      ..Default::default()
+    };
+
+    let text_2 = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let file = File {
+      blocks: vec![bucket, text_1, text_2],
+    };
+    let mut runtime = Runtime {
+      file,
+      block_stack: vec![0],
+      ..Default::default()
+    };
+
+    runtime.set_seed(2);
+
+    let bucket_settings = runtime.get_block(0).get_settings().clone();
+    runtime.pick_random_path_from_bucket(&bucket_settings);
+    assert_eq!(*runtime.block_stack.last().unwrap(), 1);
+    runtime.pick_random_path_from_bucket(&bucket_settings);
+    assert_eq!(*runtime.block_stack.last().unwrap(), 2);
   }
 
   #[test]
@@ -592,7 +642,7 @@ mod test {
       settings,
     };
 
-    let file = Database {
+    let file = File {
       blocks: vec![
         text_with_no_chances,
         text_with_100_chances,
