@@ -25,7 +25,7 @@ impl Console {
     let metadata = fs::metadata(&path).expect("unable to read metadata");
     let mut buffer = vec![0; metadata.len() as usize];
     f.read_exact(&mut buffer).expect("buffer overflow");
-    let file = cuentitos_runtime::Database::from_u8(&buffer).unwrap();
+    let file = cuentitos_runtime::File::from_u8(&buffer).unwrap();
 
     let mut runtime = Runtime::new(file);
 
