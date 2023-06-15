@@ -81,6 +81,7 @@ You decide to focus on the now...
 # second_day_happy
   A new day in the new city.
     unique
+  // This is a nested comment
   You wake up feeling refreshed. Let's see what this day brings.
   `play_sound alarm 0.3`
     * Explore a museum
