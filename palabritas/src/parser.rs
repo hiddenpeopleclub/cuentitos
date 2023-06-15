@@ -672,6 +672,8 @@ mod test {
     //TODO: compare with fixture
   }
 
+
+
   /*#[test]
   fn parse_blocks_correctly() {
     /*
@@ -1417,6 +1419,14 @@ mod test {
 
     let integer = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string();
     assert_parse_rule(Rule::Probability, &("(".to_string() + &integer + ")"));
+  }
+
+  #[test]
+  fn parses_file_that_starts_with_a_section() {
+    assert_parse_rule(
+      Rule::File, 
+      format!("# intro\n\n# previa\n").as_str()
+    );
   }
 
   #[test]

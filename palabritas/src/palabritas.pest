@@ -22,7 +22,7 @@ Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier 
 
 Probability = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
 
-Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
+Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ ( NewLine | NewBlock | Subsection )* }
 Subsection = { "##" ~ " "* ~ Identifier ~ " "* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
 
 Text = { !Indentation ~ !ReservedKeywords ~ Probability? ~ String }
@@ -44,7 +44,6 @@ Block = {
 
 File = { SOI ~ (NewLine | Block | Section )* ~ EOI }
 
-Comment = _{ "//" ~ (!(NewLine | EOI) ~ ANY)* ~ (NewLine | EOI) }
-EmptyLine = _{NEWLINE ~ " "* ~ (NEWLINE | EOI)}
+COMMENT = _{ "//" ~ (!(NewLine | EOI) ~ ANY)* ~ (NewLine | EOI) }
 NewLine = _{ EmptyLine | NEWLINE }
-COMMENT = _{Comment}
+EmptyLine = _{" "* ~ NEWLINE }
