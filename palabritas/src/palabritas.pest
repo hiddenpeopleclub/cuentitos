@@ -1,3 +1,4 @@
+ReservedKeywords = { "req" | "freq" | "mod" | "->" | "`" | "*" | "//" | "#" | "##" }
 Char = { (!NEWLINE ~ ANY)+ }
 Integer = { "-"? ~ ASCII_DIGIT+ }
 Float = { Integer ~ "." ~ ASCII_DIGIT* }
@@ -24,7 +25,7 @@ Probability = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "
 Section = {"#" ~ " "* ~ Identifier ~ " "* ~ NEWLINE ~ ( NEWLINE | Block | Subsection )* }
 Subsection = { "##" ~ " "* ~ Identifier ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*}
 
-Text = { Probability? ~ String }
+Text = { !Indentation ~ !ReservedKeywords ~ Probability? ~ String }
 Choice = { "*" ~ " "* ~ Probability? ~ String }
 NamedBucket = { "[" ~ " "* ~ Probability? ~ SnakeCase ~ " "* ~ "]" }
 
