@@ -4,6 +4,12 @@ use crate::parser::Rule;
 #[derive(Debug, PartialEq, Eq)]
 pub enum PalabritasError {
   FileIsEmpty,
+  ParseError {
+    file: String,
+    line: usize,
+    col: usize,
+    reason: String
+  },
   PathIsNotAFile(PathBuf),
   CantReadFile {
     path: PathBuf,
@@ -36,6 +42,9 @@ impl Display for PalabritasError {
     match self {
       PalabritasError::FileIsEmpty => {
         write!(f, "File provided is empty.")
+      }
+      PalabritasError::ParseError { file, line, col, reason } => {
+        write!(f, "{}:{}:{}\n  {}", file, line, col, reason)
       }
       PalabritasError::BucketSumIsNot1(info) => {
         write!(
