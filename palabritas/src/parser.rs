@@ -7,7 +7,7 @@ use cuentitos_common::{
 };
 use pest::{iterators::Pair, Parser};
 
-use crate::error::{PalabritasError, ErrorInfo};
+use crate::error::{ErrorInfo, PalabritasError};
 
 #[derive(Parser)]
 #[grammar = "palabritas.pest"]
@@ -17,16 +17,17 @@ pub fn parse_file_from_path<P>(path: P) -> Result<File, PalabritasError>
 where
   P: AsRef<Path>,
 {
-  if !path.as_ref().is_file()
-  {
+  if !path.as_ref().is_file() {
     return Err(PalabritasError::PathIsNotAFile(path.as_ref().to_path_buf()));
   }
-  let str = match std::fs::read_to_string(path.as_ref())
-  {
+  let str = match std::fs::read_to_string(path.as_ref()) {
     Ok(str) => str,
     Err(e) => {
-      return  Err(PalabritasError::CantReadFile { path: path.as_ref().to_path_buf(), message: e.to_string() });
-    },
+      return Err(PalabritasError::CantReadFile {
+        path: path.as_ref().to_path_buf(),
+        message: e.to_string(),
+      });
+    }
   };
   let token = PalabritasParser::parse(Rule::File, &str)
     .expect("unsuccessful parse") // unwrap the parse result
@@ -36,9 +37,7 @@ where
   parse_file(token)
 }
 
-
 pub fn parse_file(token: Pair<Rule>) -> Result<File, PalabritasError> {
-
   match_rule(&token, Rule::File)?;
 
   let mut blocks: Vec<Vec<Block>> = Vec::default();
@@ -80,7 +79,12 @@ pub fn parse_file(token: Pair<Rule>) -> Result<File, PalabritasError> {
   })
 }
 
-fn parse_block(token: Pair<Rule>, blocks: &mut Vec<Vec<Block>>, child_order: usize, current_line: &mut usize)-> Result<(),PalabritasError> {
+fn parse_block(
+  token: Pair<Rule>,
+  blocks: &mut Vec<Vec<Block>>,
+  child_order: usize,
+  current_line: &mut usize,
+) -> Result<(), PalabritasError> {
   match_rule(&token, Rule::Block)?;
 
   //    (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
@@ -89,25 +93,25 @@ fn parse_block(token: Pair<Rule>, blocks: &mut Vec<Vec<Block>>, child_order: usi
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Text => {
-        *current_line+=1;
+        *current_line += 1;
         if let Some(text) = parse_text(inner_token) {
           block = text;
         }
       }
       Rule::NamedBucket => {
-        *current_line+=1;
+        *current_line += 1;
         if let Some(named_bucket) = parse_named_bucket(inner_token) {
           block = named_bucket;
         }
       }
       Rule::Choice => {
-        *current_line+=1;
+        *current_line += 1;
         if let Some(choice) = parse_choice(inner_token) {
           block = choice;
         }
       }
       Rule::Command => {
-        *current_line+=1;
+        *current_line += 1;
         add_command_to_block(inner_token, &mut block);
       }
       Rule::NewBlock => {
@@ -123,11 +127,11 @@ fn parse_block(token: Pair<Rule>, blocks: &mut Vec<Vec<Block>>, child_order: usi
 
   if let Block::Bucket {
     name: _,
-    settings:_,
+    settings: _,
   } = block
   {
-    let line  = current_line.clone()-block.get_settings().children.len();
-    validate_bucket_data(&block,blocks, child_order, line)?;
+    let line = *current_line - block.get_settings().children.len();
+    validate_bucket_data(&block, blocks, child_order, line)?;
     update_children_probabilities_to_frequency(&block, blocks, child_order);
   } else if is_child_unnamed_bucket(&block, blocks, child_order) {
     make_childs_bucket(&mut block, blocks, child_order);
@@ -201,82 +205,65 @@ fn make_childs_bucket(block: &mut Block, blocks: &mut Vec<Vec<Block>>, child_ord
   block.get_settings_mut().children = vec![blocks[child_order + 1].len() - 1];
 }
 
-fn validate_bucket_data( bucket: &Block, blocks: &mut Vec<Vec<Block>>, child_order: usize, current_line: usize) -> Result<(), PalabritasError>
-{
+fn validate_bucket_data(
+  bucket: &Block,
+  blocks: &mut [Vec<Block>],
+  child_order: usize,
+  current_line: usize,
+) -> Result<(), PalabritasError> {
   let settings = bucket.get_settings();
 
-  let bucket_name = match bucket{
-    Block::Bucket { name, settings:_} => {
-      match name{
-        Some(string) => string.clone(),
-        None => String::default(),
-    }
-    },
-    _ => String::default()
+  let bucket_name = match bucket {
+    Block::Bucket {
+      name: Some(string),
+      settings: _,
+    } => string.clone(),
+    _ => String::default(),
   };
   let mut frequency_found = false;
   let mut chance_found = false;
   let mut total_chance = 0.;
 
   let mut inner_line = current_line;
-  for child in &settings.children
-  {
-    inner_line+=1;
-    let child_block =  &blocks[child_order+1][*child];
+  for child in &settings.children {
+    inner_line += 1;
+    let child_block = &blocks[child_order + 1][*child];
     let child_settings = child_block.get_settings();
-    match child_settings.probability
-    {
-        Probability::None => {
-          let string = match child_block
-          {
-            Block::Bucket { name, settings:_} => {
-              match name{
-                Some(string) => string.clone(),
-                None => String::default(),
-              }
-            },
-            Block::Text { id, settings:_ } => id.clone(),
-            Block::Choice { id, settings:_ } => id.clone(),
-          };
-          return Err(
-            PalabritasError::BucketMissingProbability(ErrorInfo
-            {
-              line: inner_line,
-              string
-            }
-            )
-          );
-        },
-        Probability::Frequency(_) => frequency_found = true,
-        Probability::Chance(chance) => {
-          chance_found = true;
-          total_chance+=chance;
-        },
+    match child_settings.probability {
+      Probability::None => {
+        let string = match child_block {
+          Block::Bucket { name, settings: _ } => match name {
+            Some(string) => string.clone(),
+            None => String::default(),
+          },
+          Block::Text { id, settings: _ } => id.clone(),
+          Block::Choice { id, settings: _ } => id.clone(),
+        };
+        return Err(PalabritasError::BucketMissingProbability(ErrorInfo {
+          line: inner_line,
+          string,
+        }));
+      }
+      Probability::Frequency(_) => frequency_found = true,
+      Probability::Chance(chance) => {
+        chance_found = true;
+        total_chance += chance;
+      }
     }
 
-    if frequency_found && chance_found
-    {
-      return Err(
-        PalabritasError::BucketHasFrequenciesAndChances(ErrorInfo
-        {
-          line: current_line,
-          string: bucket_name
-        }
-        )
-      );
+    if frequency_found && chance_found {
+      return Err(PalabritasError::BucketHasFrequenciesAndChances(ErrorInfo {
+        line: current_line,
+        string: bucket_name,
+      }));
     }
   }
 
-  if chance_found && total_chance!=1.
-  {
-    return Err(
-      PalabritasError::BucketSumIsNot1(ErrorInfo
-      {
-        line: current_line,
-        string: bucket_name
-      }
-      )
-    );
+  if chance_found && total_chance != 1. {
+    return Err(PalabritasError::BucketSumIsNot1(ErrorInfo {
+      line: current_line,
+      string: bucket_name,
+    }));
   }
 
   Ok(())
@@ -623,13 +610,15 @@ fn parse_probability(token: Pair<Rule>) -> Probability {
   Probability::None
 }
 
-fn match_rule(token: &Pair<Rule>, expected_rule: Rule) -> Result<(), PalabritasError>
-{
+fn match_rule(token: &Pair<Rule>, expected_rule: Rule) -> Result<(), PalabritasError> {
   if token.as_rule() != expected_rule {
-    return Err(PalabritasError::UnexpectedRule{
-      info: ErrorInfo{ line: 0,string: token.as_str().to_string() },
-      expected_rule: expected_rule,
-      rule_found: token.as_rule()
+    return Err(PalabritasError::UnexpectedRule {
+      info: ErrorInfo {
+        line: 0,
+        string: token.as_str().to_string(),
+      },
+      expected_rule,
+      rule_found: token.as_rule(),
     });
   }
 
@@ -646,7 +635,6 @@ mod test {
   use pest::iterators::Pair;
   use rand::distributions::Alphanumeric;
   use rand::{self, Rng};
-  
 
   const SPECIAL_CHARACTERS: [&str; 11] = [".", "_", "/", ",", ";", "'", " ", "?", "!", "¿", "¡"];
 
@@ -737,75 +725,79 @@ mod test {
   }*/
 
   #[test]
-  fn buckets_chance_must_sum_1()
-  {
+  fn buckets_chance_must_sum_1() {
     let snake_case = make_random_snake_case();
 
     let frequency_1 = rand::thread_rng().gen_range(i8::MIN as f32..i8::MAX as f32);
     let child_1 = make_random_string();
     let mut frequency_2 = rand::thread_rng().gen_range(i8::MIN as f32..i8::MAX as f32);
-    while frequency_1 +frequency_1 == 1.
-    {
+    while frequency_1 + frequency_1 == 1. {
       frequency_2 = rand::thread_rng().gen_range(i8::MIN as f32..i8::MAX as f32);
     }
-    
+
     let child_2 = make_random_string();
     let named_bucket_string = format!(
       "[{}]\n  ({}){}\n  ({}){}",
-       snake_case, frequency_1, child_1, frequency_2, child_2
+      snake_case, frequency_1, child_1, frequency_2, child_2
     );
     let token = short_parse(Rule::Block, &named_bucket_string);
     let mut blocks = Vec::default();
     let named_bucket = parse_block(token, &mut blocks, 0, &mut 0).unwrap_err();
 
-    assert_eq!(named_bucket, PalabritasError::BucketSumIsNot1(
-      ErrorInfo { line: 1, string: snake_case }
-    ));
-
+    assert_eq!(
+      named_bucket,
+      PalabritasError::BucketSumIsNot1(ErrorInfo {
+        line: 1,
+        string: snake_case
+      })
+    );
   }
 
-
   #[test]
-  fn buckets_cant_have_frequency_and_chance()
-  {
+  fn buckets_cant_have_frequency_and_chance() {
     let snake_case = make_random_snake_case();
     let frequency = rand::thread_rng().gen_range(1..100);
     let child_1 = make_random_string();
-    let chance: f32 = rand::thread_rng().gen_range(0. .. 1.);
+    let chance: f32 = rand::thread_rng().gen_range(0. ..1.);
     let child_2 = make_random_string();
     let named_bucket_string = format!(
       "[{}]\n  ({}){}\n  ({}){}",
-       snake_case, frequency, child_1, chance, child_2
+      snake_case, frequency, child_1, chance, child_2
     );
     let token = short_parse(Rule::Block, &named_bucket_string);
     let mut blocks = Vec::default();
     let named_bucket = parse_block(token, &mut blocks, 0, &mut 0).unwrap_err();
 
-    assert_eq!(named_bucket, PalabritasError::BucketHasFrequenciesAndChances(
-      ErrorInfo { line: 1, string: snake_case }
-    ));
-
+    assert_eq!(
+      named_bucket,
+      PalabritasError::BucketHasFrequenciesAndChances(ErrorInfo {
+        line: 1,
+        string: snake_case
+      })
+    );
   }
 
   #[test]
-  fn buckets_cant_have_missing_probabilities()
-  {
+  fn buckets_cant_have_missing_probabilities() {
     let snake_case = make_random_snake_case();
     let frequency = rand::thread_rng().gen_range(1..100);
     let child_1 = make_random_string();
     let child_2 = make_random_string();
     let named_bucket_string = format!(
       "[{}]\n  ({}){}\n  {}",
-       snake_case, frequency, child_1, child_2
+      snake_case, frequency, child_1, child_2
     );
     let token = short_parse(Rule::Block, &named_bucket_string);
     let mut blocks = Vec::default();
     let named_bucket = parse_block(token, &mut blocks, 0, &mut 0).unwrap_err();
 
-    assert_eq!(named_bucket, PalabritasError::BucketMissingProbability(
-      ErrorInfo { line: 3, string: child_2 }
-    ));
-
+    assert_eq!(
+      named_bucket,
+      PalabritasError::BucketMissingProbability(ErrorInfo {
+        line: 3,
+        string: child_2
+      })
+    );
   }
   #[test]
   fn parse_named_bucket_correctly() {
@@ -841,7 +833,7 @@ mod test {
 
     let mut blocks = Vec::default();
     let token = short_parse(Rule::Block, &named_bucket_string);
-    parse_block(token, &mut blocks, 0,&mut 0).unwrap();
+    parse_block(token, &mut blocks, 0, &mut 0).unwrap();
 
     let expected_value = Block::Bucket {
       name: Some(snake_case),
