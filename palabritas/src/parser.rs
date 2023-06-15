@@ -190,19 +190,20 @@ fn make_childs_bucket(block: &mut Block, blocks: &mut Vec<Vec<Block>>, child_ord
   }
 
   update_children_probabilities_to_frequency(block, blocks, child_order);
-  let bucket_children: Vec<usize> = move_children_to_lower_level(block, blocks, child_order);
 
+  let block_settings = block.get_settings_mut();
   let bucket = Block::Bucket {
     name: None,
     settings: BlockSettings {
-      children: bucket_children,
+      children: block_settings.children.clone(),
       ..Default::default()
     },
   };
 
-  blocks[child_order + 1].push(bucket);
+  blocks[child_order].push(bucket);
+  move_to_lower_level(blocks[child_order].len() - 1, blocks, child_order);
 
-  block.get_settings_mut().children = vec![blocks[child_order + 1].len() - 1];
+  block_settings.children = vec![blocks[child_order + 1].len() - 1];
 }
 
 fn validate_bucket_data(
@@ -268,40 +269,42 @@ fn validate_bucket_data(
 
   Ok(())
 }
-fn move_children_to_lower_level(
-  block: &Block,
-  blocks: &mut Vec<Vec<Block>>,
-  child_order: usize,
-) -> Vec<usize> {
-  if child_order + 2 <= blocks.len() {
+
+fn move_to_lower_level(index: usize, blocks: &mut Vec<Vec<Block>>, child_order: usize) -> usize {
+  let mut block: Block = blocks[child_order].remove(index);
+  update_higher_level(index, blocks, child_order);
+  let settings = block.get_settings_mut();
+
+  for i in 0..settings.children.len() {
+    for e in i + 1..settings.children.len() {
+      if settings.children[e] > settings.children[i] {
+        settings.children[e] -= 1;
+      }
+    }
+
+    settings.children[i] = move_to_lower_level(settings.children[i], blocks, child_order + 1);
+  }
+  if blocks.len() <= child_order + 1 {
     blocks.push(Vec::default());
   }
+  blocks[child_order + 1].push(block);
+  return blocks[child_order + 1].len() - 1;
 
-  let mut new_children = Vec::default();
-  if child_order + 1 >= blocks.len() {
-    return new_children;
-  }
-
-  let children = &block.get_settings().children;
-
-  for i in (0..blocks[child_order + 1].len()).rev() {
-    for child in children {
-      if *child == i {
-        let moving_child = blocks[child_order + 1].remove(i);
-        move_children_to_lower_level(&moving_child, blocks, child_order + 1);
-        blocks[child_order + 2].push(moving_child);
+  fn update_higher_level(index: usize, blocks: &mut [Vec<Block>], child_order: usize) {
+    if child_order == 0 {
+      return;
+    }
+    for higher_level_block in &mut blocks[child_order - 1] {
+      let higher_level_settings = higher_level_block.get_settings_mut();
+      for i in 0..higher_level_settings.children.len() {
+        if higher_level_settings.children[i] > index {
+          higher_level_settings.children[i] -= 1;
+        }
       }
     }
   }
-
-  for i in 0..children.len() {
-    new_children.push(blocks[child_order + 2].len() - i - 1);
-  }
-
-  new_children.reverse();
-
-  new_children
 }
+
 fn update_children_probabilities_to_frequency(
   block: &Block,
   blocks: &mut Vec<Vec<Block>>,
