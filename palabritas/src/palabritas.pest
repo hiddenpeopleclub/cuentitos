@@ -1,17 +1,16 @@
 ReservedKeywords = { "req" | "freq" | "mod" | "->" | "`" | "*" | "#" | "##" | "//" }
-Char = { (!NEWLINE ~ ANY)+ }
+Char = { (!NewLine ~ ANY)+ }
 Integer = { "-"? ~ ASCII_DIGIT+ }
 Float = { Integer ~ "." ~ ASCII_DIGIT* }
 Percentage = { Integer ~ "%" }
 Indentation = { "  " }
-
 String = @{ Char+ }
 ComparisonOperator = { "!=" | "=" | "<=" | ">=" | "<" | ">" | "!" }
 
 SnakeCase = { ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | "_" | ASCII_DIGIT)* }
 Identifier = { (ASCII_ALPHA | "_" ) ~ (ASCII_ALPHANUMERIC | "_")* }
 Value = { Identifier | Float | Percentage | Integer}
-Condition = { Identifier ~ " "* ~ (ComparisonOperator ~ " "*)? ~ Value }
+Condition = { "!"? ~ Identifier ~ " "* ~ (ComparisonOperator ~ " "*)? ~ Value? }
 
 Requirement = { "req" ~ " "+ ~ Condition }
 Frequency = { "freq" ~ " "+ ~ Condition ~ " "+ ~ ( Float | Integer ) }
@@ -19,12 +18,12 @@ Modifier = { "mod" ~ " "+ ~ Identifier ~ " "+ ~ Value}
 Divert = { "->"  ~ " "* ~ Identifier ~ ("." ~ Identifier)? }
 Function = {"`" ~ SnakeCase ~ (" " ~ Value)* ~ "`"}
 
-Command = {NEWLINE ~ Indentation* ~ (Requirement | Frequency | Modifier | Divert | Function) } 
+Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert | Function) } 
 
 Probability = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
 
-Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NEWLINE ~ ( NEWLINE | NewBlock | Subsection )* }
-Subsection = { "##" ~ " "* ~ Identifier ~ " "* ~ (NEWLINE | EOI) ~ (NewBlock | NEWLINE)* }
+Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
+Subsection = { "##" ~ " "* ~ Identifier ~ " "* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
 
 Text = { !Indentation ~ !ReservedKeywords ~ Probability? ~ String }
 Choice = { "*" ~ " "* ~ Probability? ~ String }
@@ -40,10 +39,12 @@ NewBlock = {
 }
 
 Block = {
-    (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
+    (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NewLine | EOI) ~ NewBlock*
 }
 
-File = { SOI ~ (NEWLINE | Block | Section )* ~ EOI }
-EmptyLine = _{ Indentation* ~ NEWLINE }
-Comment = _{ "//" ~ (!(NEWLINE | EOI) ~ ANY)* ~ (NEWLINE | EOI) }
-COMMENT = _{ Comment | EmptyLine }
+File = { SOI ~ (NewLine | Block | Section )* ~ EOI }
+
+Comment = _{ "//" ~ (!(NewLine | EOI) ~ ANY)* ~ (NewLine | EOI) }
+EmptyLine = _{NEWLINE ~ " "* ~ (NEWLINE | EOI)}
+NewLine = _{ EmptyLine | NEWLINE }
+COMMENT = _{Comment}
