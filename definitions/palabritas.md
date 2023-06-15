@@ -199,7 +199,7 @@ You decide to focus on the now...
   req time_of_day_night
 ```
 
-Thse three lines will only show at night, after `The moonlight gives...`. The second one only if the player is low on energy.
+These three lines will only show at night, after `The moonlight gives...`. The second one only if the player is low on energy.
 
 You can also add requirements to options.
 
