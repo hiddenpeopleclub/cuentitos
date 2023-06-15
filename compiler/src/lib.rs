@@ -11,6 +11,7 @@ where
   U: AsRef<Path>,
 {
   let db_result = parse_file_from_path(source_path);
+
   let db = match db_result {
     Ok(db) => db,
     Err(_) => {
