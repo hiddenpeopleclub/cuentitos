@@ -7,6 +7,8 @@ use cuentitos_common::{
 };
 use pest::{iterators::Pair, Parser};
 
+use pest::error::LineColLocation;
+
 use crate::error::{ErrorInfo, PalabritasError};
 
 #[derive(Parser)]
@@ -29,12 +31,23 @@ where
       });
     }
   };
-  let token = PalabritasParser::parse(Rule::File, &str)
-    .expect("unsuccessful parse") // unwrap the parse result
-    .next()
-    .unwrap();
+  
+  match PalabritasParser::parse(Rule::File, &str) {
+    Ok(mut result) => return parse_file(result.next().unwrap()),
+    Err(error) => { 
+      let (line, col) = match error.line_col {
+        LineColLocation::Pos(line_col) => line_col,
+        LineColLocation::Span(start,_) => (start.0,start.1),
+      };
 
-  parse_file(token)
+      Err(PalabritasError::ParseError {
+        file: path.as_ref().display().to_string(),
+        line,
+        col,
+        reason: error.to_string()
+      })
+    }
+  }
 }
 
 pub fn parse_file(token: Pair<Rule>) -> Result<File, PalabritasError> {

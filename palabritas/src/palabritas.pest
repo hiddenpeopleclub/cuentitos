@@ -1,9 +1,10 @@
-ReservedKeywords = { "req" | "freq" | "mod" | "->" | "`" | "*" | "//" | "#" | "##" }
+ReservedKeywords = { "req" | "freq" | "mod" | "->" | "`" | "*" | "#" | "##" | "//" }
 Char = { (!NEWLINE ~ ANY)+ }
 Integer = { "-"? ~ ASCII_DIGIT+ }
 Float = { Integer ~ "." ~ ASCII_DIGIT* }
 Percentage = { Integer ~ "%" }
 Indentation = { "  " }
+
 String = @{ Char+ }
 ComparisonOperator = { "!=" | "=" | "<=" | ">=" | "<" | ">" | "!" }
 
@@ -18,12 +19,12 @@ Modifier = { "mod" ~ " "+ ~ Identifier ~ " "+ ~ Value}
 Divert = { "->"  ~ " "* ~ Identifier ~ ("." ~ Identifier)? }
 Function = {"`" ~ SnakeCase ~ (" " ~ Value)* ~ "`"}
 
-Command = {NEWLINE ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert | Function) } 
+Command = {NEWLINE ~ Indentation* ~ (Requirement | Frequency | Modifier | Divert | Function) } 
 
 Probability = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
 
-Section = {"#" ~ " "* ~ Identifier ~ " "* ~ NEWLINE ~ ( NEWLINE | Block | Subsection )* }
-Subsection = { "##" ~ " "* ~ Identifier ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*}
+Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NEWLINE ~ ( NEWLINE | NewBlock | Subsection )* }
+Subsection = { "##" ~ " "* ~ Identifier ~ " "* ~ (NEWLINE | EOI) ~ (NewBlock | NEWLINE)* }
 
 Text = { !Indentation ~ !ReservedKeywords ~ Probability? ~ String }
 Choice = { "*" ~ " "* ~ Probability? ~ String }
@@ -43,3 +44,6 @@ Block = {
 }
 
 File = { SOI ~ (NEWLINE | Block | Section )* ~ EOI }
+EmptyLine = _{ Indentation* ~ NEWLINE }
+Comment = _{ "//" ~ (!(NEWLINE | EOI) ~ ANY)* ~ (NEWLINE | EOI) }
+COMMENT = _{ Comment | EmptyLine }
