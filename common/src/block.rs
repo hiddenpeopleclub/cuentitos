@@ -46,6 +46,16 @@ pub enum Block {
     name: Option<BucketName>,
     settings: BlockSettings,
   },
+  Section {
+    id: I18nId,
+    settings: BlockSettings,
+    subsections: Vec<BlockId>,
+  },
+  Subsection {
+    id: I18nId,
+    settings: BlockSettings,
+    subsections: Vec<BlockId>,
+  },
 }
 
 impl Block {
@@ -54,6 +64,16 @@ impl Block {
       Block::Text { id: _, settings } => settings,
       Block::Choice { id: _, settings } => settings,
       Block::Bucket { name: _, settings } => settings,
+      Block::Section {
+        id: _,
+        settings,
+        subsections: _,
+      } => settings,
+      Block::Subsection {
+        id: _,
+        settings,
+        subsections: _,
+      } => settings,
     }
   }
   pub fn get_settings(&self) -> &BlockSettings {
@@ -61,6 +81,16 @@ impl Block {
       Block::Text { id: _, settings } => settings,
       Block::Choice { id: _, settings } => settings,
       Block::Bucket { name: _, settings } => settings,
+      Block::Section {
+        id: _,
+        settings,
+        subsections: _,
+      } => settings,
+      Block::Subsection {
+        id: _,
+        settings,
+        subsections: _,
+      } => settings,
     }
   }
 }

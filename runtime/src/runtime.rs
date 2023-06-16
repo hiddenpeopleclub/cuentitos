@@ -139,6 +139,25 @@ impl Runtime {
   fn update_stack(&mut self) {
     if self.block_stack.is_empty() {
       self.block_stack.push(0);
+      let last_block_id = *self.block_stack.last().unwrap();
+      let last_block = self.get_block(last_block_id).clone();
+      match last_block {
+        cuentitos_common::Block::Section {
+          id: _,
+          settings: _,
+          subsections: _,
+        } => {
+          self.update_stack();
+        }
+        cuentitos_common::Block::Subsection {
+          id: _,
+          settings: _,
+          subsections: _,
+        } => {
+          self.update_stack();
+        }
+        _ => {}
+      }
       return;
     }
 
@@ -167,6 +186,7 @@ impl Runtime {
             return;
           }
         }
+        _ => {}
       }
     }
 
@@ -224,6 +244,25 @@ impl Runtime {
 
     if self.block_stack.is_empty() {
       self.block_stack.push(last_block_id + 1);
+      let last_block_id = *self.block_stack.last().unwrap();
+      let last_block = self.get_block(last_block_id).clone();
+      match last_block {
+        cuentitos_common::Block::Section {
+          id: _,
+          settings: _,
+          subsections: _,
+        } => {
+          self.update_stack();
+        }
+        cuentitos_common::Block::Subsection {
+          id: _,
+          settings: _,
+          subsections: _,
+        } => {
+          self.update_stack();
+        }
+        _ => {}
+      }
       return;
     }
 
@@ -242,6 +281,9 @@ impl Runtime {
               self.block_stack.push(new_block);
               return;
             }
+          }
+          _ => {
+            continue;
           }
         }
         if let cuentitos_common::Block::Choice { id: _, settings: _ } = self.get_block(*child) {

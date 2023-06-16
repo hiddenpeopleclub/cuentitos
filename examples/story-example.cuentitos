@@ -1,96 +1,235 @@
-You've just arrived in the bustling city, full of excitement and anticipation for your new job. 
-The skyline reaches for the clouds, and the sounds of traffic and people surround you. 
-As you take your first steps in this urban jungle, you feel a mix of emotions, hoping to find your place in this new environment.
-  * I take a walk through a nearby park to relax and acclimate to the city.
-    As you stroll through the nearby park, the soothing sounds of rustling leaves and chirping birds help calm your senses. 
-    You find a quiet bench to sit on, taking a moment to breathe deeply and gather your thoughts. 
-    (50%) A solitary figure sits on the bench, engrossed in a book, seemingly unfazed by the surrounding city noise.
-    This serene oasis gives you the confidence to face the challenges ahead as you acclimate to your new life in the bustling city.
-  * I visit a popular street market to experience the city's unique flavors and energy.
-    (50) At the bustling street market, you discover a food stand offering mouthwatering delicacies. 
-      [morning_vendor]
-        req time_of_day morning
-        [(100) happy_vendor]
-          (50%) You notice the stand owner, their eyes sparkling with joy as they animatedly describe their homemade offerings to an eager customer.
-          (50%) You see the owner beaming with joy, their infectious smile and animated gestures inviting customers to try their delectable creations.
-        [(25) tired_vendor]
-          (50%) You come across a vendor with furrowed brows and a tense expression, their voice raised as they heatedly argue with a customer over a transaction at their stand.
-          (50%) You spot a visibly agitated vendor, their clenched fists and piercing glare making it clear that they're unhappy with the current situation unfolding before them.
-      [night_vendor]
-        req time_of_day night
-        (50%) You observe a vendor at a small food stand, their shoulders slumped and eyes slightly glazed as they quietly serve customers, mustering just enough energy to complete each transaction.
-        (50%) The vendor at a nearby food stand appears worn, their movements slow and deliberate, as they attempt to maintain a smile while attending to the seemingly endless stream of customers.
-      You feel they're too busy to bother them with questions.
-    (2) As you try to navigate the crowded market, you're drawn to the entrancing melody of a street musician. 
-      The captivating sound creates a soothing bubble, momentarily transporting you away from the city's noise. 
-      You take a moment to appreciate the beauty of the music, feeling a connection to the artist and the vibrant energy they bring to the urban landscape.
-        * (50%) I leave two dollars to the artist.
-          The musician smiles and nods thanking you.
-        * I nod when the musician looks my way, to show I really enjoy the music.
-    (500) Wandering the market, you stumble upon a hidden alley adorned with vibrant street art. 
-      Each colorful mural tells a different story, capturing your imagination and sparking your creativity. 
-        * (50%) I grab my phone and take pictures of the murals.
-        * (50%) I keep walking, even if the murals look good, the darkness of the alley is unsettling.
-      This unexpected oasis of visual tranquility provides a respite from the chaos of the city, inspiring you to explore more of the urban canvas and the stories it holds.
+// My Comment
+# intro
 
-Feeling mentally and physically exhausted from the day's adventures, you decide it's time to head back to your hotel.
-As you enter the peaceful sanctuary of your room, you take a deep breath, relieved to have a quiet space where you can recharge and prepare for the challenges ahead.
-The sun shines bright through the window.
-  req time_of_day !night
-The moonlight gives the room a peaceful tone.
-  req time_of_day night
-You start to think about all the stuff you need to do tomorrow.
-  req time_of_day night
-That makes you feel overwhelmed.
-  req time_of_day night
-  req energy <10
-You decide to focus on the now...
-  req time_of_day night
-  * I make some tea
-    req item tea
-    A good cup of tea is always good to regulate after the sensory overload of the city.
-    You sit in the couch to enjoy your tea. Drink half of the cup and fall asleep.
-    mod energy 5
-    mod time -7.5
-    -> second_day
-  * I go to bed
-    Feeling depleted of spoons, you go right back to bed.
-    mod energy 10
-    mod time -7.5
-    -> second_day
-  * I call my parents
-    req energy >10
-    [call]
-      (30) The phone rings twice, and dad picks up. You have a good chat.
-        req energy >20
-        mod energy -10
-      (10) The phone rings twice, and mom picks up. You have a good chat.
-        req energy >20
-        freq time_of_day morning 100
-        mod energy -10
-      (40) The phone rings ten times, nobody is at home.
-        mod energy 10
-    You decide it's now time to go to sleep.
-      mod energy 10
-      mod time -7.5
-      -> second_day
--> END
+# previa
+  // Another comment
+  mod trousers false
+  mod skirt false
+  mod diary false
+  mod water_bottle false
 
-// This is a comment
+  Viernes otra vez! 
+  Hay que investigar!
+  Que me pongo?
+    * Me pongo los pantalones
+      mod trousers true
+    * Me pongo la pollera
+      mod skirt true
+    * Me pongo los guantes
+      mod dex 5
+  
+  Hm... qué llevo en mi mochila?
+    * Llevar cuaderno y lapicera
+      mod diary true
+    * Llevar botella de agua
+      mod water_bottle true
 
-# second_day_happy
-  A new day in the new city.
-    unique
-  // This is a nested comment
-  You wake up feeling refreshed. Let's see what this day brings.
-  `play_sound alarm 0.3`
-    * Explore a museum
-      -> second_day.museum
-    * Go to the Farmer's Market
-      -> second_day.farmers_market
+# stats
+## smarts
+## dexterty
+## resistence
+## charisma
 
-## museum
-  You get to the museum door. You watch through the window. It seems crowded.
+# items
+## diary
+  Todas las conversaciones quedan grabadas. Te da un quest adicional.
+## water_bottle
+  Duplica tu resistencia
 
-## farmers_market
-  You get to the farmer's market. It's very early and some stands are still being set up.
+# travelling_salesant
+## intro
+  travelling_salesant: Hola pequeña aventurera, qué te trae por el inmenso bosque?
+    * Responder ofendida
+      `pose april angry`
+      april: A quién le decís pequeña?!
+      april: Que yo vea acá la enana sos vos!!
+        `pose april scream`
+      travelling_salesant: Bueno, bueno, tampoco es para tanto. 
+        `pose april angry`
+      travelling_salesant: Volvamos a empezar. Quién es esta chica tan inteligente y qué hace en el inmenso bosque?
+      april: Soy Abril. Estoy investigando casos importantes.
+        `pose april proud`
+      travelling_salesant: Jaja! En serio? Qué casos?
+      april: No puedo dar información. Son ultra secretos. Y vos quién sos?
+      travelling_salesant: Ah! Entiendo.
+        `pose travelling_salesant wink`
+    * Responder tranquila
+      req smarts > 5
+      april: Como sabes que soy aventurera?
+        `pose april doubt`
+      travelling_salesant: Sos la primera chica que veo por acá, así que debés ser aventurera.
+      april: Suena lógico. Soy Abril, estoy investigando casos en el bosque.
+        `pose april thinking`
+      travelling_salesant: Oh, una pequeña investigadora entonces! Un placer.
+  travelling_salesant: Yo soy la mundialmente conocida Hormiguita Viajera.
+    `pose travelling_salesant proud`
+    `pose abril normal`
+  april: Hormiguita Viajera? Es la primera vez que lo escucho...
+    `pose april doubt`
+  travelling_salesant: Hace 5 años que estoy viajando. Ya conocí muchos lugares.
+    `pose travelling_salesant normal`
+  travelling_salesant: Y donde vaya, comercio con los locales.
+  travelling_salesant: Vendo cosas que hacen mis hermanas.
+  travelling_salesant: Y compro otras para llevar de regreso.
+  travelling_salesant: Todo en servicio de su majestad, nuestra reina.
+    `pose travelling_salesant proud`
+    mod knows_tavelling_salesant true
+  april: Que interesante! Seguro tenés un montón de historias!
+  travelling_salesant: Pero claro! En 5 años una junta muchas historias.
+    `pose travelling_salesant happy`
+  travelling_salesant: Me encantaría contarte alguna pero la verdad estoy bastante apurada.
+    `pose travelling_salesant sad`
+  april: Apurada con que?
+  travelling_salesant: Tengo que volver a mi colonia. Es urgente.
+  travelling_salesant: Tengo comida que se puede echar a perder pronto.
+  april: Uh ese es un problema!
+  travelling_salesant: Encima hace días que no vuelvo con comida.
+  travelling_salesant: Mis hermanas deben estar muy hambrientas y enojadas.
+  travelling_salesant: Otra vez me van a decir que tardo mucho y qué se yo.
+  travelling_salesant: Para ellas siempre hago todo mal.
+  travelling_salesant: Para ellas no tengo problemas...
+  travelling_salesant: Yo soy literalmente un problema...
+  april: Bueno! No te pongas así!
+  april: Es muy lejos? 
+  april: Te puedo llevar más rápido?
+  travelling_salesant: Aunque llevarme podría ayudar...
+  travelling_salesant: ... el problema no es la distancia la verdad.
+  april: Entonces?
+  travelling_salesant: El camino está bloqueado.
+  travelling_salesant: Mh... 
+    `pose travelling_salesant thinking`
+  travelling_salesant: Pero... 
+  travelling_salesant: ... tal vez me podrías ayudar.
+  april: Tenés un caso para mí?
+  travelling_salesant: Tal vez! Escuchaste hablar de Burr?
+  april: Si, claro, el golem testarudo.
+    req knows_golem
+    travelling_salesant: Testarudo? Esa es una forma muy bondadosa de verlo.
+    travelling_salesant: Es un malvado y violento!
+  april: No, que es? Cuando te da frío?
+    req !knows_golem
+    `pose april freeze`
+    travelling_salesant: Jajaj! No, es un golem de piedra.
+      `pose travelling_salesant lol`
+    april: Nop, no escuché hablar de él nunca.
+      `pose april normal`
+    travelling_salesant: Es una persona muy violenta y enojada.
+    travelling_salesant: Todos en el bosque le tenemos miedo.
+  travelling_salesant: Justo hoy se le ocurrió sentarse en el camino al hormiguero.
+  travelling_salesant: Si llego a pasar por ahi, me estampa.
+  april: Uy! Y porqué no esperás a que se duerma y pasas, total vos no haces ruido.
+  travelling_salesant: Es que ese es el problema mayor! 
+  travelling_salesant: No duerme! 
+  travelling_salesant: Me podrás ayudar?
+    `pose travelling_salesant doubt`
+    * Ayudar a la Hormiguita Viajera
+      req quest_slots > 0
+      mod travelling_salesant_quest true
+      mod travelling_salesant_rep 5
+      april: Uh, en serio? Bueno voy a ver qué puedo hacer!
+      travelling_salesant: Genial! Yo me quedo acá, cualquier cosa vení a hablarme.
+      april: Bueno, nos vemos!
+      -> END
+    * No ayudarla
+      april: Perdón, pero estoy muy ocupada ahora mismo. No puedo tomar nuevos casos.
+      travelling_salesant: Está bien. 
+        `pose travelling_salesant sad`
+        * Voy a volver
+          april: Apenas me libere vengo a verte, y si no pudiste pasar te ayudo.
+          travelling_salesant: Dale! Gracias!
+            `pose travelling_salesant normal`
+        * Este caso no es para mí
+          mod travelling_salesant_rep -5
+          april: Disculpame, pero creo que este caso no es para mí.
+          travelling_salesant: Claro, a nadie le importan las hormigas.
+            `pose travelling_salesant sad`
+          travelling_salesant: Andá, ya veo cómo me las arreglo.
+
+
+
+
+
+# indecisive_golem
+// Un golem que se llama Burr.
+// El golem que está despierto desde hace mil años.
+// Le tienen miedo porque es muy grumpy y violento.
+// Pero es tambien un golem indeciso, que la toma de decisiones lo hace de 
+// piedra. 
+// Hay que buscarle opciones para dormir en el bosque, si le damos una dice que
+// no cree que funcione, si le damos dos, nos dice que probemos cualquiera, pero
+// si le damos 3 opciones, entra en 'fatiga de decision' y se hace de piedra. 
+// No despierta más en el resto del juego.
+// Esto podría ser una sub-quest para ayudar a alguien que le tiene miedo y 
+// quiere hacer algo donde vive.
+
+# frog_and_toad
+// Que sean bohemios (un pintor y un poeta)
+// Frog and Toad son una pareja queer que vive muy aislada en el bosque.
+// Para llegar a su casa tenes que caminar por muchos tiles. 
+// Podría ser un laberinto?
+// Cual sería el incentivo de llegar a la casa de ellos?
+// Podría ser que la bruja te pidió si le podés llevar un pan.
+// 
+// Tenes que llegar de mañana.
+// Frog y Toad están en sus cosas. Entonces no le dan mucha bola a Abril.
+// Abril deja el mandado y se va.
+// 
+// Cuando abril les deja el mandado, y quiere volver por donde vino, 
+// el camino está bloqueado, y da vueltas por 10 escenas random,
+// Hasta que vuelve a aparecer en la casa de las ranas.
+// Ahora las ranas dejaron de hacer sus cosas y están sentadas cocinando.
+// Abril les puede hablar ahora.
+// 
+// Charlando, Frog y Toad le muestran el arte, y que se fueron a vivir ahí 
+// porque se sienten juzgados y que no entienden porque la gente no los quiere.
+// 
+// Abril hace de puente.
+// La hormiguita viajera te cuenta de algun lugar donde el arte de ellos puede
+// venderse, o que les interese exponer o lo que sea.
+// 
+// Abril puede llevar en su mochila o un librito de poemas, o un cuadrito.
+// Y segun que elige lo tiene que llevar a algun lugar en especial.
+
+# baker_witch
+// Se llama Chela
+// La bruja tiene un catering y se olvidó de que le tenía que entregar
+// una docena de medialunas 
+
+
+
+# rana_broadway
+// La rana quiere trabajar en un musical y canta muy mal.
+// Tenemos que convencer a la sirena de que le enseñe a cantar.
+// Si lo logramos el siguiente fin de semana hay un cutscene donde la rana 
+// presenta una cancion con su historia.
+
+# ballena_estancada
+// Una ballena se quedó estancada en la marisma. 
+// Se quedó dormida y la marea bajó.
+// Hay que subir la marea para que vuelva al mar?
+
+# juan_el_cuis
+// Un cuis al que le gusta hablar de cosas superficiales (smalltalk)
+
+
+# el_unicorgi
+// Si le ganás se enoja, pero si perdés te tiene compasión y se vuelve
+// tu amigo.
+// 
+// Este unicorgi es muy competitivo y siempre quiere ser el mejor en todo.
+// Es muy testarudo y no se detendrá ante nada para ganar. A pesar de su 
+// competitividad, es muy leal y cariñoso con sus amigos cercanos.
+// Este unicorgi tiene el cuerpo y las patas cortas y rechonchas de un 
+// corgi, pero su cabeza es la de un unicornio, con una larga melena y 
+// un cuerno afilado. Tiene un pelaje suave y sedoso, con un patrón de 
+// manchas de colores brillantes en tonos de azul, verde y morado. 
+// Sus ojos son grandes y brillantes, con una mirada decidida y fiera. 
+// Tiene una postura orgullosa y erguida, y lleva su cola en alto. 
+// A menudo lleva un collar o una cinta de competición en su cuello para 
+// mostrar su dedicación a la victoria. Aunque puede ser un poco más pequeño
+// que otros unicornios, compensa con su velocidad, agilidad y resistencia, 
+// lo que lo convierte en un adversario formidable en cualquier competencia.
+
+# conejos
+// Los conejos tienen que ser malos porque Bunnies, it must be Bunnies. Re cute, pero re mala onda.
+// Tienen que planear cosas turbias, una mafia de conejos?

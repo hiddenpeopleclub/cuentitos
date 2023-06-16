@@ -54,10 +54,15 @@ pub fn parse_database(token: Pair<Rule>) -> Result<Database, PalabritasError> {
   match_rule(&token, Rule::Database)?;
 
   let mut blocks: Vec<Vec<Block>> = Vec::default();
-  let mut current_line = 0;
   for inner_token in token.into_inner() {
-    if inner_token.as_rule() == Rule::Block {
-      parse_block(inner_token, &mut blocks, 0, &mut current_line)?;
+    match inner_token.as_rule() {
+      Rule::Block => {
+        parse_block(inner_token, &mut blocks, 0)?;
+      }
+      Rule::Section => {
+        parse_section(inner_token, &mut blocks)?;
+      }
+      _ => {}
     }
   }
 
@@ -92,45 +97,141 @@ pub fn parse_database(token: Pair<Rule>) -> Result<Database, PalabritasError> {
   })
 }
 
+fn parse_section(token: Pair<Rule>, blocks: &mut Vec<Vec<Block>>) -> Result<(), PalabritasError> {
+  match_rule(&token, Rule::Section)?;
+  if blocks.is_empty() {
+    blocks.push(Vec::default());
+  }
+
+  blocks[0].push(Block::default());
+  let id = blocks[0].len() - 1;
+
+  let mut section_block = Block::default();
+  //Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
+  for inner_token in token.into_inner() {
+    match inner_token.as_rule() {
+      Rule::Identifier => {
+        section_block = Block::Section {
+          id: inner_token.as_str().to_string(),
+          settings: BlockSettings::default(),
+          subsections: Vec::default(),
+        };
+      }
+      Rule::Command => {
+        add_command_to_block(inner_token, &mut section_block);
+      }
+      Rule::NewBlock => {
+        for inner_blocks_token in get_blocks_from_new_block(inner_token) {
+          let settings = section_block.get_settings_mut();
+          parse_block(inner_blocks_token, blocks, 1)?;
+          settings.children.push(blocks[1].len() - 1);
+        }
+      }
+      Rule::Subsection => {
+        parse_subsection(inner_token, blocks)?;
+        if let Block::Section {
+          id: _,
+          settings: _,
+          ref mut subsections,
+        } = section_block
+        {
+          subsections.push(blocks[0].len() - 1);
+        }
+      }
+      _ => {}
+    }
+  }
+
+  blocks[0][id] = section_block;
+  Ok(())
+}
+
+fn parse_subsection(
+  token: Pair<Rule>,
+  blocks: &mut Vec<Vec<Block>>,
+) -> Result<(), PalabritasError> {
+  match_rule(&token, Rule::Subsection)?;
+
+  if blocks.is_empty() {
+    blocks.push(Vec::default());
+  }
+
+  blocks[0].push(Block::default());
+  let id = blocks[0].len() - 1;
+
+  let mut subsection_block = Block::default();
+  //Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
+  for inner_token in token.into_inner() {
+    match inner_token.as_rule() {
+      Rule::Identifier => {
+        subsection_block = Block::Subsection {
+          id: inner_token.as_str().to_string(),
+          settings: BlockSettings::default(),
+          subsections: Vec::default(),
+        };
+      }
+      Rule::Command => {
+        add_command_to_block(inner_token, &mut subsection_block);
+      }
+      Rule::NewBlock => {
+        for inner_blocks_token in get_blocks_from_new_block(inner_token) {
+          let settings = subsection_block.get_settings_mut();
+          parse_block(inner_blocks_token, blocks, 1)?;
+          settings.children.push(blocks[1].len() - 1);
+        }
+      }
+      Rule::Subsection => {
+        parse_subsection(inner_token, blocks)?;
+        if let Block::Section {
+          id: _,
+          settings: _,
+          ref mut subsections,
+        } = subsection_block
+        {
+          subsections.push(blocks[0].len() - 1);
+        }
+      }
+      _ => {}
+    }
+  }
+
+  blocks[0][id] = subsection_block;
+  Ok(())
+}
 fn parse_block(
   token: Pair<Rule>,
   blocks: &mut Vec<Vec<Block>>,
   child_order: usize,
-  current_line: &mut usize,
 ) -> Result<(), PalabritasError> {
   match_rule(&token, Rule::Block)?;
 
   //    (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
   let mut block = Block::default();
-
+  let current_line = token.line_col().0;
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Text => {
-        *current_line += 1;
         if let Some(text) = parse_text(inner_token) {
           block = text;
         }
       }
       Rule::NamedBucket => {
-        *current_line += 1;
         if let Some(named_bucket) = parse_named_bucket(inner_token) {
           block = named_bucket;
         }
       }
       Rule::Choice => {
-        *current_line += 1;
         if let Some(choice) = parse_choice(inner_token) {
           block = choice;
         }
       }
       Rule::Command => {
-        *current_line += 1;
         add_command_to_block(inner_token, &mut block);
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
           let settings = block.get_settings_mut();
-          parse_block(inner_blocks_token, blocks, child_order + 1, current_line)?;
+          parse_block(inner_blocks_token, blocks, child_order + 1)?;
           settings.children.push(blocks[child_order + 1].len() - 1);
         }
       }
@@ -150,8 +251,7 @@ fn parse_block(
     settings: _,
   } = blocks[child_order][block_id]
   {
-    let line = *current_line - blocks[child_order][block_id].get_settings().children.len();
-    validate_bucket_data(block_id, blocks, child_order, line)?;
+    validate_bucket_data(block_id, blocks, child_order, current_line)?;
     update_children_probabilities_to_frequency(blocks[child_order].len() - 1, blocks, child_order);
   } else if is_child_unnamed_bucket(block_id, blocks, child_order) {
     make_childs_bucket(block_id, blocks, child_order);
@@ -254,12 +354,13 @@ fn validate_bucket_data(
     match child_settings.chance {
       Chance::None => {
         let string = match child_block {
-          Block::Bucket { name, settings: _ } => match name {
-            Some(string) => string.clone(),
-            None => String::default(),
-          },
+          Block::Bucket {
+            name: Some(name),
+            settings: _,
+          } => name.clone(),
           Block::Text { id, settings: _ } => id.clone(),
           Block::Choice { id, settings: _ } => id.clone(),
+          _ => String::default(),
         };
         return Err(PalabritasError::BucketMissingProbability(ErrorInfo {
           line: inner_line,
@@ -783,7 +884,7 @@ mod test {
     );
     let token = short_parse(Rule::Block, &named_bucket_string);
     let mut blocks = Vec::default();
-    let named_bucket = parse_block(token, &mut blocks, 0, &mut 0).unwrap_err();
+    let named_bucket = parse_block(token, &mut blocks, 0).unwrap_err();
 
     assert_eq!(
       named_bucket,
@@ -807,7 +908,7 @@ mod test {
     );
     let token = short_parse(Rule::Block, &named_bucket_string);
     let mut blocks = Vec::default();
-    let named_bucket = parse_block(token, &mut blocks, 0, &mut 0).unwrap_err();
+    let named_bucket = parse_block(token, &mut blocks, 0).unwrap_err();
 
     assert_eq!(
       named_bucket,
@@ -830,7 +931,7 @@ mod test {
     );
     let token = short_parse(Rule::Block, &named_bucket_string);
     let mut blocks = Vec::default();
-    let named_bucket = parse_block(token, &mut blocks, 0, &mut 0).unwrap_err();
+    let named_bucket = parse_block(token, &mut blocks, 0).unwrap_err();
 
     assert_eq!(
       named_bucket,
@@ -874,7 +975,7 @@ mod test {
 
     let mut blocks = Vec::default();
     let token = short_parse(Rule::Block, &named_bucket_string);
-    parse_block(token, &mut blocks, 0, &mut 0).unwrap();
+    parse_block(token, &mut blocks, 0).unwrap();
 
     let expected_value = Block::Bucket {
       name: Some(snake_case),
@@ -906,7 +1007,7 @@ mod test {
 
     let mut blocks = Vec::default();
 
-    parse_block(token, &mut blocks, 0, &mut 0).unwrap();
+    parse_block(token, &mut blocks, 0).unwrap();
 
     let expected_text = Block::Text {
       id: parent,
@@ -955,6 +1056,53 @@ mod test {
     assert_eq!(choice, expected_value);
   }
 
+  #[test]
+  fn parse_section_correctly() {
+    //Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
+
+    let identifier = make_random_snake_case();
+
+    let section_string = format!("#{}\n", identifier);
+    let token = short_parse(Rule::Section, &section_string);
+    let mut blocks = Vec::default();
+    parse_section(token, &mut blocks).unwrap();
+
+    let section = blocks[0][0].clone();
+
+    let expected_value = Block::Section {
+      id: identifier,
+      settings: BlockSettings::default(),
+      subsections: Vec::default(),
+    };
+    assert_eq!(section, expected_value);
+  }
+  #[test]
+  fn parse_section_with_subsections_correctly() {
+    //Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
+
+    let section_identifier = make_random_snake_case();
+
+    let subsection_identifier_1 = make_random_snake_case();
+    let subsection_identifier_2 = make_random_snake_case();
+
+    let section_string = format!(
+      "#{}\n##{}\n##{}",
+      section_identifier, subsection_identifier_1, subsection_identifier_2
+    );
+
+    let token = short_parse(Rule::Section, &section_string);
+    let mut blocks = Vec::default();
+    parse_section(token, &mut blocks).unwrap();
+
+    let section = blocks[0][0].clone();
+
+    let expected_value = Block::Section {
+      id: section_identifier,
+      settings: BlockSettings::default(),
+      subsections: vec![1, 2],
+    };
+    assert_eq!(section, expected_value);
+  }
   #[test]
   fn parse_text_correctly() {
     //Text = { Probability? ~ String }
