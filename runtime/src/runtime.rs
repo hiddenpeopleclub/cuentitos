@@ -2,7 +2,7 @@ use std::println;
 
 use cuentitos_common::BlockId;
 use cuentitos_common::BlockSettings;
-use cuentitos_common::File;
+use cuentitos_common::Database;
 use rand::Rng;
 use rand::SeedableRng;
 use rand_pcg::Pcg32;
@@ -16,7 +16,7 @@ pub struct Block {
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Runtime {
-  pub file: File,
+  pub database: Database,
   pub block_stack: Vec<BlockId>,
   pub choices: Vec<BlockId>,
   #[serde(skip)]
@@ -25,9 +25,9 @@ pub struct Runtime {
 }
 
 impl Runtime {
-  pub fn new(file: File) -> Runtime {
+  pub fn new(database: Database) -> Runtime {
     Runtime {
-      file,
+      database,
       ..Default::default()
     }
   }
@@ -38,7 +38,7 @@ impl Runtime {
   }
 
   pub fn next_block(&mut self) -> Option<Block> {
-    if self.file.blocks.is_empty() {
+    if self.database.blocks.is_empty() {
       return None;
     }
 
@@ -52,12 +52,12 @@ impl Runtime {
   }
 
   pub fn roll_chances_for_block(&mut self, id: BlockId) -> bool {
-    match self.get_block(id).get_settings().probability {
-      cuentitos_common::Probability::None => true,
-      cuentitos_common::Probability::Frequency(_) => true,
-      cuentitos_common::Probability::Chance(chance) => {
+    match self.get_block(id).get_settings().chance {
+      cuentitos_common::Chance::None => true,
+      cuentitos_common::Chance::Frequency(_) => true,
+      cuentitos_common::Chance::Probability(probability) => {
         if let Some(random_number) = self.random_float() {
-          random_number < chance
+          random_number < probability
         } else {
           false
         }
@@ -73,7 +73,7 @@ impl Runtime {
   }
 
   pub fn pick_choice(&mut self, choice: usize) -> Option<Block> {
-    if self.file.blocks.is_empty() {
+    if self.database.blocks.is_empty() {
       return None;
     }
 
@@ -89,7 +89,7 @@ impl Runtime {
       return None;
     }
 
-    if choices[choice] >= self.file.blocks.len() {
+    if choices[choice] >= self.database.blocks.len() {
       println!("Invalid option");
       return None;
     }
@@ -144,7 +144,7 @@ impl Runtime {
 
     let last_block_id = self.block_stack.last().unwrap();
 
-    if last_block_id >= &self.file.blocks.len() {
+    if last_block_id >= &self.database.blocks.len() {
       return;
     }
 
@@ -162,8 +162,7 @@ impl Runtime {
           return;
         }
         cuentitos_common::Block::Bucket { name: _, settings } => {
-          if let Some(new_block) = self.get_random_block_from_bucket(&settings.clone())
-          {
+          if let Some(new_block) = self.get_random_block_from_bucket(&settings.clone()) {
             self.block_stack.push(new_block);
             return;
           }
@@ -174,11 +173,11 @@ impl Runtime {
     self.pop_stack_and_find_next();
   }
 
-  fn get_random_block_from_bucket(&mut self, settings: &BlockSettings) -> Option<BlockId>{
+  fn get_random_block_from_bucket(&mut self, settings: &BlockSettings) -> Option<BlockId> {
     let mut total_frequency = 0;
     for child in &settings.children {
-      if let cuentitos_common::Probability::Frequency(frequency) =
-        self.get_block(*child).get_settings().probability
+      if let cuentitos_common::Chance::Frequency(frequency) =
+        self.get_block(*child).get_settings().chance
       {
         total_frequency += frequency;
       }
@@ -188,8 +187,8 @@ impl Runtime {
     let mut random_number = self.random_with_max(total_frequency).unwrap();
 
     for child in &settings.children {
-      if let cuentitos_common::Probability::Frequency(frequency) =
-        self.get_block(*child).get_settings().probability
+      if let cuentitos_common::Chance::Frequency(frequency) =
+        self.get_block(*child).get_settings().chance
       {
         if random_number <= frequency {
           return Some(*child);
@@ -228,7 +227,7 @@ impl Runtime {
       return;
     }
 
-    let parent = &self.file.blocks[*self.block_stack.last().unwrap()].clone();
+    let parent = &self.database.blocks[*self.block_stack.last().unwrap()].clone();
     let parent_settings = parent.get_settings();
     let mut child_found = false;
     for child in &parent_settings.children {
@@ -239,8 +238,7 @@ impl Runtime {
             continue;
           }
           cuentitos_common::Block::Bucket { name: _, settings } => {
-            if let Some(new_block) = self.get_random_block_from_bucket(&settings.clone())
-            {
+            if let Some(new_block) = self.get_random_block_from_bucket(&settings.clone()) {
               self.block_stack.push(new_block);
               return;
             }
@@ -261,7 +259,7 @@ impl Runtime {
   }
 
   fn get_block(&self, id: BlockId) -> &cuentitos_common::Block {
-    &self.file.blocks[id]
+    &self.database.blocks[id]
   }
 
   fn get_choices_strings(&mut self) -> Vec<String> {
@@ -290,23 +288,23 @@ impl Runtime {
     let settings = last_block.get_settings();
 
     for child in &settings.children {
-      if *child < self.file.blocks.len() {
-
-        match  self.get_block(*child){
-          cuentitos_common::Block::Choice { id:_, settings:_ } => {
+      if *child < self.database.blocks.len() {
+        match self.get_block(*child) {
+          cuentitos_common::Block::Choice { id: _, settings: _ } => {
             if self.roll_chances_for_block(*child) {
               self.choices.push(*child)
             }
-          },
-          cuentitos_common::Block::Bucket { name:_, settings } => {
-            if let Some(picked_block) = self.get_random_block_from_bucket(&settings.clone())
-            {
-              if let cuentitos_common::Block::Choice { id:_, settings:_ } = self.get_block(picked_block) {
+          }
+          cuentitos_common::Block::Bucket { name: _, settings } => {
+            if let Some(picked_block) = self.get_random_block_from_bucket(&settings.clone()) {
+              if let cuentitos_common::Block::Choice { id: _, settings: _ } =
+                self.get_block(picked_block)
+              {
                 self.choices.push(picked_block);
               }
             }
-          },
-          _ =>{},
+          }
+          _ => {}
         }
       }
     }
@@ -319,15 +317,15 @@ mod test {
   use std::vec;
 
   use crate::Runtime;
-  use cuentitos_common::{Block, BlockSettings, File};
+  use cuentitos_common::{Block, BlockSettings, Database};
 
   #[test]
   fn new_runtime_works_correctly() {
-    let file = File {
+    let database = Database {
       blocks: vec![Block::default()],
     };
-    let runtime = Runtime::new(file.clone());
-    assert_eq!(runtime.file, file);
+    let runtime = Runtime::new(database.clone());
+    assert_eq!(runtime.database, database);
   }
 
   #[test]
@@ -357,12 +355,12 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    let file = File {
+    let database = Database {
       blocks: vec![parent.clone(), choice_1, choice_2, child_text],
     };
 
     let mut runtime = Runtime {
-      file,
+      database,
       block_stack: vec![0],
       ..Default::default()
     };
@@ -398,11 +396,11 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    let file = File {
+    let database = Database {
       blocks: vec![parent.clone(), choice_1, choice_2, child_text],
     };
     let mut runtime = Runtime {
-      file,
+      database,
       block_stack: vec![0],
       ..Default::default()
     };
@@ -431,12 +429,12 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    let file = File {
+    let database = Database {
       blocks: vec![parent.clone(), child_1.clone(), child_2.clone()],
     };
 
     let mut runtime = Runtime {
-      file,
+      database,
       block_stack: vec![0],
       ..Default::default()
     };
@@ -476,7 +474,7 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    let file = File {
+    let database = Database {
       blocks: vec![
         parent.clone(),
         sibling.clone(),
@@ -487,7 +485,7 @@ mod test {
     };
 
     let mut runtime = Runtime {
-      file,
+      database,
       block_stack: vec![0, 2],
       ..Default::default()
     };
@@ -521,12 +519,12 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    let file = File {
+    let database = Database {
       blocks: vec![parent.clone(), choice_1.clone(), choice_2],
     };
 
     let mut runtime = Runtime {
-      file,
+      database,
       block_stack: vec![0],
       ..Default::default()
     };
@@ -562,11 +560,11 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    let file = File {
+    let database = Database {
       blocks: vec![parent.clone(), choice_1.clone(), choice_2.clone()],
     };
     let mut runtime = Runtime {
-      file,
+      database,
       ..Default::default()
     };
 
@@ -582,7 +580,7 @@ mod test {
 
   #[test]
   fn next_output_doesnt_work_with_empty_file() {
-    let mut runtime = Runtime::new(File::default());
+    let mut runtime = Runtime::new(Database::default());
     assert_eq!(runtime.next_block(), None);
   }
 
@@ -599,7 +597,7 @@ mod test {
     };
 
     let settings = BlockSettings {
-      probability: cuentitos_common::Probability::Frequency(50),
+      chance: cuentitos_common::Chance::Frequency(50),
       ..Default::default()
     };
 
@@ -609,7 +607,7 @@ mod test {
     };
 
     let settings = BlockSettings {
-      probability: cuentitos_common::Probability::Frequency(50),
+      chance: cuentitos_common::Chance::Frequency(50),
       ..Default::default()
     };
 
@@ -618,11 +616,11 @@ mod test {
       settings,
     };
 
-    let file = File {
+    let database = Database {
       blocks: vec![bucket, text_1, text_2],
     };
     let mut runtime = Runtime {
-      file,
+      database,
       block_stack: vec![0],
       ..Default::default()
     };
@@ -630,11 +628,15 @@ mod test {
     runtime.set_seed(2);
 
     let bucket_settings = runtime.get_block(0).get_settings().clone();
-    let id = runtime.get_random_block_from_bucket(&bucket_settings).unwrap();
+    let id = runtime
+      .get_random_block_from_bucket(&bucket_settings)
+      .unwrap();
     assert_eq!(id, 1);
     runtime.block_stack.push(1);
     let bucket_settings = runtime.get_block(0).get_settings().clone();
-    let id = runtime.get_random_block_from_bucket(&bucket_settings).unwrap();
+    let id = runtime
+      .get_random_block_from_bucket(&bucket_settings)
+      .unwrap();
     assert_eq!(id, 2);
   }
 
@@ -650,7 +652,7 @@ mod test {
     };
 
     let settings = BlockSettings {
-      probability: cuentitos_common::Probability::Chance(1.),
+      chance: cuentitos_common::Chance::Probability(1.),
       ..Default::default()
     };
 
@@ -660,7 +662,7 @@ mod test {
     };
 
     let settings = BlockSettings {
-      probability: cuentitos_common::Probability::Chance(0.),
+      chance: cuentitos_common::Chance::Probability(0.),
       ..Default::default()
     };
 
@@ -669,7 +671,7 @@ mod test {
       settings,
     };
 
-    let file = File {
+    let database = Database {
       blocks: vec![
         text_with_no_chances,
         text_with_100_chances,
@@ -677,7 +679,7 @@ mod test {
       ],
     };
     let mut runtime = Runtime {
-      file,
+      database,
       block_stack: vec![0],
       ..Default::default()
     };

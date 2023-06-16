@@ -20,14 +20,14 @@ Function = {"`" ~ SnakeCase ~ (" " ~ Value)* ~ "`"}
 
 Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert | Function) } 
 
-Probability = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
+Chance = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
 
-Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ ( NewLine | NewBlock | Subsection )* }
+Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
 Subsection = { "##" ~ " "* ~ Identifier ~ " "* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
 
-Text = { !Indentation ~ !ReservedKeywords ~ Probability? ~ String }
-Choice = { "*" ~ " "* ~ Probability? ~ String }
-NamedBucket = { "[" ~ " "* ~ Probability? ~ SnakeCase ~ " "* ~ "]" }
+Text = { !Indentation ~ !ReservedKeywords ~ Chance? ~ String }
+Choice = { "*" ~ " "* ~ Chance? ~ String }
+NamedBucket = { "[" ~ " "* ~ Chance? ~ SnakeCase ~ " "* ~ "]" }
 
 NewBlock = {
     // The first line in the block
@@ -42,7 +42,7 @@ Block = {
     (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NewLine | EOI) ~ NewBlock*
 }
 
-File = { SOI ~ (NewLine | Block | Section )* ~ EOI }
+Database = { SOI ~ (NewLine | Block | Section )* ~ EOI }
 
 COMMENT = _{ "//" ~ (!(NewLine | EOI) ~ ANY)* ~ (NewLine | EOI) }
 NewLine = _{ EmptyLine | NEWLINE }

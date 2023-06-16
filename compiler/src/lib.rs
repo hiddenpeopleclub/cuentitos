@@ -1,4 +1,4 @@
-use palabritas::parse_file_from_path;
+use palabritas::parse_database_from_path;
 use rmp_serde::Serializer;
 use serde::Serialize;
 use std::fs::File;
@@ -10,7 +10,7 @@ where
   T: AsRef<Path>,
   U: AsRef<Path>,
 {
-  let db_result = parse_file_from_path(source_path);
+  let db_result = parse_database_from_path(source_path);
 
   let db = match db_result {
     Ok(db) => db,

@@ -2,8 +2,8 @@ extern crate pest;
 use std::path::Path;
 
 use cuentitos_common::{
-  Block, BlockSettings, Condition, File, FrequencyModifier, Modifier, NextBlock, Operator,
-  Probability, Requirement,
+  Block, BlockSettings, Chance, Condition, Database, FrequencyModifier, Modifier, NextBlock,
+  Operator, Requirement,
 };
 use pest::{iterators::Pair, Parser};
 
@@ -15,7 +15,7 @@ use crate::error::{ErrorInfo, PalabritasError};
 #[grammar = "palabritas.pest"]
 pub struct PalabritasParser;
 
-pub fn parse_file_from_path<P>(path: P) -> Result<File, PalabritasError>
+pub fn parse_database_from_path<P>(path: P) -> Result<Database, PalabritasError>
 where
   P: AsRef<Path>,
 {
@@ -31,27 +31,27 @@ where
       });
     }
   };
-  
-  match PalabritasParser::parse(Rule::File, &str) {
-    Ok(mut result) => parse_file(result.next().unwrap()),
-    Err(error) => { 
+
+  match PalabritasParser::parse(Rule::Database, &str) {
+    Ok(mut result) => parse_database(result.next().unwrap()),
+    Err(error) => {
       let (line, col) = match error.line_col {
         LineColLocation::Pos(line_col) => line_col,
-        LineColLocation::Span(start,_) => (start.0,start.1),
+        LineColLocation::Span(start, _) => (start.0, start.1),
       };
 
       Err(PalabritasError::ParseError {
         file: path.as_ref().display().to_string(),
         line,
         col,
-        reason: error.to_string()
+        reason: error.to_string(),
       })
     }
   }
 }
 
-pub fn parse_file(token: Pair<Rule>) -> Result<File, PalabritasError> {
-  match_rule(&token, Rule::File)?;
+pub fn parse_database(token: Pair<Rule>) -> Result<Database, PalabritasError> {
+  match_rule(&token, Rule::Database)?;
 
   let mut blocks: Vec<Vec<Block>> = Vec::default();
   let mut current_line = 0;
@@ -87,7 +87,7 @@ pub fn parse_file(token: Pair<Rule>) -> Result<File, PalabritasError> {
     }
   }
 
-  Ok(File {
+  Ok(Database {
     blocks: ordered_blocks,
   })
 }
@@ -144,7 +144,7 @@ fn parse_block(
 
   blocks[child_order].push(block);
 
-  let block_id = blocks[child_order].len()-1;
+  let block_id = blocks[child_order].len() - 1;
   if let Block::Bucket {
     name: _,
     settings: _,
@@ -152,7 +152,7 @@ fn parse_block(
   {
     let line = *current_line - blocks[child_order][block_id].get_settings().children.len();
     validate_bucket_data(block_id, blocks, child_order, line)?;
-    update_children_probabilities_to_frequency(blocks[child_order].len()-1, blocks, child_order);
+    update_children_probabilities_to_frequency(blocks[child_order].len() - 1, blocks, child_order);
   } else if is_child_unnamed_bucket(block_id, blocks, child_order) {
     make_childs_bucket(block_id, blocks, child_order);
   }
@@ -161,34 +161,34 @@ fn parse_block(
 }
 
 fn is_child_unnamed_bucket(block: usize, blocks: &Vec<Vec<Block>>, child_order: usize) -> bool {
-  let block =  &blocks[child_order][block];
+  let block = &blocks[child_order][block];
   let children = &block.get_settings().children;
 
   if children.len() < 2 || child_order + 1 >= blocks.len() {
     return false;
   }
 
-  let mut total_chance = 0.;
+  let mut total_probability = 0.;
   let mut is_frequency: bool = false;
   for i in 0..blocks[child_order + 1].len() {
     for child in children {
       if *child == i {
-        match blocks[child_order + 1][i].get_settings().probability {
-          cuentitos_common::Probability::None => {
+        match blocks[child_order + 1][i].get_settings().chance {
+          cuentitos_common::Chance::None => {
             return false;
           }
-          cuentitos_common::Probability::Frequency(_) => {
+          cuentitos_common::Chance::Frequency(_) => {
             is_frequency = true;
           }
-          cuentitos_common::Probability::Chance(value) => {
-            total_chance += value;
+          cuentitos_common::Chance::Probability(value) => {
+            total_probability += value;
           }
         }
       }
     }
   }
 
-  if is_frequency && total_chance > 0. {
+  if is_frequency && total_probability > 0. {
     return false;
   }
 
@@ -196,7 +196,7 @@ fn is_child_unnamed_bucket(block: usize, blocks: &Vec<Vec<Block>>, child_order: 
     return true;
   }
 
-  total_chance == 1.
+  total_probability == 1.
 }
 
 fn make_childs_bucket(block_id: usize, blocks: &mut Vec<Vec<Block>>, child_order: usize) {
@@ -232,7 +232,6 @@ fn validate_bucket_data(
   child_order: usize,
   current_line: usize,
 ) -> Result<(), PalabritasError> {
-
   let bucket = &blocks[child_order][bucket];
   let settings = bucket.get_settings();
 
@@ -245,15 +244,15 @@ fn validate_bucket_data(
   };
   let mut frequency_found = false;
   let mut chance_found = false;
-  let mut total_chance = 0.;
+  let mut total_probability = 0.;
 
   let mut inner_line = current_line;
   for child in &settings.children {
     inner_line += 1;
     let child_block = &blocks[child_order + 1][*child];
     let child_settings = child_block.get_settings();
-    match child_settings.probability {
-      Probability::None => {
+    match child_settings.chance {
+      Chance::None => {
         let string = match child_block {
           Block::Bucket { name, settings: _ } => match name {
             Some(string) => string.clone(),
@@ -267,10 +266,10 @@ fn validate_bucket_data(
           string,
         }));
       }
-      Probability::Frequency(_) => frequency_found = true,
-      Probability::Chance(chance) => {
+      Chance::Frequency(_) => frequency_found = true,
+      Chance::Probability(probability) => {
         chance_found = true;
-        total_chance += chance;
+        total_probability += probability;
       }
     }
 
@@ -282,7 +281,7 @@ fn validate_bucket_data(
     }
   }
 
-  if chance_found && total_chance != 1. {
+  if chance_found && total_probability != 1. {
     return Err(PalabritasError::BucketSumIsNot1(ErrorInfo {
       line: current_line,
       string: bucket_name,
@@ -292,68 +291,51 @@ fn validate_bucket_data(
   Ok(())
 }
 
-fn move_to_lower_level(index: usize,
-  blocks: &mut Vec<Vec<Block>>,
-  child_order: usize)
-  {
+fn move_to_lower_level(index: usize, blocks: &mut Vec<Vec<Block>>, child_order: usize) {
+  update_higher_level(index, blocks, child_order);
 
-    update_higher_level(index, blocks, child_order);
-    
-    let child_count = blocks[child_order][index].get_settings().children.len();
-    for i in 0..child_count
-    {
-      for e in i..child_count
+  let child_count = blocks[child_order][index].get_settings().children.len();
+  for i in 0..child_count {
+    for e in i..child_count {
+      if blocks[child_order][index].get_settings().children[e]
+        > blocks[child_order][index].get_settings().children[i]
       {
-        if blocks[child_order][index].get_settings().children[e] >
-          blocks[child_order][index].get_settings().children[i]
-        {
-          blocks[child_order][index].get_settings_mut().children[e]-=1;
-        }
+        blocks[child_order][index].get_settings_mut().children[e] -= 1;
       }
-      
-      let child_index = blocks[child_order][index].get_settings().children[i];
-      move_to_lower_level(child_index, blocks, child_order+1);
     }
 
-    let mut block: Block = blocks[child_order].remove(index);
-    if blocks.len() <= child_order+1
-    {
-      blocks.push(Vec::default());
-    }
-    
-    let mut new_children = Vec::default();
-    for i in 0..child_count
-    {
-      let new_child_index =  blocks[child_order+2].len()-1-i;
-      new_children.push(new_child_index);
-    }
+    let child_index = blocks[child_order][index].get_settings().children[i];
+    move_to_lower_level(child_index, blocks, child_order + 1);
+  }
 
-    new_children.reverse();
-    
-    block.get_settings_mut().children = new_children;
-    blocks[child_order+1].push(block);
+  let mut block: Block = blocks[child_order].remove(index);
+  if blocks.len() <= child_order + 1 {
+    blocks.push(Vec::default());
+  }
 
+  let mut new_children = Vec::default();
+  for i in 0..child_count {
+    let new_child_index = blocks[child_order + 2].len() - 1 - i;
+    new_children.push(new_child_index);
+  }
 
-  fn update_higher_level(index: usize,
-    blocks: &mut [Vec<Block>],
-    child_order: usize){
+  new_children.reverse();
 
-    if child_order ==0
-    {
+  block.get_settings_mut().children = new_children;
+  blocks[child_order + 1].push(block);
+
+  fn update_higher_level(index: usize, blocks: &mut [Vec<Block>], child_order: usize) {
+    if child_order == 0 {
       return;
     }
-    for higher_level_block in &mut blocks[child_order-1]
-    {
-      let higher_level_settings =  higher_level_block.get_settings_mut();
-      if higher_level_settings.children.contains(&index)
-      {
+    for higher_level_block in &mut blocks[child_order - 1] {
+      let higher_level_settings = higher_level_block.get_settings_mut();
+      if higher_level_settings.children.contains(&index) {
         continue;
       }
-      for i in 0..higher_level_settings.children.len()
-      {
-        if higher_level_settings.children[i] > index
-        {
-          higher_level_settings.children[i]-=1;
+      for i in 0..higher_level_settings.children.len() {
+        if higher_level_settings.children[i] > index {
+          higher_level_settings.children[i] -= 1;
         }
       }
     }
@@ -374,8 +356,8 @@ fn update_children_probabilities_to_frequency(
   for child in children.iter().rev() {
     let child = &mut blocks[child_order + 1][*child];
     let mut child_settings = child.get_settings_mut();
-    if let Probability::Chance(chance) = child_settings.probability {
-      child_settings.probability = Probability::Frequency((chance * 100.) as u32);
+    if let Chance::Probability(chance) = child_settings.chance {
+      child_settings.chance = Chance::Frequency((chance * 100.) as u32);
     }
   }
 }
@@ -404,8 +386,8 @@ fn parse_named_bucket(token: Pair<Rule>) -> Option<Block> {
   let mut settings = BlockSettings::default();
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
-      Rule::Probability => {
-        settings.probability = parse_probability(inner_token);
+      Rule::Chance => {
+        settings.chance = parse_chance(inner_token);
       }
       Rule::SnakeCase => {
         name = Some(inner_token.as_str().to_string());
@@ -427,8 +409,8 @@ fn parse_choice(token: Pair<Rule>) -> Option<Block> {
 
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
-      Rule::Probability => {
-        settings.probability = parse_probability(inner_token);
+      Rule::Chance => {
+        settings.chance = parse_chance(inner_token);
       }
       Rule::String => {
         text = inner_token.as_str().to_string();
@@ -449,8 +431,8 @@ fn parse_text(token: Pair<Rule>) -> Option<Block> {
   let mut settings = BlockSettings::default();
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
-      Rule::Probability => {
-        settings.probability = parse_probability(inner_token);
+      Rule::Chance => {
+        settings.chance = parse_chance(inner_token);
       }
       Rule::String => {
         text = inner_token.as_str().to_string();
@@ -641,32 +623,32 @@ fn parse_comparison_operator(token: Pair<Rule>) -> Option<Operator> {
   }
 }
 
-fn parse_probability(token: Pair<Rule>) -> Probability {
-  if token.as_rule() != Rule::Probability {
-    return Probability::None;
+fn parse_chance(token: Pair<Rule>) -> Chance {
+  if token.as_rule() != Rule::Chance {
+    return Chance::None;
   }
 
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Float => {
         let value = inner_token.as_str().parse::<f32>().unwrap();
-        return Probability::Chance(value);
+        return Chance::Probability(value);
       }
       Rule::Percentage => {
         if let Some(integer) = inner_token.into_inner().next() {
           let value = integer.as_str().parse::<u64>().unwrap();
-          return Probability::Chance(value as f32 / 100.);
+          return Chance::Probability(value as f32 / 100.);
         }
       }
       Rule::Integer => {
         let value = inner_token.as_str().parse::<u32>().unwrap();
-        return Probability::Frequency(value);
+        return Chance::Frequency(value);
       }
       _ => {}
     }
   }
 
-  Probability::None
+  Chance::None
 }
 
 fn match_rule(token: &Pair<Rule>, expected_rule: Rule) -> Result<(), PalabritasError> {
@@ -702,20 +684,18 @@ mod test {
   const INDENTATIONS: [&str; 1] = ["  "];
 
   #[test]
-  fn parse_file_from_path_correctly() {
-    parse_file_from_path("../examples/story-example.cuentitos").unwrap();
+  fn parse_database_from_path_correctly() {
+    parse_database_from_path("../examples/story-example.cuentitos").unwrap();
     //TODO: compare with fixture
   }
 
   #[test]
-  fn parse_file_correctly() {
+  fn parse_database_correctly() {
     let unparsed_file = include_str!("../../examples/story-example.cuentitos");
-    let token = short_parse(Rule::File, &unparsed_file);
-    parse_file(token).unwrap();
+    let token = short_parse(Rule::Database, &unparsed_file);
+    parse_database(token).unwrap();
     //TODO: compare with fixture
   }
-
-
 
   /*#[test]
   fn parse_blocks_correctly() {
@@ -728,15 +708,15 @@ mod test {
     */
 
     let float = rand::thread_rng().gen_range(i8::MIN as f32..i8::MAX as f32);
-    let probability_string = format!("({})", float);
+    let chance_string = format!("({})", float);
 
     let string = make_random_string();
     let child_string = make_random_string();
 
-    let text_string = format!("{} {}", probability_string, string);
+    let text_string = format!("{} {}", chance_string, string);
 
-    let probability_token = short_parse(Rule::Probability, &probability_string);
-    let probability = parse_probability(probability_token);
+    let chance_token = short_parse(Rule::Chance, &chance_string);
+    let probability = parse_chance(chance_token);
 
     let knot = make_random_identifier();
     let divert_string = format!("\n -> {}", knot);
@@ -865,7 +845,7 @@ mod test {
     //NamedBucket = { "[" ~ " "* ~ Probability? ~ SnakeCase ~ " "* ~ "]" }
 
     let float = rand::thread_rng().gen_range(i8::MIN as f32..i8::MAX as f32);
-    let probability_string = format!("({})", float);
+    let chance_string = format!("({})", float);
 
     let snake_case = make_random_snake_case();
 
@@ -875,18 +855,18 @@ mod test {
     let child_2 = make_random_string();
     let named_bucket_string = format!(
       "[{} {}]\n  ({}){}\n  ({}){}",
-      probability_string, snake_case, frequency_1, child_1, frequency_2, child_2
+      chance_string, snake_case, frequency_1, child_1, frequency_2, child_2
     );
     let token = short_parse(Rule::NamedBucket, &named_bucket_string);
     let named_bucket = parse_named_bucket(token).unwrap();
 
-    let probability_token = short_parse(Rule::Probability, &probability_string);
-    let probability = parse_probability(probability_token);
+    let chance_token = short_parse(Rule::Chance, &chance_string);
+    let chance = parse_chance(chance_token);
 
     let expected_value = Block::Bucket {
       name: Some(snake_case.clone()),
       settings: BlockSettings {
-        probability: probability.clone(),
+        chance: chance.clone(),
         ..Default::default()
       },
     };
@@ -899,7 +879,7 @@ mod test {
     let expected_value = Block::Bucket {
       name: Some(snake_case),
       settings: BlockSettings {
-        probability,
+        chance,
         children: vec![0, 1],
         ..Default::default()
       },
@@ -953,19 +933,19 @@ mod test {
     //Choice = { "*" ~ " "* ~ Probability? ~ String }
 
     let float = rand::thread_rng().gen_range(i8::MIN as f32..i8::MAX as f32);
-    let probability_string = format!("({})", float);
+    let chance_string = format!("({})", float);
 
     let string = make_random_string();
 
-    let choice_string = format!("*{} {}", probability_string, string);
+    let choice_string = format!("*{} {}", chance_string, string);
     let token = short_parse(Rule::Choice, &choice_string);
     let choice = parse_choice(token).unwrap();
 
-    let probability_token = short_parse(Rule::Probability, &probability_string);
-    let probability = parse_probability(probability_token);
+    let chance_token = short_parse(Rule::Chance, &chance_string);
+    let chance = parse_chance(chance_token);
 
     let expected_settings = BlockSettings {
-      probability,
+      chance,
       ..Default::default()
     };
     let expected_value = Block::Choice {
@@ -980,19 +960,19 @@ mod test {
     //Text = { Probability? ~ String }
 
     let float = rand::thread_rng().gen_range(0 as f32..1 as f32);
-    let probability_string = format!("({})", float);
+    let chance_string = format!("({})", float);
 
     let string = make_random_string();
 
-    let text_string = format!("{} {}", probability_string, string);
+    let text_string = format!("{} {}", chance_string, string);
     let token = short_parse(Rule::Text, &text_string);
     let text = parse_text(token).unwrap();
 
-    let probability_token = short_parse(Rule::Probability, &probability_string);
-    let probability = parse_probability(probability_token);
+    let chance_token = short_parse(Rule::Chance, &chance_string);
+    let chance = parse_chance(chance_token);
 
     let expected_settings = BlockSettings {
-      probability,
+      chance,
       ..Default::default()
     };
 
@@ -1249,11 +1229,11 @@ mod test {
      let percentage = rand::thread_rng().gen_range(u8::MIN..u8::MAX);
      let expected_value: PercentageProbability = PercentageProbability { value: percentage };
 
-     let probability_string = format!("({}%)", percentage);
+     let chance_string = format!("({}%)", percentage);
 
-     let token = short_parse(Rule::Probability, &probability_string);
+     let token = short_parse(Rule::Chance, &chance_string);
 
-     let probability = parse_probability(token).unwrap();
+     let probability = parse_chance(token).unwrap();
      let probability = probability
        .as_any()
        .downcast_ref::<PercentageProbability>()
@@ -1267,14 +1247,14 @@ mod test {
      let float = rand::thread_rng().gen_range(i8::MIN as f32..i8::MAX as f32);
      let expected_value = FloatProbability { value: float };
 
-     let probability_string = format!("({})", float);
+     let chance_string = format!("({})", float);
 
-     let token = PalabritasParser::parse(Rule::Probability, &probability_string)
+     let token = PalabritasParser::parse(Rule::Chance, &chance_string)
        .expect("unsuccessful parse")
        .next()
        .unwrap();
 
-     let probability = parse_probability(token).unwrap();
+     let probability = parse_chance(token).unwrap();
      let probability = probability
        .as_any()
        .downcast_ref::<FloatProbability>()
@@ -1450,26 +1430,23 @@ mod test {
   }
 
   #[test]
-  fn parse_probability_rule() {
+  fn parse_chance_rule() {
     //probability = { "(" ~ " "* ~ ( percentage | float | integer ) ~ " "* ~ ")" ~ " "* }
     let percentage = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string() + "%";
-    assert_parse_rule(Rule::Probability, &("(".to_string() + &percentage + ")"));
+    assert_parse_rule(Rule::Chance, &("(".to_string() + &percentage + ")"));
 
     let float = rand::thread_rng()
       .gen_range(i8::MIN as f32..i8::MAX as f32)
       .to_string();
-    assert_parse_rule(Rule::Probability, &("(".to_string() + &float + ")"));
+    assert_parse_rule(Rule::Chance, &("(".to_string() + &float + ")"));
 
     let integer = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string();
-    assert_parse_rule(Rule::Probability, &("(".to_string() + &integer + ")"));
+    assert_parse_rule(Rule::Chance, &("(".to_string() + &integer + ")"));
   }
 
   #[test]
   fn parses_file_that_starts_with_a_section() {
-    assert_parse_rule(
-      Rule::File, 
-      format!("# intro\n\n# previa\n").as_str()
-    );
+    assert_parse_rule(Rule::Database, format!("# intro\n\n# previa\n").as_str());
   }
 
   #[test]
@@ -1536,10 +1513,10 @@ mod test {
     }
   */
   #[test]
-  fn parse_file_rule() {
+  fn parse_database_rule() {
     //File = { SOI ~ (NEWLINE | BlockBlock | Knot )* ~ EOI }
     let unparsed_file = include_str!("../../examples/story-example.cuentitos");
-    assert_parse_rule(Rule::File, &unparsed_file);
+    assert_parse_rule(Rule::Database, &unparsed_file);
   }
 
   fn assert_parse_rule(rule: Rule, input: &str) {
