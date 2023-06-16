@@ -8,7 +8,7 @@ pub enum PalabritasError {
     file: String,
     line: usize,
     col: usize,
-    reason: String
+    reason: String,
   },
   PathIsNotAFile(PathBuf),
   CantReadFile {
@@ -43,7 +43,12 @@ impl Display for PalabritasError {
       PalabritasError::FileIsEmpty => {
         write!(f, "File provided is empty.")
       }
-      PalabritasError::ParseError { file, line, col, reason } => {
+      PalabritasError::ParseError {
+        file,
+        line,
+        col,
+        reason,
+      } => {
         write!(f, "{}:{}:{}\n  {}", file, line, col, reason)
       }
       PalabritasError::BucketSumIsNot1(info) => {

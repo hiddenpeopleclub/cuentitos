@@ -18,18 +18,18 @@ pub enum NextBlock {
 pub struct BlockSettings {
   pub children: Vec<BlockId>,
   pub next: NextBlock,
-  pub probability: Probability,
+  pub chance: Chance,
   pub frequency_modifiers: Vec<FrequencyModifier>,
   pub requirements: Vec<Requirement>,
   pub modifiers: Vec<Modifier>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq, Clone)]
-pub enum Probability {
+pub enum Chance {
   #[default]
   None,
   Frequency(u32),
-  Chance(f32),
+  Probability(f32),
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
