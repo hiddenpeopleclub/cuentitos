@@ -33,7 +33,7 @@ where
   };
   
   match PalabritasParser::parse(Rule::File, &str) {
-    Ok(mut result) => return parse_file(result.next().unwrap()),
+    Ok(mut result) => parse_file(result.next().unwrap()),
     Err(error) => { 
       let (line, col) = match error.line_col {
         LineColLocation::Pos(line_col) => line_col,
@@ -138,28 +138,30 @@ fn parse_block(
     }
   }
 
-  if let Block::Bucket {
-    name: _,
-    settings: _,
-  } = block
-  {
-    let line = *current_line - block.get_settings().children.len();
-    validate_bucket_data(&block, blocks, child_order, line)?;
-    update_children_probabilities_to_frequency(&block, blocks, child_order);
-  } else if is_child_unnamed_bucket(&block, blocks, child_order) {
-    make_childs_bucket(&mut block, blocks, child_order);
-  }
-
   while child_order >= blocks.len() {
     blocks.push(Vec::default());
   }
 
   blocks[child_order].push(block);
 
+  let block_id = blocks[child_order].len()-1;
+  if let Block::Bucket {
+    name: _,
+    settings: _,
+  } = blocks[child_order][block_id]
+  {
+    let line = *current_line - blocks[child_order][block_id].get_settings().children.len();
+    validate_bucket_data(block_id, blocks, child_order, line)?;
+    update_children_probabilities_to_frequency(blocks[child_order].len()-1, blocks, child_order);
+  } else if is_child_unnamed_bucket(block_id, blocks, child_order) {
+    make_childs_bucket(block_id, blocks, child_order);
+  }
+
   Ok(())
 }
 
-fn is_child_unnamed_bucket(block: &Block, blocks: &Vec<Vec<Block>>, child_order: usize) -> bool {
+fn is_child_unnamed_bucket(block: usize, blocks: &Vec<Vec<Block>>, child_order: usize) -> bool {
+  let block =  &blocks[child_order][block];
   let children = &block.get_settings().children;
 
   if children.len() < 2 || child_order + 1 >= blocks.len() {
@@ -197,14 +199,15 @@ fn is_child_unnamed_bucket(block: &Block, blocks: &Vec<Vec<Block>>, child_order:
   total_chance == 1.
 }
 
-fn make_childs_bucket(block: &mut Block, blocks: &mut Vec<Vec<Block>>, child_order: usize) {
+fn make_childs_bucket(block_id: usize, blocks: &mut Vec<Vec<Block>>, child_order: usize) {
   if child_order + 1 >= blocks.len() {
     return;
   }
 
-  update_children_probabilities_to_frequency(block, blocks, child_order);
+  update_children_probabilities_to_frequency(block_id, blocks, child_order);
 
-  let block_settings = block.get_settings_mut();
+  let block = blocks[child_order][block_id].clone();
+  let block_settings = block.get_settings();
   let bucket = Block::Bucket {
     name: None,
     settings: BlockSettings {
@@ -214,17 +217,23 @@ fn make_childs_bucket(block: &mut Block, blocks: &mut Vec<Vec<Block>>, child_ord
   };
 
   blocks[child_order].push(bucket);
+
   move_to_lower_level(blocks[child_order].len() - 1, blocks, child_order);
 
-  block_settings.children = vec![blocks[child_order + 1].len() - 1];
+  let new_children = vec![blocks[child_order + 1].len() - 1];
+  let block = &mut blocks[child_order][block_id];
+  let block_settings = block.get_settings_mut();
+  block_settings.children = new_children;
 }
 
 fn validate_bucket_data(
-  bucket: &Block,
+  bucket: usize,
   blocks: &mut [Vec<Block>],
   child_order: usize,
   current_line: usize,
 ) -> Result<(), PalabritasError> {
+
+  let bucket = &blocks[child_order][bucket];
   let settings = bucket.get_settings();
 
   let bucket_name = match bucket {
@@ -283,35 +292,68 @@ fn validate_bucket_data(
   Ok(())
 }
 
-fn move_to_lower_level(index: usize, blocks: &mut Vec<Vec<Block>>, child_order: usize) -> usize {
-  let mut block: Block = blocks[child_order].remove(index);
-  update_higher_level(index, blocks, child_order);
-  let settings = block.get_settings_mut();
+fn move_to_lower_level(index: usize,
+  blocks: &mut Vec<Vec<Block>>,
+  child_order: usize)
+  {
 
-  for i in 0..settings.children.len() {
-    for e in i + 1..settings.children.len() {
-      if settings.children[e] > settings.children[i] {
-        settings.children[e] -= 1;
+    update_higher_level(index, blocks, child_order);
+    
+    let child_count = blocks[child_order][index].get_settings().children.len();
+    for i in 0..child_count
+    {
+      for e in i..child_count
+      {
+        if blocks[child_order][index].get_settings().children[e] >
+          blocks[child_order][index].get_settings().children[i]
+        {
+          blocks[child_order][index].get_settings_mut().children[e]-=1;
+        }
       }
+      
+      let child_index = blocks[child_order][index].get_settings().children[i];
+      move_to_lower_level(child_index, blocks, child_order+1);
     }
 
-    settings.children[i] = move_to_lower_level(settings.children[i], blocks, child_order + 1);
-  }
-  if blocks.len() <= child_order + 1 {
-    blocks.push(Vec::default());
-  }
-  blocks[child_order + 1].push(block);
-  return blocks[child_order + 1].len() - 1;
+    let mut block: Block = blocks[child_order].remove(index);
+    if blocks.len() <= child_order+1
+    {
+      blocks.push(Vec::default());
+    }
+    
+    let mut new_children = Vec::default();
+    for i in 0..child_count
+    {
+      let new_child_index =  blocks[child_order+2].len()-1-i;
+      new_children.push(new_child_index);
+    }
 
-  fn update_higher_level(index: usize, blocks: &mut [Vec<Block>], child_order: usize) {
-    if child_order == 0 {
+    new_children.reverse();
+    
+    block.get_settings_mut().children = new_children;
+    blocks[child_order+1].push(block);
+
+
+  fn update_higher_level(index: usize,
+    blocks: &mut [Vec<Block>],
+    child_order: usize){
+
+    if child_order ==0
+    {
       return;
     }
-    for higher_level_block in &mut blocks[child_order - 1] {
-      let higher_level_settings = higher_level_block.get_settings_mut();
-      for i in 0..higher_level_settings.children.len() {
-        if higher_level_settings.children[i] > index {
-          higher_level_settings.children[i] -= 1;
+    for higher_level_block in &mut blocks[child_order-1]
+    {
+      let higher_level_settings =  higher_level_block.get_settings_mut();
+      if higher_level_settings.children.contains(&index)
+      {
+        continue;
+      }
+      for i in 0..higher_level_settings.children.len()
+      {
+        if higher_level_settings.children[i] > index
+        {
+          higher_level_settings.children[i]-=1;
         }
       }
     }
@@ -319,13 +361,14 @@ fn move_to_lower_level(index: usize, blocks: &mut Vec<Vec<Block>>, child_order: 
 }
 
 fn update_children_probabilities_to_frequency(
-  block: &Block,
+  block: usize,
   blocks: &mut Vec<Vec<Block>>,
   child_order: usize,
 ) {
   if child_order + 1 >= blocks.len() {
     return;
   }
+  let block = blocks[child_order][block].clone();
   let children = &block.get_settings().children;
 
   for child in children.iter().rev() {
