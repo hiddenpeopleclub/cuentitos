@@ -783,6 +783,8 @@ mod test {
   const COMPARISON_OPERATORS: [&str; 7] = ["=", "!=", "<", ">", "<=", ">=", "!"];
 
   const INDENTATIONS: [&str; 1] = ["  "];
+  
+  const RESERVED_KEYWORDS: [&str; 9] = ["req" , "freq" , "mod" , "->" , "`" , "*" , "#" , "##" , "//"];
 
   #[test]
   fn parse_database_from_path_correctly() {
@@ -1706,7 +1708,17 @@ mod test {
 
     snake_case = starting_char.to_string() + &snake_case;
 
-    snake_case.to_lowercase()
+    snake_case = snake_case.to_lowercase();
+
+    for keyword in RESERVED_KEYWORDS
+    {
+      while snake_case.starts_with(keyword)
+      {
+        snake_case = make_random_snake_case();
+      }
+    }
+
+    snake_case
   }
 
   fn make_random_identifier() -> String {
@@ -1756,7 +1768,16 @@ mod test {
     }
 
     shuffle_string(&mut string);
-    string.trim().to_string()
+    string = string.trim().to_string();
+    for keyword in RESERVED_KEYWORDS
+    {
+      while string.starts_with(keyword)
+      {
+        string = make_random_string();
+      }
+    }
+
+    string
   }
 
   fn shuffle_string(string: &mut String) {
