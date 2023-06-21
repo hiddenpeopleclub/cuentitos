@@ -156,18 +156,10 @@ impl Runtime {
       let last_block_id = *self.block_stack.last().unwrap();
       let last_block = self.get_block(last_block_id).clone();
       match last_block {
-        cuentitos_common::Block::Section {
-          id: _,
-          settings: _,
-          subsections: _,
-        } => {
+        cuentitos_common::Block::Section { id: _, settings: _ } => {
           self.update_stack();
         }
-        cuentitos_common::Block::Subsection {
-          id: _,
-          settings: _,
-          subsections: _,
-        } => {
+        cuentitos_common::Block::Subsection { id: _, settings: _ } => {
           self.update_stack();
         }
         _ => {}
@@ -264,18 +256,10 @@ impl Runtime {
       let last_block_id = *self.block_stack.last().unwrap();
       let last_block = self.get_block(last_block_id).clone();
       match last_block {
-        cuentitos_common::Block::Section {
-          id: _,
-          settings: _,
-          subsections: _,
-        } => {
+        cuentitos_common::Block::Section { id: _, settings: _ } => {
           self.update_stack();
         }
-        cuentitos_common::Block::Subsection {
-          id: _,
-          settings: _,
-          subsections: _,
-        } => {
+        cuentitos_common::Block::Subsection { id: _, settings: _ } => {
           self.update_stack();
         }
         _ => {}
@@ -376,7 +360,7 @@ mod test {
   use std::{collections::HashMap, vec};
 
   use crate::Runtime;
-  use cuentitos_common::{Block, BlockSettings, Database};
+  use cuentitos_common::{Block, BlockSettings, Database, SectionKey};
 
   #[test]
   fn new_runtime_works_correctly() {
@@ -386,6 +370,74 @@ mod test {
     };
     let runtime = Runtime::new(database.clone());
     assert_eq!(runtime.database, database);
+  }
+
+  #[test]
+  fn jump_to_section_works_correctly() {
+    let section_1 = Block::Section {
+      id: "section_1".to_string(),
+      settings: BlockSettings {
+        children: vec![3],
+        ..Default::default()
+      },
+    };
+    let section_2 = Block::Section {
+      id: "section_1".to_string(),
+      settings: BlockSettings::default(),
+    };
+    let subsection = Block::Subsection {
+      id: "subsection".to_string(),
+      settings: BlockSettings {
+        children: vec![4],
+        ..Default::default()
+      },
+    };
+    let text_1 = Block::Text {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+    let text_2 = Block::Text {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+
+    let mut sections: HashMap<SectionKey, usize> = HashMap::default();
+    sections.insert(
+      SectionKey {
+        section: "section_1".to_string(),
+        subsection: None,
+      },
+      0,
+    );
+    sections.insert(
+      SectionKey {
+        section: "section_2".to_string(),
+        subsection: None,
+      },
+      1,
+    );
+    sections.insert(
+      SectionKey {
+        section: "section_2".to_string(),
+        subsection: Some("subsection".to_string()),
+      },
+      2,
+    );
+    let database = Database {
+      blocks: vec![section_1, section_2, subsection, text_1, text_2],
+      sections,
+    };
+
+    let mut runtime = Runtime {
+      database,
+      ..Default::default()
+    };
+    runtime.jump_to_section("section_2".to_string(), Some("subsection".to_string()));
+    runtime.update_stack();
+    assert_eq!(runtime.block_stack, vec![2, 4]);
+    runtime.jump_to_section("section_1".to_string(), None);
+    runtime.update_stack();
+    assert_eq!(runtime.block_stack, vec![0, 3]);
   }
 
   #[test]

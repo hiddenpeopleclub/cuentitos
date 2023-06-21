@@ -115,7 +115,6 @@ fn parse_section(
 
   let mut settings = BlockSettings::default();
   let mut id: String = String::default();
-  let mut subsections = Vec::default();
   //Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
@@ -133,7 +132,6 @@ fn parse_section(
       }
       Rule::Subsection => {
         parse_subsection(inner_token, blocks, &id, sections)?;
-        subsections.push(blocks[0].len() - 1);
       }
       _ => {}
     }
@@ -147,11 +145,7 @@ fn parse_section(
     block_id,
   );
 
-  blocks[0][block_id] = Block::Section {
-    id,
-    settings,
-    subsections,
-  };
+  blocks[0][block_id] = Block::Section { id, settings };
 
   Ok(())
 }
@@ -205,11 +199,7 @@ fn parse_subsection(
     block_id,
   );
 
-  blocks[0][block_id] = Block::Section {
-    id,
-    settings,
-    subsections,
-  };
+  blocks[0][block_id] = Block::Section { id, settings };
   Ok(())
 }
 fn parse_block(
@@ -1089,7 +1079,6 @@ mod test {
     let expected_value = Block::Section {
       id: identifier,
       settings: BlockSettings::default(),
-      subsections: Vec::default(),
     };
     assert_eq!(section, expected_value);
   }
@@ -1117,7 +1106,6 @@ mod test {
     let expected_value = Block::Section {
       id: section_identifier,
       settings: BlockSettings::default(),
-      subsections: vec![1, 2],
     };
     assert_eq!(section, expected_value);
   }
@@ -1230,37 +1218,39 @@ mod test {
 
     assert_eq!(block, expected_block);
   }
-  /*
+
+  #[test]
+  fn database_sections_get_added_correctly() {}
   #[test]
   fn parse_divert_correctly() {
     //Divert = { "->"  ~ " "* ~ Identifier ~ ("." ~ Identifier)? }
-    let knot = make_random_identifier();
-    let divert_string = format!("-> {}", knot);
+    let section = make_random_identifier();
+    let divert_string = format!("-> {}", section);
 
-    let expected_value = Divert {
-      knot: knot.clone(),
-      stitch: None,
-    };
-
-    let token = short_parse(Rule::Divert, &divert_string);
-    let divert = parse_divert(token).unwrap();
-
-    assert_eq!(divert, expected_value);
-
-    let stitch = make_random_identifier();
-
-    let divert_string = format!("-> {}.{}", knot, stitch);
-
-    let expected_value = Divert {
-      knot,
-      stitch: Some(stitch),
-    };
+    let expected_value = NextBlock::Section(SectionKey {
+      section: section.clone(),
+      subsection: None,
+    });
 
     let token = short_parse(Rule::Divert, &divert_string);
     let divert = parse_divert(token).unwrap();
 
     assert_eq!(divert, expected_value);
-  } */
+
+    let subsection = make_random_identifier();
+
+    let divert_string = format!("-> {}.{}", section, subsection);
+
+    let expected_value = NextBlock::Section(SectionKey {
+      section,
+      subsection: Some(subsection),
+    });
+
+    let token = short_parse(Rule::Divert, &divert_string);
+    let divert = parse_divert(token).unwrap();
+
+    assert_eq!(divert, expected_value);
+  }
 
   #[test]
   fn parse_modifier_correctly() {
