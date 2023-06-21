@@ -39,9 +39,29 @@ impl Console {
             print_output_text(output_text);
           }
         }
+        Some("sections") => {
+          println!("Sections:");
+          for section in runtime.database.sections.keys() {
+            println!("{:?}", section);
+          }
+        }
         Some("q") => break,
         Some(str) => {
-          if let Ok(choice) = str.parse::<usize>() {
+          if str.starts_with("->") {
+            let substr: String = str.chars().skip(2).collect();
+            let mut splitted = substr.split('.');
+            if let Some(section) = splitted.next() {
+              if let Some(subsection) = splitted.next() {
+                runtime.jump_to_section(section.to_string(), Some(subsection.to_string()));
+              } else {
+                runtime.jump_to_section(section.to_string(), None);
+              }
+
+              if let Some(output_text) = runtime.next_block() {
+                print_output_text(output_text);
+              }
+            }
+          } else if let Ok(choice) = str.parse::<usize>() {
             if choice == 0 {
               println!("invalid option");
               continue;

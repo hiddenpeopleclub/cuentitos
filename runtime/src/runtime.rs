@@ -3,6 +3,7 @@ use std::println;
 use cuentitos_common::BlockId;
 use cuentitos_common::BlockSettings;
 use cuentitos_common::Database;
+use cuentitos_common::SectionKey;
 use rand::Rng;
 use rand::SeedableRng;
 use rand_pcg::Pcg32;
@@ -35,6 +36,19 @@ impl Runtime {
   pub fn set_seed(&mut self, seed: u64) {
     self.seed = seed;
     self.rng = Some(Pcg32::seed_from_u64(seed));
+  }
+
+  pub fn jump_to_section(&mut self, section: String, subsection: Option<String>) {
+    let key = SectionKey {
+      section,
+      subsection,
+    };
+    if let Some(block_id) = self.database.sections.get(&key) {
+      self.block_stack.clear();
+      self.block_stack.push(*block_id);
+    } else {
+      println!("Can't find section: {:?}", key);
+    }
   }
 
   pub fn next_block(&mut self) -> Option<Block> {
@@ -237,7 +251,10 @@ impl Runtime {
         self.block_stack = vec![0];
         return;
       }
-      cuentitos_common::NextBlock::Section(_) => todo!(),
+      cuentitos_common::NextBlock::Section(key) => {
+        self.jump_to_section(key.section.clone(), key.subsection.clone());
+        self.update_stack();
+      }
     }
 
     self.block_stack.pop();
@@ -356,7 +373,7 @@ impl Runtime {
 #[cfg(test)]
 mod test {
 
-  use std::vec;
+  use std::{collections::HashMap, vec};
 
   use crate::Runtime;
   use cuentitos_common::{Block, BlockSettings, Database};
@@ -365,6 +382,7 @@ mod test {
   fn new_runtime_works_correctly() {
     let database = Database {
       blocks: vec![Block::default()],
+      sections: HashMap::default(),
     };
     let runtime = Runtime::new(database.clone());
     assert_eq!(runtime.database, database);
@@ -399,6 +417,7 @@ mod test {
 
     let database = Database {
       blocks: vec![parent.clone(), choice_1, choice_2, child_text],
+      sections: HashMap::default(),
     };
 
     let mut runtime = Runtime {
@@ -440,6 +459,7 @@ mod test {
 
     let database = Database {
       blocks: vec![parent.clone(), choice_1, choice_2, child_text],
+      sections: HashMap::default(),
     };
     let mut runtime = Runtime {
       database,
@@ -473,6 +493,7 @@ mod test {
 
     let database = Database {
       blocks: vec![parent.clone(), child_1.clone(), child_2.clone()],
+      sections: HashMap::default(),
     };
 
     let mut runtime = Runtime {
@@ -524,6 +545,7 @@ mod test {
         child_2.clone(),
         child_3.clone(),
       ],
+      sections: HashMap::default(),
     };
 
     let mut runtime = Runtime {
@@ -563,6 +585,7 @@ mod test {
 
     let database = Database {
       blocks: vec![parent.clone(), choice_1.clone(), choice_2],
+      sections: HashMap::default(),
     };
 
     let mut runtime = Runtime {
@@ -604,6 +627,7 @@ mod test {
 
     let database = Database {
       blocks: vec![parent.clone(), choice_1.clone(), choice_2.clone()],
+      sections: HashMap::default(),
     };
     let mut runtime = Runtime {
       database,
@@ -660,6 +684,7 @@ mod test {
 
     let database = Database {
       blocks: vec![bucket, text_1, text_2],
+      sections: HashMap::default(),
     };
     let mut runtime = Runtime {
       database,
@@ -719,6 +744,7 @@ mod test {
         text_with_100_chances,
         text_with_0_chances,
       ],
+      sections: HashMap::default(),
     };
     let mut runtime = Runtime {
       database,

@@ -2,8 +2,13 @@ use crate::{FrequencyModifier, I18nId, Modifier, Requirement};
 use serde::{Deserialize, Serialize};
 
 pub type BlockId = usize;
-pub type SectionId = usize;
 pub type BucketName = String;
+
+#[derive(Debug, Default, Serialize, Deserialize, Eq, PartialEq, Clone, Hash)]
+pub struct SectionKey {
+  pub section: String,
+  pub subsection: Option<String>,
+}
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub enum NextBlock {
@@ -11,7 +16,7 @@ pub enum NextBlock {
   None,
   BlockId(BlockId),
   EndOfFile,
-  Section(SectionId),
+  Section(SectionKey),
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq, Clone)]

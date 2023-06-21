@@ -1,9 +1,10 @@
 extern crate pest;
+use std::collections::HashMap;
 use std::path::Path;
 
 use cuentitos_common::{
-  Block, BlockSettings, Chance, Condition, Database, FrequencyModifier, Modifier, NextBlock,
-  Operator, Requirement,
+  Block, BlockId, BlockSettings, Chance, Condition, Database, FrequencyModifier, Modifier,
+  NextBlock, Operator, Requirement, SectionKey,
 };
 use pest::{iterators::Pair, Parser};
 
@@ -54,13 +55,14 @@ pub fn parse_database(token: Pair<Rule>) -> Result<Database, PalabritasError> {
   match_rule(&token, Rule::Database)?;
 
   let mut blocks: Vec<Vec<Block>> = Vec::default();
+  let mut sections = HashMap::default(); //  pub sections: HashMap<SectionId, BlockId>
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Block => {
         parse_block(inner_token, &mut blocks, 0)?;
       }
       Rule::Section => {
-        parse_section(inner_token, &mut blocks)?;
+        parse_section(inner_token, &mut blocks, &mut sections)?;
       }
       _ => {}
     }
@@ -94,61 +96,71 @@ pub fn parse_database(token: Pair<Rule>) -> Result<Database, PalabritasError> {
 
   Ok(Database {
     blocks: ordered_blocks,
+    sections,
   })
 }
 
-fn parse_section(token: Pair<Rule>, blocks: &mut Vec<Vec<Block>>) -> Result<(), PalabritasError> {
+fn parse_section(
+  token: Pair<Rule>,
+  blocks: &mut Vec<Vec<Block>>,
+  sections: &mut HashMap<SectionKey, BlockId>,
+) -> Result<(), PalabritasError> {
   match_rule(&token, Rule::Section)?;
   if blocks.is_empty() {
     blocks.push(Vec::default());
   }
 
   blocks[0].push(Block::default());
-  let id = blocks[0].len() - 1;
+  let block_id = blocks[0].len() - 1;
 
-  let mut section_block = Block::default();
+  let mut settings = BlockSettings::default();
+  let mut id: String = String::default();
+  let mut subsections = Vec::default();
   //Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Identifier => {
-        section_block = Block::Section {
-          id: inner_token.as_str().to_string(),
-          settings: BlockSettings::default(),
-          subsections: Vec::default(),
-        };
+        id = inner_token.as_str().to_string();
       }
       Rule::Command => {
-        add_command_to_block(inner_token, &mut section_block);
+        add_command_to_settings(inner_token, &mut settings);
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
-          let settings = section_block.get_settings_mut();
           parse_block(inner_blocks_token, blocks, 1)?;
           settings.children.push(blocks[1].len() - 1);
         }
       }
       Rule::Subsection => {
-        parse_subsection(inner_token, blocks)?;
-        if let Block::Section {
-          id: _,
-          settings: _,
-          ref mut subsections,
-        } = section_block
-        {
-          subsections.push(blocks[0].len() - 1);
-        }
+        parse_subsection(inner_token, blocks, &id, sections)?;
+        subsections.push(blocks[0].len() - 1);
       }
       _ => {}
     }
   }
 
-  blocks[0][id] = section_block;
+  sections.insert(
+    SectionKey {
+      section: id.clone(),
+      subsection: None,
+    },
+    block_id,
+  );
+
+  blocks[0][block_id] = Block::Section {
+    id,
+    settings,
+    subsections,
+  };
+
   Ok(())
 }
 
 fn parse_subsection(
   token: Pair<Rule>,
   blocks: &mut Vec<Vec<Block>>,
+  section_name: &str,
+  sections: &mut HashMap<SectionKey, BlockId>,
 ) -> Result<(), PalabritasError> {
   match_rule(&token, Rule::Subsection)?;
 
@@ -157,45 +169,47 @@ fn parse_subsection(
   }
 
   blocks[0].push(Block::default());
-  let id = blocks[0].len() - 1;
+  let block_id = blocks[0].len() - 1;
 
-  let mut subsection_block = Block::default();
+  let mut settings = BlockSettings::default();
+  let mut id: String = String::default();
+  let mut subsections = Vec::default();
   //Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Identifier => {
-        subsection_block = Block::Subsection {
-          id: inner_token.as_str().to_string(),
-          settings: BlockSettings::default(),
-          subsections: Vec::default(),
-        };
+        id = inner_token.as_str().to_string();
       }
       Rule::Command => {
-        add_command_to_block(inner_token, &mut subsection_block);
+        add_command_to_settings(inner_token, &mut settings);
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
-          let settings = subsection_block.get_settings_mut();
           parse_block(inner_blocks_token, blocks, 1)?;
           settings.children.push(blocks[1].len() - 1);
         }
       }
       Rule::Subsection => {
-        parse_subsection(inner_token, blocks)?;
-        if let Block::Section {
-          id: _,
-          settings: _,
-          ref mut subsections,
-        } = subsection_block
-        {
-          subsections.push(blocks[0].len() - 1);
-        }
+        parse_subsection(inner_token, blocks, section_name, sections)?;
+        subsections.push(blocks[0].len() - 1);
       }
       _ => {}
     }
   }
 
-  blocks[0][id] = subsection_block;
+  sections.insert(
+    SectionKey {
+      section: section_name.to_string(),
+      subsection: Some(id.clone()),
+    },
+    block_id,
+  );
+
+  blocks[0][block_id] = Block::Section {
+    id,
+    settings,
+    subsections,
+  };
   Ok(())
 }
 fn parse_block(
@@ -568,11 +582,11 @@ fn add_command_to_settings(token: Pair<Rule>, settings: &mut BlockSettings) {
           settings.modifiers.push(modifier);
         }
       }
-      /* Rule::Divert => {
+      Rule::Divert => {
         if let Some(divert) = parse_divert(inner_token) {
-          settings.divert.push(divert);
+          settings.next = divert;
         }
-      } */
+      }
       _ => {}
     }
   }
@@ -588,33 +602,33 @@ fn add_command_to_block(token: Pair<Rule>, block: &mut Block) {
     _ => {}
   }
 }
-/*
-fn parse_divert(token: Pair<Rule>) -> Option<Divert> {
+
+fn parse_divert(token: Pair<Rule>) -> Option<NextBlock> {
   if token.as_rule() != Rule::Divert {
     return None;
   }
   //Divert = { "->"  ~ " "* ~ Identifier ~ ("." ~ Identifier)? }
 
-  let mut knot: Option<String> = None;
-  let mut stitch: Option<String> = None;
+  let mut section: Option<String> = None;
+  let mut subsection: Option<String> = None;
 
   for inner_token in token.into_inner() {
     if inner_token.as_rule() == Rule::Identifier {
-      if knot.is_none() {
-        knot = Some(inner_token.as_str().to_string());
+      if section.is_none() {
+        section = Some(inner_token.as_str().to_string());
       } else {
-        stitch = Some(inner_token.as_str().to_string());
+        subsection = Some(inner_token.as_str().to_string());
       }
     }
   }
 
-  knot.as_ref()?;
-
-  Some(Divert {
-    knot: knot.unwrap(),
-    stitch,
+  section.map(|section| {
+    NextBlock::Section(SectionKey {
+      section,
+      subsection,
+    })
   })
-} */
+}
 
 fn parse_modifier(token: Pair<Rule>) -> Option<Modifier> {
   if token.as_rule() != Rule::Modifier {
@@ -783,8 +797,8 @@ mod test {
   const COMPARISON_OPERATORS: [&str; 7] = ["=", "!=", "<", ">", "<=", ">=", "!"];
 
   const INDENTATIONS: [&str; 1] = ["  "];
-  
-  const RESERVED_KEYWORDS: [&str; 9] = ["req" , "freq" , "mod" , "->" , "`" , "*" , "#" , "##" , "//"];
+
+  const RESERVED_KEYWORDS: [&str; 9] = ["req", "freq", "mod", "->", "`", "*", "#", "##", "//"];
 
   #[test]
   fn parse_database_from_path_correctly() {
@@ -1067,7 +1081,8 @@ mod test {
     let section_string = format!("#{}\n", identifier);
     let token = short_parse(Rule::Section, &section_string);
     let mut blocks = Vec::default();
-    parse_section(token, &mut blocks).unwrap();
+    let mut sections = HashMap::default();
+    parse_section(token, &mut blocks, &mut sections).unwrap();
 
     let section = blocks[0][0].clone();
 
@@ -1094,7 +1109,8 @@ mod test {
 
     let token = short_parse(Rule::Section, &section_string);
     let mut blocks = Vec::default();
-    parse_section(token, &mut blocks).unwrap();
+    let mut sections = HashMap::default();
+    parse_section(token, &mut blocks, &mut sections).unwrap();
 
     let section = blocks[0][0].clone();
 
@@ -1710,10 +1726,8 @@ mod test {
 
     snake_case = snake_case.to_lowercase();
 
-    for keyword in RESERVED_KEYWORDS
-    {
-      while snake_case.starts_with(keyword)
-      {
+    for keyword in RESERVED_KEYWORDS {
+      while snake_case.starts_with(keyword) {
         snake_case = make_random_snake_case();
       }
     }
@@ -1769,10 +1783,8 @@ mod test {
 
     shuffle_string(&mut string);
     string = string.trim().to_string();
-    for keyword in RESERVED_KEYWORDS
-    {
-      while string.starts_with(keyword)
-      {
+    for keyword in RESERVED_KEYWORDS {
+      while string.starts_with(keyword) {
         string = make_random_string();
       }
     }
