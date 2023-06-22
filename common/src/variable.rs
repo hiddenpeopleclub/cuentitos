@@ -3,6 +3,7 @@ pub type VariableId = String;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum VariableKind {
   #[default]
   Integer,
@@ -11,6 +12,23 @@ pub enum VariableKind {
   Enum {
     values: Vec<String>,
   },
+}
+
+impl VariableKind {
+  pub fn get_default_value(&self) -> String {
+    match self {
+      VariableKind::Integer => "0".to_string(),
+      VariableKind::Float => "0.0".to_string(),
+      VariableKind::Bool => "false".to_string(),
+      VariableKind::Enum { values } => {
+        if values.is_empty() {
+          "".to_string()
+        } else {
+          values[0].clone()
+        }
+      }
+    }
+  }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]

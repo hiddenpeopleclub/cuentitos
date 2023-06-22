@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use cuentitos_common::{
-  Block, BlockId, BlockSettings, Chance, Condition, Database, FrequencyModifier, Modifier,
+  Block, BlockId, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Modifier,
   NextBlock, Operator, Requirement, SectionKey,
 };
 use pest::{iterators::Pair, Parser};
@@ -20,21 +20,42 @@ pub fn parse_database_from_path<P>(path: P) -> Result<Database, PalabritasError>
 where
   P: AsRef<Path>,
 {
-  if !path.as_ref().is_file() {
-    return Err(PalabritasError::PathIsNotAFile(path.as_ref().to_path_buf()));
+  if !path.as_ref().exists() {
+    return Err(PalabritasError::PathDoesntExist(
+      path.as_ref().to_path_buf(),
+    ));
   }
-  let str = match std::fs::read_to_string(path.as_ref()) {
+  let palabritas_path = match path.as_ref().is_file() {
+    true => path.as_ref().to_path_buf(),
+    false => {
+      //TODO: search for it instead
+      return Err(PalabritasError::PathIsNotAFile(path.as_ref().to_path_buf()));
+    }
+  };
+  let mut config_path = palabritas_path.clone();
+  config_path.pop();
+  let config = match Config::load(&config_path) {
+    Ok(config) => config,
+    Err(err) => {
+      return Err(PalabritasError::CantReadFile {
+        path: config_path,
+        message: err.to_string(),
+      });
+    }
+  };
+
+  let str = match std::fs::read_to_string(&palabritas_path) {
     Ok(str) => str,
     Err(e) => {
       return Err(PalabritasError::CantReadFile {
-        path: path.as_ref().to_path_buf(),
+        path: palabritas_path,
         message: e.to_string(),
       });
     }
   };
 
   match PalabritasParser::parse(Rule::Database, &str) {
-    Ok(mut result) => parse_database(result.next().unwrap()),
+    Ok(mut result) => parse_database(result.next().unwrap(), config),
     Err(error) => {
       let (line, col) = match error.line_col {
         LineColLocation::Pos(line_col) => line_col,
@@ -42,7 +63,7 @@ where
       };
 
       Err(PalabritasError::ParseError {
-        file: path.as_ref().display().to_string(),
+        file: palabritas_path.display().to_string(),
         line,
         col,
         reason: error.to_string(),
@@ -51,7 +72,7 @@ where
   }
 }
 
-pub fn parse_database(token: Pair<Rule>) -> Result<Database, PalabritasError> {
+pub fn parse_database(token: Pair<Rule>, config: Config) -> Result<Database, PalabritasError> {
   match_rule(&token, Rule::Database)?;
 
   let mut blocks: Vec<Vec<Block>> = Vec::default();
@@ -97,6 +118,7 @@ pub fn parse_database(token: Pair<Rule>) -> Result<Database, PalabritasError> {
   Ok(Database {
     blocks: ordered_blocks,
     sections,
+    config,
   })
 }
 
@@ -800,7 +822,7 @@ mod test {
   fn parse_database_correctly() {
     let unparsed_file = include_str!("../../examples/story-example.cuentitos");
     let token = short_parse(Rule::Database, &unparsed_file);
-    parse_database(token).unwrap();
+    parse_database(token, Config::default()).unwrap();
     //TODO: compare with fixture
   }
 
