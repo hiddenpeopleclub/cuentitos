@@ -9,6 +9,7 @@ pub enum VariableKind {
   Integer,
   Float,
   Bool,
+  String,
   Enum {
     values: Vec<String>,
   },
@@ -20,6 +21,7 @@ impl VariableKind {
       VariableKind::Integer => "0".to_string(),
       VariableKind::Float => "0.0".to_string(),
       VariableKind::Bool => "false".to_string(),
+      VariableKind::String => "".to_string(),
       VariableKind::Enum { values } => {
         if values.is_empty() {
           "".to_string()

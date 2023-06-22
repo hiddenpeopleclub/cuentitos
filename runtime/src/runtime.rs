@@ -129,6 +129,9 @@ impl Runtime {
       if (t == "i32" && self.database.config.variables[&variable] == VariableKind::Integer)
         || (t == "f32" && self.database.config.variables[&variable] == VariableKind::Float)
         || (t == "bool" && self.database.config.variables[&variable] == VariableKind::Bool)
+        || (t == "alloc::string::String"
+          && self.database.config.variables[&variable] == VariableKind::String)
+        || (t == "&str" && self.database.config.variables[&variable] == VariableKind::String)
       {
         self
           .game_state
@@ -164,10 +167,11 @@ impl Runtime {
     let variable = variable.as_ref().to_string();
     if self.database.config.variables.contains_key(&variable) {
       let t = std::any::type_name::<T>();
-
       if (t == "i32" && self.database.config.variables[&variable] == VariableKind::Integer)
         || (t == "f32" && self.database.config.variables[&variable] == VariableKind::Float)
         || (t == "bool" && self.database.config.variables[&variable] == VariableKind::Bool)
+        || (t == "alloc::string::String"
+          && self.database.config.variables[&variable] == VariableKind::String)
       {
         let value = match self.game_state.variables.get(&variable) {
           Some(value) => value.clone(),
@@ -917,6 +921,31 @@ mod test {
     runtime.set_variable("bike", true).unwrap();
     let current_speed: bool = runtime.get_variable("bike").unwrap();
     assert_eq!(current_speed, true);
+  }
+
+  #[test]
+  fn string_variables_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::String;
+    variables.insert("message".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let database = Database {
+      blocks: Vec::default(),
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+
+    let current_message: String = runtime.get_variable("message").unwrap();
+    let expected_value = variable_kind.get_default_value();
+    assert_eq!(current_message, expected_value);
+
+    runtime.set_variable("message", "hello").unwrap();
+    let current_message: String = runtime.get_variable("message").unwrap();
+    assert_eq!(current_message, "hello".to_string());
   }
   /*
     #[test]
