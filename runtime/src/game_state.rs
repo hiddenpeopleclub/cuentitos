@@ -13,7 +13,6 @@ impl GameState {
     for (key, kind) in &config.variables {
       variables.insert(key.clone(), kind.get_default_value());
     }
-
     GameState { variables }
   }
 }

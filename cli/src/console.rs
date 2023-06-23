@@ -45,57 +45,14 @@ impl Console {
           }
         }
         "q" => break,
-        "variables" => {
-          for (variable, kind) in &runtime.database.config.variables {
-            match kind {
-              VariableKind::Integer => {
-                let int: i32 = runtime.get_variable(variable).unwrap();
-                println!("{}: {}", variable, int);
-              }
-              VariableKind::Float => {
-                let float: f32 = runtime.get_variable(variable).unwrap();
-                println!("{}: {}", variable, float);
-              }
-              VariableKind::Bool => {
-                let bool: bool = runtime.get_variable(variable).unwrap();
-                println!("{}: {}", variable, bool);
-              }
-              VariableKind::String => {
-                let string: String = runtime.get_variable(variable).unwrap();
-                println!("{}: {}", variable, string);
-              }
-              _ => {}
-            }
-          }
-        }
+        "variables" => print_variables(&runtime),
         str => {
-          if str.starts_with("mod ") {
+          if str.starts_with("set ") {
             let substr: String = str.chars().skip(4).collect();
             let mut splitted = substr.split(' ');
             if let Some(variable) = splitted.next() {
               if let Some(value) = splitted.next() {
-                for (variable_name, kind) in runtime.database.config.variables.clone() {
-                  if variable_name == variable {
-                    match kind {
-                      VariableKind::Integer => {
-                        let int: i32 = value.parse().unwrap();
-                        runtime.set_variable(variable, int).unwrap();
-                      }
-                      VariableKind::Float => {
-                        let float: f32 = value.parse().unwrap();
-                        runtime.set_variable(variable, float).unwrap();
-                      }
-                      VariableKind::Bool => {
-                        let bool: bool = value.parse().unwrap();
-                        runtime.set_variable(variable, bool).unwrap();
-                      }
-                      VariableKind::String => {
-                        println!("{}: {}", variable, variable);
-                      }
-                      _ => {}
-                    }
-                  }
-                }
+                set_variable_value(variable, value, &mut runtime);
               }
             }
           } else if str.starts_with("->") {
@@ -127,6 +84,56 @@ impl Console {
   }
 }
 
+fn set_variable_value(variable: &str, value: &str, runtime: &mut Runtime) {
+  for (variable_name, kind) in runtime.database.config.variables.clone() {
+    if variable_name == variable {
+      match kind {
+        VariableKind::Integer => {
+          let int: i32 = value.parse().unwrap();
+          runtime.set_variable(variable, int).unwrap();
+        }
+        VariableKind::Float => {
+          let float: f32 = value.parse().unwrap();
+          runtime.set_variable(variable, float).unwrap();
+        }
+        VariableKind::Bool => {
+          let bool: bool = value.parse().unwrap();
+          runtime.set_variable(variable, bool).unwrap();
+        }
+        VariableKind::String => {
+          runtime.set_variable(variable, value.to_string()).unwrap();
+        }
+        VariableKind::Enum(_) => match runtime.set_variable(variable, value.to_string()) {
+          Ok(_) => {}
+          Err(err) => println!("{}", err),
+        },
+      }
+    }
+  }
+}
+
+fn print_variables(runtime: &Runtime) {
+  for (variable, kind) in &runtime.database.config.variables {
+    match kind {
+      VariableKind::Integer => {
+        let int: i32 = runtime.get_variable(variable).unwrap();
+        println!("{}: {}", variable, int);
+      }
+      VariableKind::Float => {
+        let float: f32 = runtime.get_variable(variable).unwrap();
+        println!("{}: {}", variable, float);
+      }
+      VariableKind::Bool => {
+        let bool: bool = runtime.get_variable(variable).unwrap();
+        println!("{}: {}", variable, bool);
+      }
+      _ => {
+        let string: String = runtime.get_variable(variable).unwrap();
+        println!("{}: {}", variable, string);
+      }
+    }
+  }
+}
 fn print_output_text(output_text: Block) {
   println!("{}", output_text.text);
   for i in 0..output_text.choices.len() {

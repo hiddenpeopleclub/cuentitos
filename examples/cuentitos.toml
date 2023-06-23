@@ -6,3 +6,6 @@ donkey = "bool"
 food = "integer"
 time_mod = "integer"
 energized = "float"
+message = "string"
+[variables.time_of_day]
+enum = ["Day", "Night"]

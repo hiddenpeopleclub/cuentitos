@@ -10,9 +10,7 @@ pub enum VariableKind {
   Float,
   Bool,
   String,
-  Enum {
-    values: Vec<String>,
-  },
+  Enum(Vec<String>),
 }
 
 impl VariableKind {
@@ -22,7 +20,7 @@ impl VariableKind {
       VariableKind::Float => "0.0".to_string(),
       VariableKind::Bool => "false".to_string(),
       VariableKind::String => "".to_string(),
-      VariableKind::Enum { values } => {
+      VariableKind::Enum(values) => {
         if values.is_empty() {
           "".to_string()
         } else {
@@ -60,15 +58,8 @@ mod test {
     let variable_kind = VariableKind::Bool;
     assert!(variable_kind == VariableKind::Bool);
 
-    let variable_kind = VariableKind::Enum {
-      values: vec!["a-value".to_string()],
-    };
-    assert!(
-      variable_kind
-        == VariableKind::Enum {
-          values: vec!["a-value".to_string()]
-        }
-    );
+    let variable_kind = VariableKind::Enum(vec!["a-value".to_string()]);
+    assert!(variable_kind == VariableKind::Enum(vec!["a-value".to_string()]));
   }
 
   #[test]

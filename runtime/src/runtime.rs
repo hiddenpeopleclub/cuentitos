@@ -120,7 +120,7 @@ impl Runtime {
 
   pub fn set_variable<R, T>(&mut self, variable: R, value: T) -> Result<(), String>
   where
-    T: Display,
+    T: Display + std::str::FromStr + Default,
     R: AsRef<str>,
   {
     let variable = variable.as_ref().to_string();
@@ -132,6 +132,7 @@ impl Runtime {
         || (t == "alloc::string::String"
           && self.database.config.variables[&variable] == VariableKind::String)
         || (t == "&str" && self.database.config.variables[&variable] == VariableKind::String)
+        || self.is_valid_enum::<T>(&value.to_string())
       {
         self
           .game_state
@@ -165,6 +166,10 @@ impl Runtime {
     R: AsRef<str>,
   {
     let variable = variable.as_ref().to_string();
+    let value = match self.game_state.variables.get(&variable) {
+      Some(value) => value.clone(),
+      None => T::default().to_string(),
+    };
     if self.database.config.variables.contains_key(&variable) {
       let t = std::any::type_name::<T>();
       if (t == "i32" && self.database.config.variables[&variable] == VariableKind::Integer)
@@ -172,12 +177,9 @@ impl Runtime {
         || (t == "bool" && self.database.config.variables[&variable] == VariableKind::Bool)
         || (t == "alloc::string::String"
           && self.database.config.variables[&variable] == VariableKind::String)
+        || (t == "&str" && self.database.config.variables[&variable] == VariableKind::String)
+        || self.is_valid_enum::<T>(&value)
       {
-        let value = match self.game_state.variables.get(&variable) {
-          Some(value) => value.clone(),
-          None => T::default().to_string(),
-        };
-
         if let Ok(value) = value.parse::<T>() {
           return Ok(value);
         } else {
@@ -189,6 +191,38 @@ impl Runtime {
     }
 
     Err("Invalid Variable".to_string())
+  }
+
+  fn is_valid_enum<T>(&self, value: &String) -> bool
+  where
+    T: Display + std::str::FromStr + Default,
+  {
+    for kind in self.database.config.variables.values() {
+      if let VariableKind::Enum(possible_values) = kind {
+        let mut value_found = false;
+        for possible_value in possible_values {
+          if value == possible_value {
+            value_found = true;
+            break;
+          }
+        }
+
+        if value_found {
+          let mut all_values_parse = true;
+          for possible_value in possible_values {
+            if possible_value.parse::<T>().is_err() {
+              all_values_parse = false;
+              break;
+            }
+          }
+          if all_values_parse {
+            return true;
+          }
+        }
+      }
+    }
+
+    false
   }
 
   fn random_float(&mut self) -> Option<f32> {
@@ -436,7 +470,7 @@ impl Runtime {
 #[cfg(test)]
 mod test {
 
-  use std::{collections::HashMap, vec};
+  use std::{collections::HashMap, fmt::Display, str::FromStr, vec};
 
   use crate::Runtime;
   use cuentitos_common::{Block, BlockSettings, Config, Database, SectionKey, VariableKind};
@@ -943,69 +977,66 @@ mod test {
     let expected_value = variable_kind.get_default_value();
     assert_eq!(current_message, expected_value);
 
-    runtime.set_variable("message", "hello").unwrap();
+    runtime
+      .set_variable("message", "hello".to_string())
+      .unwrap();
     let current_message: String = runtime.get_variable("message").unwrap();
     assert_eq!(current_message, "hello".to_string());
   }
-  /*
-    #[test]
-    fn enum_variables_work()
-    {
-      let mut variables  = HashMap::default();
 
-      let variable_kind = VariableKind::Enum { values: vec!["Day".to_string(),"Night".to_string()] };
-      variables.insert("time_of_day".to_string(), variable_kind.clone());
-      let config = Config{
-        variables
-      };
+  #[test]
+  fn enum_variables_work() {
+    let mut variables = HashMap::default();
 
-      let database = Database {
-        blocks: Vec::default(),
-        sections: HashMap::default(),
-        config,
-      };
+    let variable_kind = VariableKind::Enum(vec!["Day".to_string(), "Night".to_string()]);
+    variables.insert("time_of_day".to_string(), variable_kind.clone());
+    let config = Config { variables };
 
-      let mut runtime = Runtime::new(database);
+    let database = Database {
+      blocks: Vec::default(),
+      sections: HashMap::default(),
+      config,
+    };
 
-      let current_time_of_day: TimeOfDay = runtime.get_variable("time_of_day").unwrap();
-      let expected_value = variable_kind.get_default_value().parse().unwrap();
-      assert_eq!(current_time_of_day, expected_value);
+    let mut runtime = Runtime::new(database);
 
-      runtime.set_variable("time_of_day", TimeOfDay::Night).unwrap();
-      let current_time_of_day: TimeOfDay = runtime.get_variable("time_of_day").unwrap();
-      assert_eq!(current_time_of_day, TimeOfDay::Night);
+    let current_time_of_day: TimeOfDay = runtime.get_variable("time_of_day").unwrap();
+    let expected_value = variable_kind.get_default_value().parse().unwrap();
+    assert_eq!(current_time_of_day, expected_value);
 
-      #[derive(Debug,Default,PartialEq, Eq)]
-      enum TimeOfDay{
-        #[default]
-        Day,
-        Night
-      }
+    runtime
+      .set_variable("time_of_day", TimeOfDay::Night)
+      .unwrap();
+    let current_time_of_day: TimeOfDay = runtime.get_variable("time_of_day").unwrap();
+    assert_eq!(current_time_of_day, TimeOfDay::Night);
 
-      #[derive(Debug, PartialEq, Eq)]
-      struct TestError;
+    #[derive(Debug, Default, PartialEq, Eq)]
+    enum TimeOfDay {
+      #[default]
+      Day,
+      Night,
+    }
 
-      impl FromStr for TimeOfDay
-      {
-          type Err = TestError;
+    #[derive(Debug, PartialEq, Eq)]
+    struct TestError;
 
-          fn from_str(s: &str) -> Result<Self, Self::Err> {
-              match s
-              {
-                "Day" => Ok(TimeOfDay::Day),
-                "Night" => Ok(TimeOfDay::Night),
-                _ => Err(TestError)
-              }
-          }
-      }
-      impl Display for TimeOfDay
-      {
-          fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{:?}",self)
-          }
+    impl FromStr for TimeOfDay {
+      type Err = TestError;
+
+      fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+          "Day" => Ok(TimeOfDay::Day),
+          "Night" => Ok(TimeOfDay::Night),
+          _ => Err(TestError),
+        }
       }
     }
-  */
+    impl Display for TimeOfDay {
+      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+      }
+    }
+  }
 
   #[test]
   fn roll_chances_for_next_block_works_correctly() {
