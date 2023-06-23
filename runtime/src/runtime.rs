@@ -24,9 +24,10 @@ pub struct Runtime {
   pub block_stack: Vec<BlockId>,
   pub choices: Vec<BlockId>,
   #[serde(skip)]
+  pub game_state: GameState,
+  #[serde(skip)]
   rng: Option<Pcg32>,
   seed: u64,
-  game_state: GameState,
 }
 
 impl Runtime {
@@ -45,13 +46,30 @@ impl Runtime {
   }
 
   pub fn jump_to_section(&mut self, section: String, subsection: Option<String>) {
+    let current_section = self.game_state.current_section.clone();
+    if subsection.is_none() {
+      if let Some(current_section) = current_section {
+        let key = SectionKey {
+          section: current_section,
+          subsection: Some(section.clone()),
+        };
+        if let Some(block_id) = self.database.sections.get(&key) {
+          self.block_stack.clear();
+          self.push_stack(*block_id);
+          return;
+        }
+      }
+    }
+
     let key = SectionKey {
       section,
       subsection,
     };
     if let Some(block_id) = self.database.sections.get(&key) {
       self.block_stack.clear();
-      self.push_into_stack(*block_id);
+      self.game_state.current_section = Some(key.section);
+      self.game_state.current_subsection = None;
+      self.push_stack(*block_id);
     } else {
       println!("Can't find section: {:?}", key);
     }
@@ -113,7 +131,7 @@ impl Runtime {
       return None;
     }
 
-    self.push_into_stack(choices[choice]);
+    self.push_stack(choices[choice]);
     self.next_block()
   }
 
@@ -307,13 +325,25 @@ impl Runtime {
     }
   }
 
-  fn push_into_stack(&mut self, id: BlockId) {
+  fn push_stack(&mut self, id: BlockId) {
     self.block_stack.push(id);
     self.apply_modifiers();
+
+    match self.get_block(id) {
+      cuentitos_common::Block::Section { id, settings: _ } => {
+        self.game_state.current_section = Some(id.clone());
+        self.game_state.current_subsection = None;
+      }
+      cuentitos_common::Block::Subsection { id, settings: _ } => {
+        self.game_state.current_subsection = Some(id.clone());
+      }
+      _ => {}
+    }
   }
+
   fn update_stack(&mut self) {
     if self.block_stack.is_empty() {
-      self.push_into_stack(0);
+      self.push_stack(0);
       let last_block_id = *self.block_stack.last().unwrap();
       let last_block = self.get_block(last_block_id).clone();
       match last_block {
@@ -340,7 +370,7 @@ impl Runtime {
     if !settings.children.is_empty() {
       match self.get_block(settings.children[0]) {
         cuentitos_common::Block::Text { id: _, settings: _ } => {
-          self.push_into_stack(settings.children[0]);
+          self.push_stack(settings.children[0]);
           return;
         }
         cuentitos_common::Block::Choice { id: _, settings: _ } => {
@@ -349,14 +379,13 @@ impl Runtime {
         }
         cuentitos_common::Block::Bucket { name: _, settings } => {
           if let Some(new_block) = self.get_random_block_from_bucket(&settings.clone()) {
-            self.push_into_stack(new_block);
+            self.push_stack(new_block);
             return;
           }
         }
         _ => {}
       }
     }
-
     self.pop_stack_and_find_next();
   }
 
@@ -390,30 +419,31 @@ impl Runtime {
     let last_block_id = *self.block_stack.last().unwrap();
 
     let last_block = self.get_block(last_block_id).clone();
-
     let last_settings = last_block.get_settings();
     match &last_settings.next {
       cuentitos_common::NextBlock::None => {}
       cuentitos_common::NextBlock::BlockId(other_id) => {
         self.block_stack.pop();
-        self.push_into_stack(*other_id);
+        self.push_stack(*other_id);
         return;
       }
       cuentitos_common::NextBlock::EndOfFile => {
         println!("Story finished\n");
         self.block_stack = vec![0];
+        self.game_state = GameState::from_config(&self.database.config);
         return;
       }
       cuentitos_common::NextBlock::Section(key) => {
         self.jump_to_section(key.section.clone(), key.subsection.clone());
         self.update_stack();
+        return;
       }
     }
 
     self.block_stack.pop();
 
     if self.block_stack.is_empty() {
-      self.push_into_stack(last_block_id + 1);
+      self.push_stack(last_block_id + 1);
       let last_block_id = *self.block_stack.last().unwrap();
       let last_block = self.get_block(last_block_id).clone();
       match last_block {
@@ -434,13 +464,13 @@ impl Runtime {
     for child in &parent_settings.children {
       if child_found {
         match self.get_block(*child).clone() {
-          cuentitos_common::Block::Text { id: _, settings: _ } => self.push_into_stack(*child),
+          cuentitos_common::Block::Text { id: _, settings: _ } => self.push_stack(*child),
           cuentitos_common::Block::Choice { id: _, settings: _ } => {
             continue;
           }
           cuentitos_common::Block::Bucket { name: _, settings } => {
             if let Some(new_block) = self.get_random_block_from_bucket(&settings.clone()) {
-              self.push_into_stack(new_block);
+              self.push_stack(new_block);
               return;
             }
           }
@@ -451,7 +481,7 @@ impl Runtime {
         if let cuentitos_common::Block::Choice { id: _, settings: _ } = self.get_block(*child) {
           continue;
         }
-        self.push_into_stack(*child);
+        self.push_stack(*child);
         return;
       }
       if *child == last_block_id {
@@ -924,7 +954,7 @@ mod test {
       .get_random_block_from_bucket(&bucket_settings)
       .unwrap();
     assert_eq!(id, 1);
-    runtime.push_into_stack(1);
+    runtime.push_stack(1);
     let bucket_settings = runtime.get_block(0).get_settings().clone();
     let id = runtime
       .get_random_block_from_bucket(&bucket_settings)

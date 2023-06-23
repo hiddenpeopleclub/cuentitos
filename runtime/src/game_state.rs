@@ -5,6 +5,8 @@ use std::collections::HashMap;
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone, Eq)]
 pub struct GameState {
   pub variables: HashMap<VariableId, String>,
+  pub current_section: Option<String>,
+  pub current_subsection: Option<String>,
 }
 
 impl GameState {
@@ -13,6 +15,9 @@ impl GameState {
     for (key, kind) in &config.variables {
       variables.insert(key.clone(), kind.get_default_value());
     }
-    GameState { variables }
+    GameState {
+      variables,
+      ..Default::default()
+    }
   }
 }

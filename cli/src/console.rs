@@ -30,7 +30,15 @@ impl Console {
     let mut runtime = Runtime::new(file);
 
     loop {
-      let input = Self::prompt("> ");
+      let prompt_str = match &runtime.game_state.current_section {
+        Some(section) => match &runtime.game_state.current_subsection {
+          Some(subsection) => format!("{}/{}>", section, subsection),
+          None => format!("{}>", section),
+        },
+        None => ">".to_string(),
+      };
+
+      let input = Self::prompt(prompt_str.as_str());
 
       match input.as_str() {
         "" => {

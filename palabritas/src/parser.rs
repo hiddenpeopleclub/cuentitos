@@ -221,7 +221,7 @@ fn parse_subsection(
     block_id,
   );
 
-  blocks[0][block_id] = Block::Section { id, settings };
+  blocks[0][block_id] = Block::Subsection { id, settings };
   Ok(())
 }
 fn parse_block(
@@ -634,6 +634,9 @@ fn parse_divert(token: Pair<Rule>) -> Option<NextBlock> {
     }
   }
 
+  if section.is_some() && subsection.is_none() && section.clone().unwrap() == "END" {
+    return Some(NextBlock::EndOfFile);
+  }
   section.map(|section| {
     NextBlock::Section(SectionKey {
       section,
@@ -1128,6 +1131,22 @@ mod test {
       settings: BlockSettings::default(),
     };
     assert_eq!(section, expected_value);
+
+    let sub_section_1 = blocks[0][1].clone();
+
+    let expected_value = Block::Subsection {
+      id: subsection_identifier_1,
+      settings: BlockSettings::default(),
+    };
+    assert_eq!(sub_section_1, expected_value);
+
+    let sub_section_2 = blocks[0][2].clone();
+
+    let expected_value = Block::Subsection {
+      id: subsection_identifier_2,
+      settings: BlockSettings::default(),
+    };
+    assert_eq!(sub_section_2, expected_value);
   }
   #[test]
   fn parse_text_correctly() {
