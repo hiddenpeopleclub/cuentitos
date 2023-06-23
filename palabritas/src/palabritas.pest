@@ -9,12 +9,12 @@ ComparisonOperator = { "!=" | "=" | "<=" | ">=" | "<" | ">" | "!" }
 
 SnakeCase = { ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | "_" | ASCII_DIGIT)* }
 Identifier = { (ASCII_ALPHA | "_" ) ~ (ASCII_ALPHANUMERIC | "_")* }
-Value = { Identifier | Float | Percentage | Integer}
+Value = { Identifier | "="? ~ Float | Percentage | "="? ~ Integer }
 Condition = { "!"? ~ Identifier ~ " "* ~ (ComparisonOperator ~ " "*)? ~ Value? }
 
 Requirement = { "req" ~ " "+ ~ Condition }
 Frequency = { "freq" ~ " "+ ~ Condition ~ " "+ ~ ( Float | Integer ) }
-Modifier = { "mod" ~ " "+ ~ Identifier ~ " "+ ~ Value}
+Modifier = { "mod" ~ " "+ ~ Identifier ~ " "+ ~ Value }
 Divert = { "->"  ~ " "* ~ Identifier ~ ("." ~ Identifier)? }
 Function = {"`" ~ SnakeCase ~ (" " ~ Value)* ~ "`"}
 
@@ -23,7 +23,7 @@ Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier 
 Chance = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
 
 Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
-Subsection = { "##" ~ " "* ~ Identifier ~ " "* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
+Subsection = { "##" ~ " "* ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
 
 Text = { !Indentation ~ !ReservedKeywords ~ Chance? ~ String }
 Choice = { "*" ~ " "* ~ Chance? ~ String }

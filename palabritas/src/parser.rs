@@ -4,7 +4,7 @@ use std::path::Path;
 
 use cuentitos_common::{
   Block, BlockId, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Modifier,
-  NextBlock, Operator, Requirement, SectionKey,
+  NextBlock, Operator, Requirement, SectionKey, VariableKind
 };
 use pest::{iterators::Pair, Parser};
 
@@ -1104,6 +1104,36 @@ mod test {
     };
     assert_eq!(section, expected_value);
   }
+
+  #[test]
+  fn parse_section_commands_correctly() {
+    let identifier = make_random_snake_case();
+
+    let section_string = format!("# {}\n  req test", identifier);
+    let token = short_parse(Rule::Section, &section_string);
+    let mut blocks = Vec::default();
+    let mut sections = HashMap::default();
+    parse_section(token, &mut blocks, &mut sections).unwrap();
+
+    let section = blocks[0][0].clone();
+
+    let expected_value = Block::Section {
+      id: identifier,
+      settings: BlockSettings {
+        requirements: vec![ Requirement {
+          condition: Condition { 
+            variable: Variable { id: "test".to_string(), kind: VariableKind::Bool }, 
+            operator: Operator::Equal, 
+            value: "true".to_string()
+          }
+        }],
+        ..Default::default()
+      },
+    };
+    assert_eq!(section, expected_value);
+
+  }
+
   #[test]
   fn parse_section_with_subsections_correctly() {
     //Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
@@ -1290,6 +1320,48 @@ mod test {
     };
 
     let token = short_parse(Rule::Modifier, &modifier_string);
+    let modifier = parse_modifier(token).unwrap();
+
+    assert_eq!(modifier, expected_value);
+  }
+
+  #[test]
+  fn parse_modifier_with_set_command_in_floats() {
+    let identifier = make_random_identifier();
+    let new_value = rand::thread_rng().gen::<f32>().to_string();
+    let modifier_string = format!("mod {} ={}", identifier, new_value);
+
+    let expected_value = Modifier {
+      variable: Variable {
+        id: identifier,
+        ..Default::default()
+      },
+      new_value: format!("={}", new_value),
+    };
+
+    let token = short_parse(Rule::Modifier, &modifier_string);
+
+    let modifier = parse_modifier(token).unwrap();
+
+    assert_eq!(modifier, expected_value);
+  }
+
+  #[test]
+  fn parse_modifier_with_set_command_in_integers() {
+    let identifier = make_random_identifier();
+    let new_value = rand::thread_rng().gen::<i32>().to_string();
+    let modifier_string = format!("mod {} ={}", identifier, new_value);
+
+    let expected_value = Modifier {
+      variable: Variable {
+        id: identifier,
+        ..Default::default()
+      },
+      new_value: format!("={}", new_value),
+    };
+
+    let token = short_parse(Rule::Modifier, &modifier_string);
+
     let modifier = parse_modifier(token).unwrap();
 
     assert_eq!(modifier, expected_value);
