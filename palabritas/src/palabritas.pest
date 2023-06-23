@@ -15,7 +15,7 @@ Condition = { "!"? ~ Identifier ~ " "* ~ (ComparisonOperator ~ " "*)? ~ Value? }
 Requirement = { "req" ~ " "+ ~ Condition }
 Frequency = { "freq" ~ " "+ ~ Condition ~ " "+ ~ ( Float | Integer ) }
 Modifier = { "mod" ~ " "+ ~ Identifier ~ " "+ ~ Value }
-Divert = { "->"  ~ " "* ~ Identifier ~ ("." ~ Identifier)? }
+Divert = { "->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)? }
 Function = {"`" ~ SnakeCase ~ (" " ~ Value)* ~ "`"}
 
 Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert | Function) } 

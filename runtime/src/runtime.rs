@@ -51,7 +51,7 @@ impl Runtime {
     };
     if let Some(block_id) = self.database.sections.get(&key) {
       self.block_stack.clear();
-      self.block_stack.push(*block_id);
+      self.push_into_stack(*block_id);
     } else {
       println!("Can't find section: {:?}", key);
     }
@@ -67,7 +67,6 @@ impl Runtime {
     while !self.roll_chances_for_next_block() {
       self.update_stack();
     }
-
     self.get_next_block_output()
   }
 
@@ -114,7 +113,7 @@ impl Runtime {
       return None;
     }
 
-    self.block_stack.push(choices[choice]);
+    self.push_into_stack(choices[choice]);
     self.next_block()
   }
 
@@ -263,9 +262,58 @@ impl Runtime {
     None
   }
 
+  fn apply_modifiers(&mut self) {
+    let id = self.block_stack.last().unwrap();
+    let block = self.get_block(*id);
+    for modifier in block.get_settings().modifiers.clone() {
+      match self.get_variable_kind(&modifier.variable) {
+        Some(kind) => {
+          let result = match kind {
+            VariableKind::Integer => {
+              let value = &modifier.added_value.parse::<i32>();
+              match value {
+                Ok(value) => self.set_variable(&modifier.variable, *value),
+                Err(e) => Err(e.to_string()),
+              }
+            }
+            VariableKind::Float => {
+              let value = &modifier.added_value.parse::<f32>();
+              match value {
+                Ok(value) => self.set_variable(&modifier.variable, *value),
+                Err(e) => Err(e.to_string()),
+              }
+            }
+            VariableKind::Bool => {
+              let value = &modifier.added_value.parse::<bool>();
+              match value {
+                Ok(value) => self.set_variable(&modifier.variable, *value),
+                Err(e) => Err(e.to_string()),
+              }
+            }
+            _ => self.set_variable(&modifier.variable, modifier.added_value),
+          };
+
+          if result.is_err() {
+            println!("{}", result.unwrap_err());
+          }
+        }
+        None => {
+          println!(
+            "Can't modify variable {:?} because it doesn't exists.",
+            modifier.variable
+          )
+        }
+      }
+    }
+  }
+
+  fn push_into_stack(&mut self, id: BlockId) {
+    self.block_stack.push(id);
+    self.apply_modifiers();
+  }
   fn update_stack(&mut self) {
     if self.block_stack.is_empty() {
-      self.block_stack.push(0);
+      self.push_into_stack(0);
       let last_block_id = *self.block_stack.last().unwrap();
       let last_block = self.get_block(last_block_id).clone();
       match last_block {
@@ -292,7 +340,7 @@ impl Runtime {
     if !settings.children.is_empty() {
       match self.get_block(settings.children[0]) {
         cuentitos_common::Block::Text { id: _, settings: _ } => {
-          self.block_stack.push(settings.children[0]);
+          self.push_into_stack(settings.children[0]);
           return;
         }
         cuentitos_common::Block::Choice { id: _, settings: _ } => {
@@ -301,7 +349,7 @@ impl Runtime {
         }
         cuentitos_common::Block::Bucket { name: _, settings } => {
           if let Some(new_block) = self.get_random_block_from_bucket(&settings.clone()) {
-            self.block_stack.push(new_block);
+            self.push_into_stack(new_block);
             return;
           }
         }
@@ -348,7 +396,7 @@ impl Runtime {
       cuentitos_common::NextBlock::None => {}
       cuentitos_common::NextBlock::BlockId(other_id) => {
         self.block_stack.pop();
-        self.block_stack.push(*other_id);
+        self.push_into_stack(*other_id);
         return;
       }
       cuentitos_common::NextBlock::EndOfFile => {
@@ -365,7 +413,7 @@ impl Runtime {
     self.block_stack.pop();
 
     if self.block_stack.is_empty() {
-      self.block_stack.push(last_block_id + 1);
+      self.push_into_stack(last_block_id + 1);
       let last_block_id = *self.block_stack.last().unwrap();
       let last_block = self.get_block(last_block_id).clone();
       match last_block {
@@ -386,13 +434,13 @@ impl Runtime {
     for child in &parent_settings.children {
       if child_found {
         match self.get_block(*child).clone() {
-          cuentitos_common::Block::Text { id: _, settings: _ } => self.block_stack.push(*child),
+          cuentitos_common::Block::Text { id: _, settings: _ } => self.push_into_stack(*child),
           cuentitos_common::Block::Choice { id: _, settings: _ } => {
             continue;
           }
           cuentitos_common::Block::Bucket { name: _, settings } => {
             if let Some(new_block) = self.get_random_block_from_bucket(&settings.clone()) {
-              self.block_stack.push(new_block);
+              self.push_into_stack(new_block);
               return;
             }
           }
@@ -403,7 +451,7 @@ impl Runtime {
         if let cuentitos_common::Block::Choice { id: _, settings: _ } = self.get_block(*child) {
           continue;
         }
-        self.block_stack.push(*child);
+        self.push_into_stack(*child);
         return;
       }
       if *child == last_block_id {
@@ -473,7 +521,9 @@ mod test {
   use std::{collections::HashMap, fmt::Display, str::FromStr, vec};
 
   use crate::Runtime;
-  use cuentitos_common::{Block, BlockSettings, Config, Database, SectionKey, VariableKind};
+  use cuentitos_common::{
+    Block, BlockSettings, Config, Database, Modifier, SectionKey, VariableKind,
+  };
 
   #[test]
   fn new_runtime_works_correctly() {
@@ -874,7 +924,7 @@ mod test {
       .get_random_block_from_bucket(&bucket_settings)
       .unwrap();
     assert_eq!(id, 1);
-    runtime.block_stack.push(1);
+    runtime.push_into_stack(1);
     let bucket_settings = runtime.get_block(0).get_settings().clone();
     let id = runtime
       .get_random_block_from_bucket(&bucket_settings)
@@ -905,6 +955,221 @@ mod test {
     runtime.set_variable("health", 100).unwrap();
     let current_health: i32 = runtime.get_variable("health").unwrap();
     assert_eq!(current_health, 100);
+  }
+
+  #[test]
+  fn integer_modifiers_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Integer;
+    variables.insert("health".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let modifier = Modifier {
+      variable: "health".to_string(),
+      added_value: "100".to_string(),
+    };
+    let settings = BlockSettings {
+      modifiers: vec![modifier],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let current_health: i32 = runtime.get_variable("health").unwrap();
+    let expected_value = variable_kind.get_default_value().parse().unwrap();
+    assert_eq!(current_health, expected_value);
+    runtime.apply_modifiers();
+    let current_health: i32 = runtime.get_variable("health").unwrap();
+    assert_eq!(current_health, expected_value + 100);
+  }
+
+  #[test]
+  fn float_modifiers_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Float;
+    variables.insert("speed".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let modifier = Modifier {
+      variable: "speed".to_string(),
+      added_value: "1.5".to_string(),
+    };
+    let settings = BlockSettings {
+      modifiers: vec![modifier],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let current_speed: f32 = runtime.get_variable("speed").unwrap();
+    let expected_value = variable_kind.get_default_value().parse().unwrap();
+    assert_eq!(current_speed, expected_value);
+    runtime.apply_modifiers();
+    let current_speed: f32 = runtime.get_variable("speed").unwrap();
+    assert_eq!(current_speed, expected_value + 1.5);
+  }
+
+  #[test]
+  fn bool_modifiers_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Bool;
+    variables.insert("bike".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let modifier = Modifier {
+      variable: "bike".to_string(),
+      added_value: "true".to_string(),
+    };
+    let settings = BlockSettings {
+      modifiers: vec![modifier],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let current_bike: bool = runtime.get_variable("bike").unwrap();
+    let expected_value = variable_kind.get_default_value().parse().unwrap();
+    assert_eq!(current_bike, expected_value);
+    runtime.apply_modifiers();
+    let current_bike: bool = runtime.get_variable("bike").unwrap();
+    assert_eq!(current_bike, true);
+  }
+
+  #[test]
+  fn string_modifiers_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::String;
+    variables.insert("message".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let modifier = Modifier {
+      variable: "message".to_string(),
+      added_value: "hello".to_string(),
+    };
+    let settings = BlockSettings {
+      modifiers: vec![modifier],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let current_message: String = runtime.get_variable("message").unwrap();
+    let expected_value = variable_kind.get_default_value();
+    assert_eq!(current_message, expected_value);
+
+    runtime.apply_modifiers();
+    let current_message: String = runtime.get_variable("message").unwrap();
+    assert_eq!(current_message, "hello".to_string());
+  }
+
+  #[test]
+  fn enum_modifiers_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Enum(vec!["Day".to_string(), "Night".to_string()]);
+    variables.insert("time_of_day".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let modifier = Modifier {
+      variable: "time_of_day".to_string(),
+      added_value: "Night".to_string(),
+    };
+    let settings = BlockSettings {
+      modifiers: vec![modifier],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+
+    let current_time_of_day: TimeOfDay = runtime.get_variable("time_of_day").unwrap();
+    let expected_value = variable_kind.get_default_value().parse().unwrap();
+    assert_eq!(current_time_of_day, expected_value);
+
+    runtime.apply_modifiers();
+    let current_time_of_day: TimeOfDay = runtime.get_variable("time_of_day").unwrap();
+    assert_eq!(current_time_of_day, TimeOfDay::Night);
+
+    #[derive(Debug, Default, PartialEq, Eq)]
+    enum TimeOfDay {
+      #[default]
+      Day,
+      Night,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct TestError;
+
+    impl FromStr for TimeOfDay {
+      type Err = TestError;
+
+      fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+          "Day" => Ok(TimeOfDay::Day),
+          "Night" => Ok(TimeOfDay::Night),
+          _ => Err(TestError),
+        }
+      }
+    }
+    impl Display for TimeOfDay {
+      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+      }
+    }
   }
 
   #[test]

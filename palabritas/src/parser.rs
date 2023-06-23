@@ -4,7 +4,7 @@ use std::path::Path;
 
 use cuentitos_common::{
   Block, BlockId, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Modifier,
-  NextBlock, Operator, Requirement, SectionKey, VariableKind
+  NextBlock, Operator, Requirement, SectionKey,
 };
 use pest::{iterators::Pair, Parser};
 
@@ -652,12 +652,11 @@ fn parse_modifier(token: Pair<Rule>) -> Option<Modifier> {
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Identifier => {
-        modifier.variable.id = inner_token.as_str().to_string();
-        //TODO KIND
+        modifier.variable = inner_token.as_str().to_string();
       }
 
       Rule::Value => {
-        modifier.new_value = inner_token.as_str().to_string();
+        modifier.added_value = inner_token.as_str().to_string();
       }
       _ => {}
     }
@@ -799,6 +798,7 @@ mod test {
   use crate::parser::*;
   use cuentitos_common::{
     Block, BlockSettings, Condition, FrequencyModifier, Modifier, Operator, Requirement, Variable,
+    VariableKind,
   };
   use pest::iterators::Pair;
   use rand::distributions::Alphanumeric;
@@ -1104,36 +1104,6 @@ mod test {
     };
     assert_eq!(section, expected_value);
   }
-
-  #[test]
-  fn parse_section_commands_correctly() {
-    let identifier = make_random_snake_case();
-
-    let section_string = format!("# {}\n  req test", identifier);
-    let token = short_parse(Rule::Section, &section_string);
-    let mut blocks = Vec::default();
-    let mut sections = HashMap::default();
-    parse_section(token, &mut blocks, &mut sections).unwrap();
-
-    let section = blocks[0][0].clone();
-
-    let expected_value = Block::Section {
-      id: identifier,
-      settings: BlockSettings {
-        requirements: vec![ Requirement {
-          condition: Condition { 
-            variable: Variable { id: "test".to_string(), kind: VariableKind::Bool }, 
-            operator: Operator::Equal, 
-            value: "true".to_string()
-          }
-        }],
-        ..Default::default()
-      },
-    };
-    assert_eq!(section, expected_value);
-
-  }
-
   #[test]
   fn parse_section_with_subsections_correctly() {
     //Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
@@ -1201,16 +1171,13 @@ mod test {
     // //Command = {NEWLINE ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert) }
 
     //Modifier
-    let identifier = make_random_identifier();
-    let new_value = rand::thread_rng().gen::<f32>().to_string();
-    let modifier_string = format!("\n mod {} {}", identifier, new_value);
+    let variable = make_random_identifier();
+    let added_value = rand::thread_rng().gen::<f32>().to_string();
+    let modifier_string = format!("\n mod {} {}", variable, added_value);
 
     let expected_modifier = Modifier {
-      variable: Variable {
-        id: identifier,
-        ..Default::default()
-      },
-      new_value,
+      variable,
+      added_value,
     };
 
     block_settings.modifiers.push(expected_modifier);
@@ -1291,7 +1258,7 @@ mod test {
 
     let subsection = make_random_identifier();
 
-    let divert_string = format!("-> {}.{}", section, subsection);
+    let divert_string = format!("-> {}/{}", section, subsection);
 
     let expected_value = NextBlock::Section(SectionKey {
       section,
@@ -1307,61 +1274,16 @@ mod test {
   #[test]
   fn parse_modifier_correctly() {
     //Modifier = { "mod" ~ " "+ ~ Identifier ~ " "+ ~ Value}
-    let identifier = make_random_identifier();
-    let new_value = rand::thread_rng().gen::<f32>().to_string();
-    let modifier_string = format!("mod {} {}", identifier, new_value);
+    let variable = make_random_identifier();
+    let added_value = rand::thread_rng().gen::<f32>().to_string();
+    let modifier_string = format!("mod {} {}", variable, added_value);
 
     let expected_value = Modifier {
-      variable: Variable {
-        id: identifier,
-        ..Default::default()
-      },
-      new_value,
+      variable,
+      added_value,
     };
 
     let token = short_parse(Rule::Modifier, &modifier_string);
-    let modifier = parse_modifier(token).unwrap();
-
-    assert_eq!(modifier, expected_value);
-  }
-
-  #[test]
-  fn parse_modifier_with_set_command_in_floats() {
-    let identifier = make_random_identifier();
-    let new_value = rand::thread_rng().gen::<f32>().to_string();
-    let modifier_string = format!("mod {} ={}", identifier, new_value);
-
-    let expected_value = Modifier {
-      variable: Variable {
-        id: identifier,
-        ..Default::default()
-      },
-      new_value: format!("={}", new_value),
-    };
-
-    let token = short_parse(Rule::Modifier, &modifier_string);
-
-    let modifier = parse_modifier(token).unwrap();
-
-    assert_eq!(modifier, expected_value);
-  }
-
-  #[test]
-  fn parse_modifier_with_set_command_in_integers() {
-    let identifier = make_random_identifier();
-    let new_value = rand::thread_rng().gen::<i32>().to_string();
-    let modifier_string = format!("mod {} ={}", identifier, new_value);
-
-    let expected_value = Modifier {
-      variable: Variable {
-        id: identifier,
-        ..Default::default()
-      },
-      new_value: format!("={}", new_value),
-    };
-
-    let token = short_parse(Rule::Modifier, &modifier_string);
-
     let modifier = parse_modifier(token).unwrap();
 
     assert_eq!(modifier, expected_value);
@@ -1658,7 +1580,7 @@ mod test {
     let stitch = make_random_identifier();
 
     assert_parse_rule(Rule::Divert, &("->".to_string() + &knot));
-    assert_parse_rule(Rule::Divert, &("->".to_string() + &knot + "." + &stitch));
+    assert_parse_rule(Rule::Divert, &("->".to_string() + &knot + "/" + &stitch));
   }
 
   #[test]
@@ -1762,6 +1684,71 @@ mod test {
       assert_parse_rule(Rule::BlockBlock, &(text + &new_block));
     }
   */
+  #[test]
+  fn parse_section_commands_correctly() {
+    let identifier = make_random_snake_case();
+
+    let section_string = format!("# {}\n  req test", identifier);
+    let token = short_parse(Rule::Section, &section_string);
+    let mut blocks = Vec::default();
+    let mut sections = HashMap::default();
+    parse_section(token, &mut blocks, &mut sections).unwrap();
+
+    let section = blocks[0][0].clone();
+
+    let expected_value = Block::Section {
+      id: identifier,
+      settings: BlockSettings {
+        requirements: vec![Requirement {
+          condition: Condition {
+            variable: Variable {
+              id: "test".to_string(),
+              kind: VariableKind::Bool,
+            },
+            operator: Operator::Equal,
+            value: "true".to_string(),
+          },
+        }],
+        ..Default::default()
+      },
+    };
+    assert_eq!(section, expected_value);
+  }
+  #[test]
+  fn parse_modifier_with_set_command_in_floats() {
+    let variable = make_random_identifier();
+    let new_value = rand::thread_rng().gen::<f32>().to_string();
+    let modifier_string = format!("mod {} ={}", variable, new_value);
+
+    let expected_value = Modifier {
+      variable,
+      added_value: format!("={}", new_value),
+    };
+
+    let token = short_parse(Rule::Modifier, &modifier_string);
+
+    let modifier = parse_modifier(token).unwrap();
+
+    assert_eq!(modifier, expected_value);
+  }
+
+  #[test]
+  fn parse_modifier_with_set_command_in_integers() {
+    let variable = make_random_identifier();
+    let new_value = rand::thread_rng().gen::<i32>().to_string();
+    let modifier_string = format!("mod {} ={}", variable, new_value);
+
+    let expected_value = Modifier {
+      variable,
+      added_value: format!("={}", new_value),
+    };
+
+    let token = short_parse(Rule::Modifier, &modifier_string);
+
+    let modifier = parse_modifier(token).unwrap();
+
+    assert_eq!(modifier, expected_value);
+  }
   #[test]
   fn parse_database_rule() {
     //File = { SOI ~ (NEWLINE | BlockBlock | Knot )* ~ EOI }
