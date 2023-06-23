@@ -715,8 +715,7 @@ fn parse_condition(token: Pair<Rule>) -> Option<Condition> {
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Identifier => {
-        condition.variable.id = inner_token.as_str().to_string();
-        //TODO KIND
+        condition.variable = inner_token.as_str().to_string();
       }
       Rule::ComparisonOperator => {
         if let Some(operator) = parse_comparison_operator(inner_token) {
@@ -797,8 +796,7 @@ mod test {
 
   use crate::parser::*;
   use cuentitos_common::{
-    Block, BlockSettings, Condition, FrequencyModifier, Modifier, Operator, Requirement, Variable,
-    VariableKind,
+    Block, BlockSettings, Condition, FrequencyModifier, Modifier, Operator, Requirement,
   };
   use pest::iterators::Pair;
   use rand::distributions::Alphanumeric;
@@ -1328,7 +1326,7 @@ mod test {
   #[test]
   fn parse_condition_correctly() {
     /*Condition = { Identifier ~ " "* ~ (ComparisonOperator ~ " "*)? ~ Value } */
-    let identifier = make_random_identifier();
+    let variable = make_random_identifier();
 
     let operator_string =
       COMPARISON_OPERATORS[rand::thread_rng().gen_range(0..COMPARISON_OPERATORS.len())];
@@ -1337,13 +1335,10 @@ mod test {
 
     let value: f32 = rand::thread_rng().gen();
 
-    let condition_string = format!("{} {} {}", identifier, operator_string, value);
+    let condition_string = format!("{} {} {}", variable, operator_string, value);
 
     let expected_value = Condition {
-      variable: Variable {
-        id: identifier,
-        ..Default::default()
-      },
+      variable,
       operator: operator,
       value: value.to_string(),
     };
@@ -1688,7 +1683,7 @@ mod test {
   fn parse_section_commands_correctly() {
     let identifier = make_random_snake_case();
 
-    let section_string = format!("# {}\n  req test", identifier);
+    let section_string = format!("# {}\n  req test\n", identifier);
     let token = short_parse(Rule::Section, &section_string);
     let mut blocks = Vec::default();
     let mut sections = HashMap::default();
@@ -1701,10 +1696,7 @@ mod test {
       settings: BlockSettings {
         requirements: vec![Requirement {
           condition: Condition {
-            variable: Variable {
-              id: "test".to_string(),
-              kind: VariableKind::Bool,
-            },
+            variable: "test".to_string(),
             operator: Operator::Equal,
             value: "true".to_string(),
           },

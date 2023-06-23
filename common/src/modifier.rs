@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+use crate::VariableId;
+
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Modifier {
-  pub variable: String,
+  pub variable: VariableId,
   pub added_value: String,
 }
