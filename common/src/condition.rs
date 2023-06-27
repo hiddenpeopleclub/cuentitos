@@ -29,10 +29,3 @@ impl Default for Condition {
     }
   }
 }
-
-impl Condition {
-  pub fn meets_condition(&self) -> bool {
-    //TODO
-    true
-  }
-}

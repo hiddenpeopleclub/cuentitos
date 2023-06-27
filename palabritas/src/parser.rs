@@ -659,7 +659,12 @@ fn parse_modifier(token: Pair<Rule>) -> Option<Modifier> {
       }
 
       Rule::Value => {
-        modifier.added_value = inner_token.as_str().to_string();
+        if inner_token.as_str().starts_with('=') {
+          modifier.is_override = true;
+          modifier.added_value = inner_token.as_str()[1..].to_string();
+        } else {
+          modifier.added_value = inner_token.as_str().to_string();
+        }
       }
       _ => {}
     }
@@ -682,7 +687,7 @@ fn parse_frequency(token: Pair<Rule>) -> Option<FrequencyModifier> {
       }
 
       Rule::Float | Rule::Integer => {
-        let value = inner_token.as_str().parse::<f32>().unwrap();
+        let value = inner_token.as_str().parse::<i32>().unwrap();
         frequency.value = value;
       }
       _ => {}
@@ -1195,6 +1200,7 @@ mod test {
     let expected_modifier = Modifier {
       variable,
       added_value,
+      is_override: false,
     };
 
     block_settings.modifiers.push(expected_modifier);
@@ -1221,7 +1227,7 @@ mod test {
     let condition_token = short_parse(Rule::Condition, &condition_string);
     let condition = parse_condition(condition_token).unwrap();
 
-    let change_value: f32 = rand::thread_rng().gen();
+    let change_value: i32 = rand::thread_rng().gen();
     let frequency_string = format!("\n freq {} {}", condition_string, change_value);
     let expected_frequency = FrequencyModifier {
       condition,
@@ -1298,6 +1304,7 @@ mod test {
     let expected_value = Modifier {
       variable,
       added_value,
+      is_override: false,
     };
 
     let token = short_parse(Rule::Modifier, &modifier_string);
@@ -1313,7 +1320,7 @@ mod test {
     let condition_token = short_parse(Rule::Condition, &condition_string);
     let condition = parse_condition(condition_token).unwrap();
 
-    let change_value: f32 = rand::thread_rng().gen();
+    let change_value: i32 = rand::thread_rng().gen();
     let frequency_string = format!("freq {} {}", condition_string, change_value);
     let expected_value = FrequencyModifier {
       condition,
@@ -1733,7 +1740,8 @@ mod test {
 
     let expected_value = Modifier {
       variable,
-      added_value: format!("={}", new_value),
+      added_value: format!("{}", new_value),
+      is_override: true,
     };
 
     let token = short_parse(Rule::Modifier, &modifier_string);
@@ -1751,7 +1759,8 @@ mod test {
 
     let expected_value = Modifier {
       variable,
-      added_value: format!("={}", new_value),
+      added_value: format!("{}", new_value),
+      is_override: true,
     };
 
     let token = short_parse(Rule::Modifier, &modifier_string);

@@ -6,4 +6,5 @@ use crate::VariableId;
 pub struct Modifier {
   pub variable: VariableId,
   pub added_value: String,
+  pub is_override: bool,
 }

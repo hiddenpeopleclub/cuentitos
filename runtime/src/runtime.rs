@@ -4,6 +4,7 @@ use std::println;
 use crate::GameState;
 use cuentitos_common::BlockId;
 use cuentitos_common::BlockSettings;
+use cuentitos_common::Condition;
 use cuentitos_common::Database;
 use cuentitos_common::SectionKey;
 use cuentitos_common::VariableKind;
@@ -80,33 +81,14 @@ impl Runtime {
       return None;
     }
 
-    self.update_stack();
+    if !self.update_stack() {
+      return None;
+    }
 
-    while !self.roll_chances_for_next_block() {
-      self.update_stack();
+    while !self.next_block_meets_requirements() {
+      self.pop_stack_and_find_next();
     }
     self.get_next_block_output()
-  }
-
-  pub fn roll_chances_for_block(&mut self, id: BlockId) -> bool {
-    match self.get_block(id).get_settings().chance {
-      cuentitos_common::Chance::None => true,
-      cuentitos_common::Chance::Frequency(_) => true,
-      cuentitos_common::Chance::Probability(probability) => {
-        if let Some(random_number) = self.random_float() {
-          random_number < probability
-        } else {
-          false
-        }
-      }
-    }
-  }
-
-  pub fn roll_chances_for_next_block(&mut self) -> bool {
-    if let Some(last_block) = self.block_stack.last() {
-      return self.roll_chances_for_block(*last_block);
-    }
-    false
   }
 
   pub fn pick_choice(&mut self, choice: usize) -> Option<Block> {
@@ -210,6 +192,104 @@ impl Runtime {
     Err("Invalid Variable".to_string())
   }
 
+  fn next_block_meets_requirements(&mut self) -> bool {
+    if let Some(id) = self.block_stack.last() {
+      self.meets_requirements(*id)
+    } else {
+      false
+    }
+  }
+
+  fn meets_requirements(&mut self, id: BlockId) -> bool {
+    for requirement in &self.get_block(id).get_settings().requirements {
+      if !self.meets_condition(&requirement.condition) {
+        return false;
+      }
+    }
+    self.roll_chances_for_block(id)
+  }
+
+  fn meets_condition(&self, condition: &Condition) -> bool {
+    if let Some(kind) = self.get_variable_kind(condition.variable.clone()) {
+      match kind {
+        VariableKind::Integer => {
+          if let Ok(current_value) = self.get_variable::<&str, i32>(&condition.variable) {
+            if let Ok(condition_value) = condition.value.parse::<i32>() {
+              match condition.operator {
+                cuentitos_common::Operator::Equal => return current_value == condition_value,
+                cuentitos_common::Operator::NotEqual => return current_value != condition_value,
+                cuentitos_common::Operator::GreaterThan => return current_value > condition_value,
+                cuentitos_common::Operator::LessThan => return current_value < condition_value,
+                cuentitos_common::Operator::GreaterOrEqualThan => {
+                  return current_value >= condition_value
+                }
+                cuentitos_common::Operator::LessOrEqualThan => {
+                  return current_value <= condition_value
+                }
+              }
+            }
+          }
+        }
+        VariableKind::Float => {
+          if let Ok(current_value) = self.get_variable::<&str, f32>(&condition.variable) {
+            if let Ok(condition_value) = condition.value.parse::<f32>() {
+              match condition.operator {
+                cuentitos_common::Operator::Equal => return current_value == condition_value,
+                cuentitos_common::Operator::NotEqual => return current_value != condition_value,
+                cuentitos_common::Operator::GreaterThan => return current_value > condition_value,
+                cuentitos_common::Operator::LessThan => return current_value < condition_value,
+                cuentitos_common::Operator::GreaterOrEqualThan => {
+                  return current_value >= condition_value
+                }
+                cuentitos_common::Operator::LessOrEqualThan => {
+                  return current_value <= condition_value
+                }
+              }
+            }
+          }
+        }
+        VariableKind::Bool => {
+          if let Ok(current_value) = self.get_variable::<&str, bool>(&condition.variable) {
+            if let Ok(condition_value) = condition.value.parse::<bool>() {
+              match condition.operator {
+                cuentitos_common::Operator::Equal => return current_value == condition_value,
+                cuentitos_common::Operator::NotEqual => return current_value != condition_value,
+                _ => {}
+              }
+            }
+          }
+        }
+        _ => {
+          if let Ok(current_value) = self.get_variable::<&str, String>(&condition.variable) {
+            if let Ok(condition_value) = condition.value.parse::<String>() {
+              match condition.operator {
+                cuentitos_common::Operator::Equal => return current_value == condition_value,
+                cuentitos_common::Operator::NotEqual => return current_value != condition_value,
+                _ => {}
+              }
+            }
+          }
+        }
+      }
+    }
+
+    false
+  }
+
+  fn roll_chances_for_block(&mut self, id: BlockId) -> bool {
+    match self.get_block(id).get_settings().chance {
+      cuentitos_common::Chance::None => true,
+      cuentitos_common::Chance::Frequency(_) => true,
+      cuentitos_common::Chance::Probability(probability) => {
+        if let Some(random_number) = self.random_float() {
+          random_number < probability
+        } else {
+          false
+        }
+      }
+    }
+  }
+
   fn is_valid_enum<T>(&self, value: &String) -> bool
   where
     T: Display + std::str::FromStr + Default,
@@ -280,6 +360,21 @@ impl Runtime {
     None
   }
 
+  fn get_frequency_with_modifier(&self, settings: &BlockSettings) -> u32 {
+    match settings.chance {
+      cuentitos_common::Chance::None => 0,
+      cuentitos_common::Chance::Frequency(frequency) => {
+        let mut final_frequency = frequency as i32;
+        for freq_mod in &settings.frequency_modifiers {
+          if self.meets_condition(&freq_mod.condition) {
+            final_frequency += freq_mod.value;
+          }
+        }
+        final_frequency as u32
+      }
+      cuentitos_common::Chance::Probability(_) => 0,
+    }
+  }
   fn apply_modifiers(&mut self) {
     let id = self.block_stack.last().unwrap();
     let block = self.get_block(*id);
@@ -290,14 +385,34 @@ impl Runtime {
             VariableKind::Integer => {
               let value = &modifier.added_value.parse::<i32>();
               match value {
-                Ok(value) => self.set_variable(&modifier.variable, *value),
+                Ok(value) => {
+                  if modifier.is_override {
+                    self.set_variable(&modifier.variable, *value)
+                  } else if let Ok(previous_value) =
+                    self.get_variable::<&str, i32>(&modifier.variable)
+                  {
+                    self.set_variable(&modifier.variable, *value + previous_value)
+                  } else {
+                    self.set_variable(&modifier.variable, *value)
+                  }
+                }
                 Err(e) => Err(e.to_string()),
               }
             }
             VariableKind::Float => {
               let value = &modifier.added_value.parse::<f32>();
               match value {
-                Ok(value) => self.set_variable(&modifier.variable, *value),
+                Ok(value) => {
+                  if modifier.is_override {
+                    self.set_variable(&modifier.variable, *value)
+                  } else if let Ok(previous_value) =
+                    self.get_variable::<&str, f32>(&modifier.variable)
+                  {
+                    self.set_variable(&modifier.variable, *value + previous_value)
+                  } else {
+                    self.set_variable(&modifier.variable, *value)
+                  }
+                }
                 Err(e) => Err(e.to_string()),
               }
             }
@@ -341,121 +456,115 @@ impl Runtime {
     }
   }
 
-  fn update_stack(&mut self) {
+  fn update_stack(&mut self) -> bool {
     if self.block_stack.is_empty() {
-      self.push_stack(0);
-      let last_block_id = *self.block_stack.last().unwrap();
-      let last_block = self.get_block(last_block_id).clone();
-      match last_block {
-        cuentitos_common::Block::Section { id: _, settings: _ } => {
-          self.update_stack();
-        }
-        cuentitos_common::Block::Subsection { id: _, settings: _ } => {
-          self.update_stack();
-        }
-        _ => {}
-      }
-      return;
+      return self.push_first_element_in_stack();
     }
 
     let last_block_id = self.block_stack.last().unwrap();
 
     if last_block_id >= &self.database.blocks.len() {
-      return;
+      return false;
     }
 
-    let last_block = self.get_block(*last_block_id);
+    let settings = self.get_block(*last_block_id).get_settings().clone();
 
-    let settings = last_block.get_settings();
     if !settings.children.is_empty() {
-      match self.get_block(settings.children[0]) {
-        cuentitos_common::Block::Text { id: _, settings: _ } => {
-          self.push_stack(settings.children[0]);
-          return;
-        }
-        cuentitos_common::Block::Choice { id: _, settings: _ } => {
-          println!("Make a choice\n");
-          return;
-        }
-        cuentitos_common::Block::Bucket { name: _, settings } => {
-          if let Some(new_block) = self.get_random_block_from_bucket(&settings.clone()) {
+      return self.push_first_child_in_stack(&settings);
+    }
+
+    if self.push_next_block() {
+      true
+    } else {
+      self.pop_stack_and_find_next()
+    }
+  }
+
+  fn push_first_child_in_stack(&mut self, settings: &BlockSettings) -> bool {
+    match self.get_block(settings.children[0]) {
+      cuentitos_common::Block::Text { id: _, settings: _ } => {
+        self.push_stack(settings.children[0]);
+        true
+      }
+      cuentitos_common::Block::Choice { id: _, settings: _ } => {
+        println!("Make a choice");
+        false
+      }
+      cuentitos_common::Block::Bucket { name: _, settings } => {
+        if let Some(new_block) = self.get_random_block_from_bucket(&settings.clone()) {
+          if let cuentitos_common::Block::Choice { id: _, settings: _ } = self.get_block(new_block)
+          {
+            println!("Make a choice");
+            false
+          } else {
             self.push_stack(new_block);
-            return;
+            true
           }
+        } else {
+          false
         }
-        _ => {}
       }
+      _ => false,
     }
-    self.pop_stack_and_find_next();
+  }
+  fn push_first_element_in_stack(&mut self) -> bool {
+    self.push_stack(0);
+    let last_block_id = *self.block_stack.last().unwrap();
+    let last_block = self.get_block(last_block_id).clone();
+    match last_block {
+      cuentitos_common::Block::Section { id: _, settings: _ } => {
+        return self.update_stack();
+      }
+      cuentitos_common::Block::Subsection { id: _, settings: _ } => {
+        return self.update_stack();
+      }
+      _ => {}
+    }
+    true
   }
 
-  fn get_random_block_from_bucket(&mut self, settings: &BlockSettings) -> Option<BlockId> {
-    let mut total_frequency = 0;
-    for child in &settings.children {
-      if let cuentitos_common::Chance::Frequency(frequency) =
-        self.get_block(*child).get_settings().chance
-      {
-        total_frequency += frequency;
-      }
-    }
-
-    //TODO remove unwrap
-    let mut random_number = self.random_with_max(total_frequency).unwrap();
-
-    for child in &settings.children {
-      if let cuentitos_common::Chance::Frequency(frequency) =
-        self.get_block(*child).get_settings().chance
-      {
-        if random_number <= frequency {
-          return Some(*child);
-        }
-        random_number -= frequency;
-      }
-    }
-    None
-  }
-
-  fn pop_stack_and_find_next(&mut self) {
+  fn push_next_block(&mut self) -> bool {
     let last_block_id = *self.block_stack.last().unwrap();
 
     let last_block = self.get_block(last_block_id).clone();
     let last_settings = last_block.get_settings();
     match &last_settings.next {
-      cuentitos_common::NextBlock::None => {}
+      cuentitos_common::NextBlock::None => false,
       cuentitos_common::NextBlock::BlockId(other_id) => {
         self.block_stack.pop();
         self.push_stack(*other_id);
-        return;
+        true
       }
       cuentitos_common::NextBlock::EndOfFile => {
         println!("Story finished\n");
         self.block_stack = vec![0];
         self.game_state = GameState::from_config(&self.database.config);
-        return;
+        true
       }
       cuentitos_common::NextBlock::Section(key) => {
         self.jump_to_section(key.section.clone(), key.subsection.clone());
         self.update_stack();
-        return;
+        true
       }
     }
-
+  }
+  fn pop_stack_and_find_next(&mut self) -> bool {
+    let last_block_id = *self.block_stack.last().unwrap();
     self.block_stack.pop();
-
     if self.block_stack.is_empty() {
       self.push_stack(last_block_id + 1);
       let last_block_id = *self.block_stack.last().unwrap();
       let last_block = self.get_block(last_block_id).clone();
       match last_block {
         cuentitos_common::Block::Section { id: _, settings: _ } => {
-          self.update_stack();
+          return self.update_stack();
         }
         cuentitos_common::Block::Subsection { id: _, settings: _ } => {
-          self.update_stack();
+          return self.update_stack();
         }
         _ => {}
       }
-      return;
+      return true;
     }
 
     let parent = &self.database.blocks[*self.block_stack.last().unwrap()].clone();
@@ -471,7 +580,7 @@ impl Runtime {
           cuentitos_common::Block::Bucket { name: _, settings } => {
             if let Some(new_block) = self.get_random_block_from_bucket(&settings.clone()) {
               self.push_stack(new_block);
-              return;
+              return true;
             }
           }
           _ => {
@@ -482,7 +591,7 @@ impl Runtime {
           continue;
         }
         self.push_stack(*child);
-        return;
+        return true;
       }
       if *child == last_block_id {
         child_found = true;
@@ -490,6 +599,32 @@ impl Runtime {
     }
 
     self.pop_stack_and_find_next()
+  }
+
+  fn get_random_block_from_bucket(&mut self, settings: &BlockSettings) -> Option<BlockId> {
+    let mut total_frequency = 0;
+    for child in &settings.children {
+      if self.meets_requirements(*child) {
+        let child_settings = self.get_block(*child).get_settings();
+        let frequency = self.get_frequency_with_modifier(child_settings);
+        total_frequency += frequency;
+      }
+    }
+
+    //TODO remove unwrap
+    let mut random_number = self.random_with_max(total_frequency).unwrap();
+
+    for child in &settings.children {
+      if self.meets_requirements(*child) {
+        let child_settings = self.get_block(*child).get_settings();
+        let frequency = self.get_frequency_with_modifier(child_settings);
+        if random_number <= frequency {
+          return Some(*child);
+        }
+        random_number -= frequency;
+      }
+    }
+    None
   }
 
   fn get_block(&self, id: BlockId) -> &cuentitos_common::Block {
@@ -525,7 +660,7 @@ impl Runtime {
       if *child < self.database.blocks.len() {
         match self.get_block(*child) {
           cuentitos_common::Block::Choice { id: _, settings: _ } => {
-            if self.roll_chances_for_block(*child) {
+            if self.meets_requirements(*child) {
               self.choices.push(*child)
             }
           }
@@ -552,7 +687,8 @@ mod test {
 
   use crate::Runtime;
   use cuentitos_common::{
-    Block, BlockSettings, Config, Database, Modifier, SectionKey, VariableKind,
+    Block, BlockSettings, Condition, Config, Database, Modifier, Requirement, SectionKey,
+    VariableKind, FrequencyModifier, Chance,
   };
 
   #[test]
@@ -998,6 +1134,7 @@ mod test {
     let modifier = Modifier {
       variable: "health".to_string(),
       added_value: "100".to_string(),
+      is_override: false,
     };
     let settings = BlockSettings {
       modifiers: vec![modifier],
@@ -1022,6 +1159,9 @@ mod test {
     runtime.apply_modifiers();
     let current_health: i32 = runtime.get_variable("health").unwrap();
     assert_eq!(current_health, expected_value + 100);
+    runtime.apply_modifiers();
+    let current_health: i32 = runtime.get_variable("health").unwrap();
+    assert_eq!(current_health, expected_value + 200);
   }
 
   #[test]
@@ -1035,6 +1175,7 @@ mod test {
     let modifier = Modifier {
       variable: "speed".to_string(),
       added_value: "1.5".to_string(),
+      is_override: false,
     };
     let settings = BlockSettings {
       modifiers: vec![modifier],
@@ -1059,6 +1200,91 @@ mod test {
     runtime.apply_modifiers();
     let current_speed: f32 = runtime.get_variable("speed").unwrap();
     assert_eq!(current_speed, expected_value + 1.5);
+    runtime.apply_modifiers();
+    let current_speed: f32 = runtime.get_variable("speed").unwrap();
+    assert_eq!(current_speed, expected_value + 3.);
+  }
+
+  #[test]
+  fn integer_override_modifiers_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Integer;
+    variables.insert("health".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let modifier = Modifier {
+      variable: "health".to_string(),
+      added_value: "100".to_string(),
+      is_override: true,
+    };
+    let settings = BlockSettings {
+      modifiers: vec![modifier],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let current_health: i32 = runtime.get_variable("health").unwrap();
+    let expected_value = variable_kind.get_default_value().parse().unwrap();
+    assert_eq!(current_health, expected_value);
+    runtime.apply_modifiers();
+    let current_health: i32 = runtime.get_variable("health").unwrap();
+    assert_eq!(current_health, 100);
+    runtime.apply_modifiers();
+    let current_health: i32 = runtime.get_variable("health").unwrap();
+    assert_eq!(current_health, 100);
+  }
+
+  #[test]
+  fn float_override_modifiers_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Float;
+    variables.insert("speed".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let modifier = Modifier {
+      variable: "speed".to_string(),
+      added_value: "1.5".to_string(),
+      is_override: true,
+    };
+    let settings = BlockSettings {
+      modifiers: vec![modifier],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let current_speed: f32 = runtime.get_variable("speed").unwrap();
+    let expected_value = variable_kind.get_default_value().parse().unwrap();
+    assert_eq!(current_speed, expected_value);
+    runtime.apply_modifiers();
+    let current_speed: f32 = runtime.get_variable("speed").unwrap();
+    assert_eq!(current_speed, 1.5);
+    runtime.apply_modifiers();
+    let current_speed: f32 = runtime.get_variable("speed").unwrap();
+    assert_eq!(current_speed, 1.5);
   }
 
   #[test]
@@ -1072,6 +1298,7 @@ mod test {
     let modifier = Modifier {
       variable: "bike".to_string(),
       added_value: "true".to_string(),
+      is_override: false,
     };
     let settings = BlockSettings {
       modifiers: vec![modifier],
@@ -1109,6 +1336,7 @@ mod test {
     let modifier = Modifier {
       variable: "message".to_string(),
       added_value: "hello".to_string(),
+      is_override: false,
     };
     let settings = BlockSettings {
       modifiers: vec![modifier],
@@ -1147,6 +1375,7 @@ mod test {
     let modifier = Modifier {
       variable: "time_of_day".to_string(),
       added_value: "Night".to_string(),
+      is_override: false,
     };
     let settings = BlockSettings {
       modifiers: vec![modifier],
@@ -1173,33 +1402,6 @@ mod test {
     runtime.apply_modifiers();
     let current_time_of_day: TimeOfDay = runtime.get_variable("time_of_day").unwrap();
     assert_eq!(current_time_of_day, TimeOfDay::Night);
-
-    #[derive(Debug, Default, PartialEq, Eq)]
-    enum TimeOfDay {
-      #[default]
-      Day,
-      Night,
-    }
-
-    #[derive(Debug, PartialEq, Eq)]
-    struct TestError;
-
-    impl FromStr for TimeOfDay {
-      type Err = TestError;
-
-      fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-          "Day" => Ok(TimeOfDay::Day),
-          "Night" => Ok(TimeOfDay::Night),
-          _ => Err(TestError),
-        }
-      }
-    }
-    impl Display for TimeOfDay {
-      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-      }
-    }
   }
 
   #[test]
@@ -1304,85 +1506,816 @@ mod test {
       .unwrap();
     let current_time_of_day: TimeOfDay = runtime.get_variable("time_of_day").unwrap();
     assert_eq!(current_time_of_day, TimeOfDay::Night);
-
-    #[derive(Debug, Default, PartialEq, Eq)]
-    enum TimeOfDay {
-      #[default]
-      Day,
-      Night,
-    }
-
-    #[derive(Debug, PartialEq, Eq)]
-    struct TestError;
-
-    impl FromStr for TimeOfDay {
-      type Err = TestError;
-
-      fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-          "Day" => Ok(TimeOfDay::Day),
-          "Night" => Ok(TimeOfDay::Night),
-          _ => Err(TestError),
-        }
-      }
-    }
-    impl Display for TimeOfDay {
-      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-      }
-    }
   }
 
   #[test]
-  fn roll_chances_for_next_block_works_correctly() {
+  fn integer_equal_requirements_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Integer;
+    variables.insert("health".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let requirement = Requirement {
+      condition: Condition {
+        variable: "health".to_string(),
+        operator: cuentitos_common::Operator::Equal,
+        value: "100".to_string(),
+      },
+    };
     let settings = BlockSettings {
+      requirements: vec![requirement],
       ..Default::default()
     };
-
-    let text_with_no_chances = Block::Text {
-      id: String::default(),
-      settings,
-    };
-
-    let settings = BlockSettings {
-      chance: cuentitos_common::Chance::Probability(1.),
-      ..Default::default()
-    };
-
-    let text_with_100_chances = Block::Text {
-      id: String::default(),
-      settings,
-    };
-
-    let settings = BlockSettings {
-      chance: cuentitos_common::Chance::Probability(0.),
-      ..Default::default()
-    };
-
-    let text_with_0_chances = Block::Text {
+    let block = Block::Text {
       id: String::default(),
       settings,
     };
 
     let database = Database {
-      blocks: vec![
-        text_with_no_chances,
-        text_with_100_chances,
-        text_with_0_chances,
-      ],
+      blocks: vec![block],
       sections: HashMap::default(),
-      config: Config::default(),
-    };
-    let mut runtime = Runtime {
-      database,
-      block_stack: vec![0],
-      ..Default::default()
+      config,
     };
 
-    assert_eq!(runtime.roll_chances_for_next_block(), true);
-    runtime.update_stack();
-    assert_eq!(runtime.roll_chances_for_next_block(), true);
-    runtime.update_stack();
-    assert_eq!(runtime.roll_chances_for_next_block(), false);
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+    runtime.set_variable("health", 100).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+    runtime.set_variable("health", 150).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+  }
+
+  #[test]
+  fn integer_greater_or_equal_requirements_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Integer;
+    variables.insert("health".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let requirement = Requirement {
+      condition: Condition {
+        variable: "health".to_string(),
+        operator: cuentitos_common::Operator::GreaterOrEqualThan,
+        value: "100".to_string(),
+      },
+    };
+    let settings = BlockSettings {
+      requirements: vec![requirement],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+    runtime.set_variable("health", 100).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+    runtime.set_variable("health", 150).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+  }
+
+  #[test]
+  fn integer_greater_requirements_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Integer;
+    variables.insert("health".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let requirement = Requirement {
+      condition: Condition {
+        variable: "health".to_string(),
+        operator: cuentitos_common::Operator::GreaterThan,
+        value: "100".to_string(),
+      },
+    };
+    let settings = BlockSettings {
+      requirements: vec![requirement],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+    runtime.set_variable("health", 100).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+    runtime.set_variable("health", 150).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+  }
+
+  #[test]
+  fn integer_less_or_equal_requirements_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Integer;
+    variables.insert("health".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let requirement = Requirement {
+      condition: Condition {
+        variable: "health".to_string(),
+        operator: cuentitos_common::Operator::LessOrEqualThan,
+        value: "100".to_string(),
+      },
+    };
+    let settings = BlockSettings {
+      requirements: vec![requirement],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+    runtime.set_variable("health", 100).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+    runtime.set_variable("health", 150).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+  }
+  #[test]
+  fn integer_less_requirements_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Integer;
+    variables.insert("health".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let requirement = Requirement {
+      condition: Condition {
+        variable: "health".to_string(),
+        operator: cuentitos_common::Operator::LessThan,
+        value: "100".to_string(),
+      },
+    };
+    let settings = BlockSettings {
+      requirements: vec![requirement],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+    runtime.set_variable("health", 100).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+    runtime.set_variable("health", 150).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+  }
+  #[test]
+  fn integer_not_equal_requirements_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Integer;
+    variables.insert("health".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let requirement = Requirement {
+      condition: Condition {
+        variable: "health".to_string(),
+        operator: cuentitos_common::Operator::NotEqual,
+        value: "100".to_string(),
+      },
+    };
+    let settings = BlockSettings {
+      requirements: vec![requirement],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+    runtime.set_variable("health", 100).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+    runtime.set_variable("health", 150).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+  }
+  #[test]
+  fn float_equal_requirements_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Float;
+    variables.insert("speed".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let requirement = Requirement {
+      condition: Condition {
+        variable: "speed".to_string(),
+        operator: cuentitos_common::Operator::Equal,
+        value: "1.5".to_string(),
+      },
+    };
+    let settings = BlockSettings {
+      requirements: vec![requirement],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+    runtime.set_variable("speed", 1.5 as f32).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+    runtime.set_variable("speed", 2. as f32).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+  }
+
+  #[test]
+  fn float_greater_or_equal_requirements_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Float;
+    variables.insert("speed".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let requirement = Requirement {
+      condition: Condition {
+        variable: "speed".to_string(),
+        operator: cuentitos_common::Operator::GreaterOrEqualThan,
+        value: "1.5".to_string(),
+      },
+    };
+    let settings = BlockSettings {
+      requirements: vec![requirement],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+    runtime.set_variable("speed", 1.5 as f32).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+    runtime.set_variable("speed", 2. as f32).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+  }
+
+  #[test]
+  fn float_greater_requirements_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Float;
+    variables.insert("speed".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let requirement = Requirement {
+      condition: Condition {
+        variable: "speed".to_string(),
+        operator: cuentitos_common::Operator::GreaterThan,
+        value: "1.5".to_string(),
+      },
+    };
+    let settings = BlockSettings {
+      requirements: vec![requirement],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+    runtime.set_variable("speed", 1.5 as f32).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+    runtime.set_variable("speed", 2. as f32).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+  }
+
+  #[test]
+  fn float_less_or_equal_requirements_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Float;
+    variables.insert("speed".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let requirement = Requirement {
+      condition: Condition {
+        variable: "speed".to_string(),
+        operator: cuentitos_common::Operator::LessOrEqualThan,
+        value: "1.5".to_string(),
+      },
+    };
+    let settings = BlockSettings {
+      requirements: vec![requirement],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+    runtime.set_variable("speed", 1.5 as f32).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+    runtime.set_variable("speed", 2. as f32).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+  }
+  #[test]
+  fn float_less_requirements_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Float;
+    variables.insert("speed".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let requirement = Requirement {
+      condition: Condition {
+        variable: "speed".to_string(),
+        operator: cuentitos_common::Operator::LessThan,
+        value: "1.5".to_string(),
+      },
+    };
+    let settings = BlockSettings {
+      requirements: vec![requirement],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+    runtime.set_variable("speed", 1.5 as f32).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+    runtime.set_variable("speed", 2. as f32).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+  }
+  #[test]
+  fn float_not_equal_requirements_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Float;
+    variables.insert("speed".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let requirement = Requirement {
+      condition: Condition {
+        variable: "speed".to_string(),
+        operator: cuentitos_common::Operator::NotEqual,
+        value: "1.5".to_string(),
+      },
+    };
+    let settings = BlockSettings {
+      requirements: vec![requirement],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+    runtime.set_variable("speed", 1.5 as f32).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+    runtime.set_variable("speed", 2. as f32).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+  }
+
+  #[test]
+  fn bool_equal_requirements_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Bool;
+    variables.insert("bike".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let requirement = Requirement {
+      condition: Condition {
+        variable: "bike".to_string(),
+        operator: cuentitos_common::Operator::Equal,
+        value: "true".to_string(),
+      },
+    };
+    let settings = BlockSettings {
+      requirements: vec![requirement],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+    runtime.set_variable("bike", true).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+  }
+
+  #[test]
+  fn bool_not_equal_requirements_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Bool;
+    variables.insert("bike".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let requirement = Requirement {
+      condition: Condition {
+        variable: "bike".to_string(),
+        operator: cuentitos_common::Operator::NotEqual,
+        value: "true".to_string(),
+      },
+    };
+    let settings = BlockSettings {
+      requirements: vec![requirement],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+    runtime.set_variable("bike", true).unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+  }
+
+  #[test]
+  fn string_equal_requirements_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::String;
+    variables.insert("message".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let requirement = Requirement {
+      condition: Condition {
+        variable: "message".to_string(),
+        operator: cuentitos_common::Operator::Equal,
+        value: "hello".to_string(),
+      },
+    };
+    let settings = BlockSettings {
+      requirements: vec![requirement],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+    runtime
+      .set_variable("message", "hello".to_string())
+      .unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+  }
+
+  #[test]
+  fn string_not_equal_requirements_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::String;
+    variables.insert("message".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let requirement = Requirement {
+      condition: Condition {
+        variable: "message".to_string(),
+        operator: cuentitos_common::Operator::NotEqual,
+        value: "hello".to_string(),
+      },
+    };
+    let settings = BlockSettings {
+      requirements: vec![requirement],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+    runtime
+      .set_variable("message", "hello".to_string())
+      .unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+  }
+
+  #[test]
+  fn enum_equal_requirements_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Enum(vec!["Day".to_string(), "Night".to_string()]);
+    variables.insert("time_of_day".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let requirement = Requirement {
+      condition: Condition {
+        variable: "time_of_day".to_string(),
+        operator: cuentitos_common::Operator::Equal,
+        value: "Night".to_string(),
+      },
+    };
+    let settings = BlockSettings {
+      requirements: vec![requirement],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+    runtime
+      .set_variable("time_of_day", TimeOfDay::Night)
+      .unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+  }
+
+  #[test]
+  fn enum_not_equal_requirements_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Enum(vec!["Day".to_string(), "Night".to_string()]);
+    variables.insert("time_of_day".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let requirement = Requirement {
+      condition: Condition {
+        variable: "time_of_day".to_string(),
+        operator: cuentitos_common::Operator::NotEqual,
+        value: "Night".to_string(),
+      },
+    };
+    let settings = BlockSettings {
+      requirements: vec![requirement],
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(meets_requirement);
+    runtime
+      .set_variable("time_of_day", TimeOfDay::Night)
+      .unwrap();
+    let meets_requirement = runtime.meets_requirements(0);
+    assert!(!meets_requirement);
+  }
+
+  #[test]
+  fn frequency_modifiers_work() {
+
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Bool;
+    variables.insert("bike".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let freq_mod = FrequencyModifier {
+      condition: Condition {
+        variable: "bike".to_string(),
+        operator: cuentitos_common::Operator::Equal,
+        value: "true".to_string(),
+      },
+      value: -100
+    };
+    let settings = BlockSettings {
+      frequency_modifiers: vec![freq_mod],
+      chance: Chance::Frequency(100),
+      ..Default::default()
+    };
+    let block = Block::Text {
+      id: String::default(),
+      settings: settings.clone(),
+    };
+
+    let database = Database {
+      blocks: vec![block],
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack = vec![0];
+    let frequency_with_modifier = runtime.get_frequency_with_modifier(&settings);
+    assert_eq!(frequency_with_modifier, 100);
+    runtime
+      .set_variable("bike", true)
+      .unwrap();
+    let frequency_with_modifier = runtime.get_frequency_with_modifier(&settings);
+    assert_eq!(frequency_with_modifier, 0);
+  }
+  #[derive(Debug, Default, PartialEq, Eq)]
+  enum TimeOfDay {
+    #[default]
+    Day,
+    Night,
+  }
+
+  #[derive(Debug, PartialEq, Eq)]
+  struct TestError;
+
+  impl FromStr for TimeOfDay {
+    type Err = TestError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+      match s {
+        "Day" => Ok(TimeOfDay::Day),
+        "Night" => Ok(TimeOfDay::Night),
+        _ => Err(TestError),
+      }
+    }
+  }
+  impl Display for TimeOfDay {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+      write!(f, "{:?}", self)
+    }
   }
 }
