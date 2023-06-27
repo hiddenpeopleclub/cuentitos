@@ -1,4 +1,4 @@
-ReservedKeywords = { "req" | "freq" | "mod" | "->" | "`" | "*" | "#" | "##" | "//" }
+ReservedKeywords = { "req" | "freq" | "mod" | "unique" | "->" | "`" | "*" | "#" | "##" | "//" }
 Char = { (!NewLine ~ ANY)+ }
 Integer = { "-"? ~ ASCII_DIGIT+ }
 Float = { Integer ~ "." ~ ASCII_DIGIT* }
@@ -17,8 +17,9 @@ Frequency = { "freq" ~ " "+ ~ Condition ~ " "+ ~ ( Float | Integer ) }
 Modifier = { "mod" ~ " "+ ~ Identifier ~ " "+ ~ Value }
 Divert = { "->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)? }
 Function = {"`" ~ SnakeCase ~ (" " ~ Value)* ~ "`"}
+Unique = {"unique"}
 
-Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert | Function) } 
+Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert | Function | Unique) } 
 
 Chance = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
 

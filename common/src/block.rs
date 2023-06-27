@@ -27,6 +27,7 @@ pub struct BlockSettings {
   pub frequency_modifiers: Vec<FrequencyModifier>,
   pub requirements: Vec<Requirement>,
   pub modifiers: Vec<Modifier>,
+  pub unique: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq, Clone)]

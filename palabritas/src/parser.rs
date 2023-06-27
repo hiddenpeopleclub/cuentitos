@@ -599,20 +599,16 @@ fn add_command_to_settings(token: Pair<Rule>, settings: &mut BlockSettings) {
           settings.next = divert;
         }
       }
+      Rule::Unique => {
+        settings.unique = true;
+      }
       _ => {}
     }
   }
 }
 fn add_command_to_block(token: Pair<Rule>, block: &mut Block) {
-  match block {
-    Block::Text { id: _, settings } => {
-      add_command_to_settings(token, settings);
-    }
-    Block::Choice { id: _, settings } => {
-      add_command_to_settings(token, settings);
-    }
-    _ => {}
-  }
+  let settings = block.get_settings_mut();
+  add_command_to_settings(token, settings);
 }
 
 fn parse_divert(token: Pair<Rule>) -> Option<NextBlock> {
@@ -1208,18 +1204,23 @@ mod test {
     let token = short_parse(Rule::Command, &modifier_string);
     add_command_to_block(token, &mut block);
 
-    /*  //Divert
-    let knot = make_random_identifier();
-    let divert_string = format!("\n -> {}", knot);
+    //Divert
+    let section = make_random_identifier();
+    let divert_string = format!("\n -> {}", section);
 
-    let expected_divert = Divert {
-      knot: knot.clone(),
-      stitch: None,
-    };
-    expected_blocks.divert.push(expected_divert);
+    block_settings.next = NextBlock::Section(SectionKey {
+      section,
+      subsection: None,
+    });
 
     let token = short_parse(Rule::Command, &divert_string);
-    add_command_to_blocks(token, &mut blocks); */
+    add_command_to_block(token, &mut block);
+
+    //Unique
+
+    block_settings.unique = true;
+    let token = short_parse(Rule::Command, "\n unique");
+    add_command_to_block(token, &mut block);
 
     //Frequency
 
@@ -1774,6 +1775,12 @@ mod test {
     //File = { SOI ~ (NEWLINE | BlockBlock | Knot )* ~ EOI }
     let unparsed_file = include_str!("../../examples/story-example.cuentitos");
     assert_parse_rule(Rule::Database, &unparsed_file);
+  }
+
+  #[test]
+  fn parse_unique_rule() {
+    //Unique = {"unique"}
+    assert_parse_rule(Rule::Unique, "unique");
   }
 
   fn assert_parse_rule(rule: Rule, input: &str) {

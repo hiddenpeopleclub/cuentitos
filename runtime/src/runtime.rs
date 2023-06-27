@@ -46,7 +46,7 @@ impl Runtime {
     self.rng = Some(Pcg32::seed_from_u64(seed));
   }
 
-  pub fn jump_to_section(&mut self, section: String, subsection: Option<String>) {
+  pub fn jump_to_section(&mut self, section: String, subsection: Option<String>) -> bool {
     let current_section = self.game_state.current_section.clone();
     if subsection.is_none() {
       if let Some(current_section) = current_section {
@@ -56,8 +56,7 @@ impl Runtime {
         };
         if let Some(block_id) = self.database.sections.get(&key) {
           self.block_stack.clear();
-          self.push_stack(*block_id);
-          return;
+          return self.push_stack(*block_id);
         }
       }
     }
@@ -70,9 +69,10 @@ impl Runtime {
       self.block_stack.clear();
       self.game_state.current_section = Some(key.section);
       self.game_state.current_subsection = None;
-      self.push_stack(*block_id);
+      self.push_stack(*block_id)
     } else {
       println!("Can't find section: {:?}", key);
+      false
     }
   }
 
@@ -440,25 +440,37 @@ impl Runtime {
     }
   }
 
-  fn push_stack(&mut self, id: BlockId) {
+  fn push_stack(&mut self, id: BlockId) -> bool {
     self.block_stack.push(id);
     self.apply_modifiers();
+
+    if self.get_block(id).get_settings().unique {
+      if self.game_state.uniques_played.contains(&id) {
+        return false;
+      } else {
+        self.game_state.uniques_played.push(id);
+      }
+    }
 
     match self.get_block(id) {
       cuentitos_common::Block::Section { id, settings: _ } => {
         self.game_state.current_section = Some(id.clone());
         self.game_state.current_subsection = None;
+        return self.update_stack();
       }
       cuentitos_common::Block::Subsection { id, settings: _ } => {
         self.game_state.current_subsection = Some(id.clone());
+        return self.update_stack();
       }
       _ => {}
     }
+
+    true
   }
 
   fn update_stack(&mut self) -> bool {
     if self.block_stack.is_empty() {
-      return self.push_first_element_in_stack();
+      return self.push_stack(0);
     }
 
     let last_block_id = self.block_stack.last().unwrap();
@@ -482,10 +494,7 @@ impl Runtime {
 
   fn push_first_child_in_stack(&mut self, settings: &BlockSettings) -> bool {
     match self.get_block(settings.children[0]) {
-      cuentitos_common::Block::Text { id: _, settings: _ } => {
-        self.push_stack(settings.children[0]);
-        true
-      }
+      cuentitos_common::Block::Text { id: _, settings: _ } => self.push_stack(settings.children[0]),
       cuentitos_common::Block::Choice { id: _, settings: _ } => {
         println!("Make a choice");
         false
@@ -497,8 +506,7 @@ impl Runtime {
             println!("Make a choice");
             false
           } else {
-            self.push_stack(new_block);
-            true
+            self.push_stack(new_block)
           }
         } else {
           false
@@ -506,21 +514,6 @@ impl Runtime {
       }
       _ => false,
     }
-  }
-  fn push_first_element_in_stack(&mut self) -> bool {
-    self.push_stack(0);
-    let last_block_id = *self.block_stack.last().unwrap();
-    let last_block = self.get_block(last_block_id).clone();
-    match last_block {
-      cuentitos_common::Block::Section { id: _, settings: _ } => {
-        return self.update_stack();
-      }
-      cuentitos_common::Block::Subsection { id: _, settings: _ } => {
-        return self.update_stack();
-      }
-      _ => {}
-    }
-    true
   }
 
   fn push_next_block(&mut self) -> bool {
@@ -531,9 +524,8 @@ impl Runtime {
     match &last_settings.next {
       cuentitos_common::NextBlock::None => false,
       cuentitos_common::NextBlock::BlockId(other_id) => {
-        self.block_stack.pop();
-        self.push_stack(*other_id);
-        true
+        self.block_stack.clear();
+        self.push_stack(*other_id)
       }
       cuentitos_common::NextBlock::EndOfFile => {
         println!("Story finished\n");
@@ -542,59 +534,39 @@ impl Runtime {
         true
       }
       cuentitos_common::NextBlock::Section(key) => {
-        self.jump_to_section(key.section.clone(), key.subsection.clone());
-        self.update_stack();
-        true
+        self.jump_to_section(key.section.clone(), key.subsection.clone())
       }
     }
   }
+
   fn pop_stack_and_find_next(&mut self) -> bool {
     let last_block_id = *self.block_stack.last().unwrap();
     self.block_stack.pop();
     if self.block_stack.is_empty() {
-      self.push_stack(last_block_id + 1);
-      let last_block_id = *self.block_stack.last().unwrap();
-      let last_block = self.get_block(last_block_id).clone();
-      match last_block {
-        cuentitos_common::Block::Section { id: _, settings: _ } => {
-          return self.update_stack();
-        }
-        cuentitos_common::Block::Subsection { id: _, settings: _ } => {
-          return self.update_stack();
-        }
-        _ => {}
-      }
-      return true;
+      return self.push_stack(last_block_id + 1);
     }
 
     let parent = &self.database.blocks[*self.block_stack.last().unwrap()].clone();
     let parent_settings = parent.get_settings();
-    let mut child_found = false;
-    for child in &parent_settings.children {
-      if child_found {
-        match self.get_block(*child).clone() {
-          cuentitos_common::Block::Text { id: _, settings: _ } => self.push_stack(*child),
-          cuentitos_common::Block::Choice { id: _, settings: _ } => {
-            continue;
+    let mut previous_block_found = false;
+    for sibling in &parent_settings.children {
+      if previous_block_found {
+        match self.get_block(*sibling).clone() {
+          cuentitos_common::Block::Text { id: _, settings: _ } => {
+            return self.push_stack(*sibling);
           }
           cuentitos_common::Block::Bucket { name: _, settings } => {
             if let Some(new_block) = self.get_random_block_from_bucket(&settings.clone()) {
-              self.push_stack(new_block);
-              return true;
+              return self.push_stack(new_block);
             }
           }
           _ => {
             continue;
           }
         }
-        if let cuentitos_common::Block::Choice { id: _, settings: _ } = self.get_block(*child) {
-          continue;
-        }
-        self.push_stack(*child);
-        return true;
       }
-      if *child == last_block_id {
-        child_found = true;
+      if *sibling == last_block_id {
+        previous_block_found = true;
       }
     }
 
@@ -688,7 +660,7 @@ mod test {
   use crate::Runtime;
   use cuentitos_common::{
     Block, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Modifier,
-    Requirement, SectionKey, VariableKind,
+    NextBlock, Requirement, SectionKey, VariableKind,
   };
 
   #[test]
@@ -764,10 +736,8 @@ mod test {
       ..Default::default()
     };
     runtime.jump_to_section("section_2".to_string(), Some("subsection".to_string()));
-    runtime.update_stack();
     assert_eq!(runtime.block_stack, vec![2, 4]);
     runtime.jump_to_section("section_1".to_string(), None);
-    runtime.update_stack();
     assert_eq!(runtime.block_stack, vec![0, 3]);
   }
 
@@ -2288,6 +2258,61 @@ mod test {
     runtime.set_variable("bike", true).unwrap();
     let frequency_with_modifier = runtime.get_frequency_with_modifier(&settings);
     assert_eq!(frequency_with_modifier, 0);
+  }
+
+  #[test]
+  fn unique_only_plays_once() {
+    let section = Block::Section {
+      id: "section".to_string(),
+      settings: BlockSettings {
+        children: vec![1, 2],
+        ..Default::default()
+      },
+    };
+
+    let mut sections: HashMap<SectionKey, usize> = HashMap::default();
+    sections.insert(
+      SectionKey {
+        section: "section".to_string(),
+        subsection: None,
+      },
+      0,
+    );
+
+    let settings = BlockSettings {
+      unique: true,
+      ..Default::default()
+    };
+    let text_1 = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let settings = BlockSettings {
+      next: NextBlock::Section(SectionKey {
+        section: "section".to_string(),
+        subsection: None,
+      }),
+      ..Default::default()
+    };
+    let text_2 = Block::Text {
+      id: String::default(),
+      settings,
+    };
+
+    let database = Database {
+      blocks: vec![section, text_1, text_2],
+      sections,
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime::new(database);
+    runtime.update_stack();
+    assert_eq!(1, *runtime.block_stack.last().unwrap());
+    runtime.update_stack();
+    assert_eq!(2, *runtime.block_stack.last().unwrap());
+    runtime.update_stack();
+    assert_eq!(2, *runtime.block_stack.last().unwrap());
   }
   #[derive(Debug, Default, PartialEq, Eq)]
   enum TimeOfDay {

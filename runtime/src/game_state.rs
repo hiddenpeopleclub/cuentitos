@@ -1,4 +1,4 @@
-use cuentitos_common::{Config, VariableId};
+use cuentitos_common::{BlockId, Config, VariableId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -7,6 +7,7 @@ pub struct GameState {
   pub variables: HashMap<VariableId, String>,
   pub current_section: Option<String>,
   pub current_subsection: Option<String>,
+  pub uniques_played: Vec<BlockId>,
 }
 
 impl GameState {
