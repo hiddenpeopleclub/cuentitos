@@ -687,8 +687,8 @@ mod test {
 
   use crate::Runtime;
   use cuentitos_common::{
-    Block, BlockSettings, Condition, Config, Database, Modifier, Requirement, SectionKey,
-    VariableKind, FrequencyModifier, Chance,
+    Block, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Modifier,
+    Requirement, SectionKey, VariableKind,
   };
 
   #[test]
@@ -2251,7 +2251,6 @@ mod test {
 
   #[test]
   fn frequency_modifiers_work() {
-
     let mut variables = HashMap::default();
 
     let variable_kind = VariableKind::Bool;
@@ -2264,7 +2263,7 @@ mod test {
         operator: cuentitos_common::Operator::Equal,
         value: "true".to_string(),
       },
-      value: -100
+      value: -100,
     };
     let settings = BlockSettings {
       frequency_modifiers: vec![freq_mod],
@@ -2286,9 +2285,7 @@ mod test {
     runtime.block_stack = vec![0];
     let frequency_with_modifier = runtime.get_frequency_with_modifier(&settings);
     assert_eq!(frequency_with_modifier, 100);
-    runtime
-      .set_variable("bike", true)
-      .unwrap();
+    runtime.set_variable("bike", true).unwrap();
     let frequency_with_modifier = runtime.get_frequency_with_modifier(&settings);
     assert_eq!(frequency_with_modifier, 0);
   }
