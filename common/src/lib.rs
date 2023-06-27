@@ -35,3 +35,6 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 mod i18n;
 pub use i18n::*;
+
+mod function;
+pub use function::*;

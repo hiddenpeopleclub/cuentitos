@@ -6,6 +6,7 @@ use cuentitos_common::BlockId;
 use cuentitos_common::BlockSettings;
 use cuentitos_common::Condition;
 use cuentitos_common::Database;
+use cuentitos_common::Function;
 use cuentitos_common::SectionKey;
 use cuentitos_common::VariableKind;
 use rand::Rng;
@@ -17,6 +18,8 @@ use serde::{Deserialize, Serialize};
 pub struct Block {
   pub text: String,
   pub choices: Vec<String>,
+  pub tags: Vec<String>,
+  pub functions: Vec<Function>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -349,11 +352,16 @@ impl Runtime {
   fn get_next_block_output(&mut self) -> Option<Block> {
     let id = self.block_stack.last().unwrap();
     let block = self.get_block(*id);
+    let settings = block.get_settings();
+    let tags = settings.tags.clone();
+    let functions = settings.functions.clone();
     if let cuentitos_common::Block::Text { id, settings: _ } = block {
       println!("USE I18n!!!");
       return Some(Block {
         text: id.clone(),
         choices: self.get_choices_strings(),
+        tags,
+        functions,
       });
     }
 
@@ -659,8 +667,8 @@ mod test {
 
   use crate::Runtime;
   use cuentitos_common::{
-    Block, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Modifier,
-    NextBlock, Requirement, SectionKey, VariableKind,
+    Block, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Function,
+    Modifier, NextBlock, Requirement, SectionKey, VariableKind,
   };
 
   #[test]
@@ -956,6 +964,7 @@ mod test {
     let expected_output = Some(crate::Block {
       text: "parent".to_string(),
       choices: vec!["1".to_string(), "2".to_string()],
+      ..Default::default()
     });
 
     assert_eq!(output, expected_output);
@@ -998,6 +1007,7 @@ mod test {
     let expected_output = Some(crate::Block {
       text: "parent".to_string(),
       choices: vec!["1".to_string(), "2".to_string()],
+      ..Default::default()
     });
 
     assert_eq!(output, expected_output);
@@ -2314,6 +2324,51 @@ mod test {
     runtime.update_stack();
     assert_eq!(2, *runtime.block_stack.last().unwrap());
   }
+
+  #[test]
+  fn tags_work() {
+    let tags = vec!["a_tag".to_string()];
+    let text = Block::Text {
+      id: String::default(),
+      settings: BlockSettings {
+        tags: tags.clone(),
+        ..Default::default()
+      },
+    };
+
+    let database = Database {
+      blocks: vec![text],
+      ..Default::default()
+    };
+    let mut runtime = Runtime::new(database);
+    let output_tags = runtime.next_block().unwrap().tags;
+    assert_eq!(tags, output_tags);
+  }
+
+  #[test]
+  fn functions_work() {
+    let functions = vec![Function {
+      name: "a_function".to_string(),
+      parameters: vec!["parameter".to_string()],
+    }];
+
+    let text = Block::Text {
+      id: String::default(),
+      settings: BlockSettings {
+        functions: functions.clone(),
+        ..Default::default()
+      },
+    };
+
+    let database = Database {
+      blocks: vec![text],
+      ..Default::default()
+    };
+    let mut runtime = Runtime::new(database);
+    let output_functions = runtime.next_block().unwrap().functions;
+    assert_eq!(functions, output_functions);
+  }
+
   #[derive(Debug, Default, PartialEq, Eq)]
   enum TimeOfDay {
     #[default]

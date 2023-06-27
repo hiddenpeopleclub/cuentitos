@@ -1,4 +1,4 @@
-use crate::{FrequencyModifier, I18nId, Modifier, Requirement};
+use crate::{FrequencyModifier, Function, I18nId, Modifier, Requirement};
 use serde::{Deserialize, Serialize};
 
 pub type BlockId = usize;
@@ -28,6 +28,8 @@ pub struct BlockSettings {
   pub requirements: Vec<Requirement>,
   pub modifiers: Vec<Modifier>,
   pub unique: bool,
+  pub tags: Vec<String>,
+  pub functions: Vec<Function>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq, Clone)]

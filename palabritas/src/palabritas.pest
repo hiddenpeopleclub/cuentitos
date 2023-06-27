@@ -16,10 +16,11 @@ Requirement = { "req" ~ " "+ ~ Condition }
 Frequency = { "freq" ~ " "+ ~ Condition ~ " "+ ~ ( Float | Integer ) }
 Modifier = { "mod" ~ " "+ ~ Identifier ~ " "+ ~ Value }
 Divert = { "->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)? }
-Function = {"`" ~ SnakeCase ~ (" " ~ Value)* ~ "`"}
+Function = {"`" ~ " "* ~ Identifier ~ (" " ~ Value)* ~ " "* ~ "`"}
+Tag = {"tag" ~ " "+ ~ Identifier}
 Unique = {"unique"}
 
-Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert | Function | Unique) } 
+Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert | Function | Unique | Tag) } 
 
 Chance = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
 
