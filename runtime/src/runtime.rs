@@ -7,6 +7,7 @@ use cuentitos_common::BlockSettings;
 use cuentitos_common::Condition;
 use cuentitos_common::Database;
 use cuentitos_common::Function;
+use cuentitos_common::LanguageId;
 use cuentitos_common::SectionKey;
 use cuentitos_common::VariableKind;
 use rand::Rng;
@@ -32,15 +33,31 @@ pub struct Runtime {
   #[serde(skip)]
   rng: Option<Pcg32>,
   seed: u64,
+  pub current_locale: LanguageId,
 }
 
 impl Runtime {
   pub fn new(database: Database) -> Runtime {
     let game_state: GameState = GameState::from_config(&database.config);
+    let current_locale= database.i18n.default_locale.clone();
     Runtime {
       database,
       game_state,
+      current_locale,
       ..Default::default()
+    }
+  }
+
+  pub fn set_locale<T>(&mut self, locale: T) -> Result<(), String>
+  where
+    T: AsRef<str>,
+  {
+    let locale = locale.as_ref().to_string();
+    if self.database.i18n.has_locale(&locale) {
+      self.current_locale = locale;
+      return Ok(());
+    } else {
+      return Err("Missing Locale".to_string());
     }
   }
 
@@ -356,9 +373,8 @@ impl Runtime {
     let tags = settings.tags.clone();
     let functions = settings.functions.clone();
     if let cuentitos_common::Block::Text { id, settings: _ } = block {
-      println!("USE I18n!!!");
       return Some(Block {
-        text: id.clone(),
+        text: self.database.i18n.get_translation(&self.current_locale, id),
         choices: self.get_choices_strings(),
         tags,
         functions,
@@ -614,10 +630,9 @@ impl Runtime {
   fn get_choices_strings(&mut self) -> Vec<String> {
     self.update_choices();
     let mut choices_strings = Vec::default();
-    println!("USE I18n!!!");
     for choice in &self.choices {
       if let cuentitos_common::Block::Choice { id, settings: _ } = self.get_block(*choice) {
-        choices_strings.push(id.clone());
+        choices_strings.push(self.database.i18n.get_translation(&self.current_locale, id),);
       }
     }
 
@@ -668,16 +683,12 @@ mod test {
   use crate::Runtime;
   use cuentitos_common::{
     Block, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Function,
-    Modifier, NextBlock, Requirement, SectionKey, VariableKind,
+    Modifier, NextBlock, Requirement, SectionKey, VariableKind, I18n, LanguageId, LanguageDb,
   };
 
   #[test]
   fn new_runtime_works_correctly() {
-    let database = Database {
-      blocks: vec![Block::default()],
-      sections: HashMap::default(),
-      config: Config::default(),
-    };
+    let database = Database::default();
     let runtime = Runtime::new(database.clone());
     assert_eq!(runtime.database, database);
   }
@@ -736,7 +747,7 @@ mod test {
     let database = Database {
       blocks: vec![section_1, section_2, subsection, text_1, text_2],
       sections,
-      config: Config::default(),
+      ..Default::default()
     };
 
     let mut runtime = Runtime {
@@ -778,8 +789,7 @@ mod test {
 
     let database = Database {
       blocks: vec![parent.clone(), choice_1, choice_2, child_text],
-      sections: HashMap::default(),
-      config: Config::default(),
+      ..Default::default()
     };
 
     let mut runtime = Runtime {
@@ -819,14 +829,29 @@ mod test {
       settings: BlockSettings::default(),
     };
 
+    let mut en: LanguageDb = HashMap::default();
+    en.insert("a".to_string(), "a".to_string());
+    en.insert("b".to_string(), "b".to_string());
+    en.insert("c".to_string(), "c".to_string());
+    let mut strings: HashMap<LanguageId, LanguageDb> = HashMap::default();
+    strings.insert("en".to_string(), en);
+
+    let i18n = I18n{
+        locales: vec!["en".to_string()],
+        default_locale: "en".to_string(),
+        strings,
+    };
+
     let database = Database {
       blocks: vec![parent.clone(), choice_1, choice_2, child_text],
-      sections: HashMap::default(),
-      config: Config::default(),
+      i18n,
+     ..Default::default()
     };
+
     let mut runtime = Runtime {
       database,
       block_stack: vec![0],
+      current_locale: "en".to_string(),
       ..Default::default()
     };
     let choices = runtime.get_choices_strings();
@@ -856,8 +881,7 @@ mod test {
 
     let database = Database {
       blocks: vec![parent.clone(), child_1.clone(), child_2.clone()],
-      sections: HashMap::default(),
-      config: Config::default(),
+     ..Default::default()
     };
 
     let mut runtime = Runtime {
@@ -909,8 +933,7 @@ mod test {
         child_2.clone(),
         child_3.clone(),
       ],
-      sections: HashMap::default(),
-      config: Config::default(),
+     ..Default::default()
     };
 
     let mut runtime = Runtime {
@@ -948,15 +971,29 @@ mod test {
       settings: BlockSettings::default(),
     };
 
+    let mut en: LanguageDb = HashMap::default();
+    en.insert("1".to_string(), "1".to_string());
+    en.insert("2".to_string(), "2".to_string());
+    en.insert("parent".to_string(), "parent".to_string());
+    let mut strings: HashMap<LanguageId, LanguageDb> = HashMap::default();
+    strings.insert("en".to_string(), en);
+
+    let i18n = I18n{
+        locales: vec!["en".to_string()],
+        default_locale: "en".to_string(),
+        strings,
+    };
+
     let database = Database {
       blocks: vec![parent.clone(), choice_1.clone(), choice_2],
-      sections: HashMap::default(),
-      config: Config::default(),
+      i18n,
+     ..Default::default()
     };
 
     let mut runtime = Runtime {
       database,
       block_stack: vec![0],
+      current_locale: "en".to_string(),
       ..Default::default()
     };
 
@@ -992,14 +1029,28 @@ mod test {
       settings: BlockSettings::default(),
     };
 
+    let mut en: LanguageDb = HashMap::default();
+    en.insert("1".to_string(), "1".to_string());
+    en.insert("2".to_string(), "2".to_string());
+    en.insert("parent".to_string(), "parent".to_string());
+    let mut strings: HashMap<LanguageId, LanguageDb> = HashMap::default();
+    strings.insert("en".to_string(), en);
+
+    let i18n = I18n{
+        locales: vec!["en".to_string()],
+        default_locale: "en".to_string(),
+        strings,
+    };
+
     let database = Database {
       blocks: vec![parent.clone(), choice_1.clone(), choice_2.clone()],
-      sections: HashMap::default(),
-      config: Config::default(),
+      i18n,
+     ..Default::default()
     };
 
     let mut runtime = Runtime {
       database,
+      current_locale: "en".to_string(),
       ..Default::default()
     };
 
@@ -1054,8 +1105,7 @@ mod test {
 
     let database = Database {
       blocks: vec![bucket, text_1, text_2],
-      sections: HashMap::default(),
-      config: Config::default(),
+     ..Default::default()
     };
     let mut runtime = Runtime {
       database,
@@ -1084,12 +1134,13 @@ mod test {
 
     let variable_kind = VariableKind::Integer;
     variables.insert("health".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let database = Database {
       blocks: Vec::default(),
       sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1109,7 +1160,7 @@ mod test {
 
     let variable_kind = VariableKind::Integer;
     variables.insert("health".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default()};
 
     let modifier = Modifier {
       variable: "health".to_string(),
@@ -1127,8 +1178,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1150,7 +1201,7 @@ mod test {
 
     let variable_kind = VariableKind::Float;
     variables.insert("speed".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default()};
 
     let modifier = Modifier {
       variable: "speed".to_string(),
@@ -1168,8 +1219,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1191,7 +1242,7 @@ mod test {
 
     let variable_kind = VariableKind::Integer;
     variables.insert("health".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let modifier = Modifier {
       variable: "health".to_string(),
@@ -1209,8 +1260,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1232,7 +1283,7 @@ mod test {
 
     let variable_kind = VariableKind::Float;
     variables.insert("speed".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let modifier = Modifier {
       variable: "speed".to_string(),
@@ -1250,8 +1301,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1273,7 +1324,7 @@ mod test {
 
     let variable_kind = VariableKind::Bool;
     variables.insert("bike".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let modifier = Modifier {
       variable: "bike".to_string(),
@@ -1291,8 +1342,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1311,7 +1362,7 @@ mod test {
 
     let variable_kind = VariableKind::String;
     variables.insert("message".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let modifier = Modifier {
       variable: "message".to_string(),
@@ -1329,8 +1380,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1350,7 +1401,7 @@ mod test {
 
     let variable_kind = VariableKind::Enum(vec!["Day".to_string(), "Night".to_string()]);
     variables.insert("time_of_day".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let modifier = Modifier {
       variable: "time_of_day".to_string(),
@@ -1368,8 +1419,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1390,12 +1441,12 @@ mod test {
 
     let variable_kind = VariableKind::Float;
     variables.insert("speed".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let database = Database {
       blocks: Vec::default(),
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1415,12 +1466,12 @@ mod test {
 
     let variable_kind = VariableKind::Bool;
     variables.insert("bike".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let database = Database {
       blocks: Vec::default(),
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1440,12 +1491,12 @@ mod test {
 
     let variable_kind = VariableKind::String;
     variables.insert("message".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let database = Database {
       blocks: Vec::default(),
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1467,12 +1518,12 @@ mod test {
 
     let variable_kind = VariableKind::Enum(vec!["Day".to_string(), "Night".to_string()]);
     variables.insert("time_of_day".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let database = Database {
       blocks: Vec::default(),
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1494,7 +1545,7 @@ mod test {
 
     let variable_kind = VariableKind::Integer;
     variables.insert("health".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let requirement = Requirement {
       condition: Condition {
@@ -1514,8 +1565,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1536,7 +1587,7 @@ mod test {
 
     let variable_kind = VariableKind::Integer;
     variables.insert("health".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let requirement = Requirement {
       condition: Condition {
@@ -1556,8 +1607,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1578,7 +1629,7 @@ mod test {
 
     let variable_kind = VariableKind::Integer;
     variables.insert("health".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let requirement = Requirement {
       condition: Condition {
@@ -1598,8 +1649,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1620,7 +1671,7 @@ mod test {
 
     let variable_kind = VariableKind::Integer;
     variables.insert("health".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let requirement = Requirement {
       condition: Condition {
@@ -1640,8 +1691,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1661,7 +1712,7 @@ mod test {
 
     let variable_kind = VariableKind::Integer;
     variables.insert("health".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let requirement = Requirement {
       condition: Condition {
@@ -1681,8 +1732,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1702,7 +1753,7 @@ mod test {
 
     let variable_kind = VariableKind::Integer;
     variables.insert("health".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let requirement = Requirement {
       condition: Condition {
@@ -1722,8 +1773,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1743,7 +1794,7 @@ mod test {
 
     let variable_kind = VariableKind::Float;
     variables.insert("speed".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let requirement = Requirement {
       condition: Condition {
@@ -1763,8 +1814,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1785,7 +1836,7 @@ mod test {
 
     let variable_kind = VariableKind::Float;
     variables.insert("speed".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let requirement = Requirement {
       condition: Condition {
@@ -1805,8 +1856,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1827,7 +1878,7 @@ mod test {
 
     let variable_kind = VariableKind::Float;
     variables.insert("speed".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let requirement = Requirement {
       condition: Condition {
@@ -1847,8 +1898,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1869,7 +1920,7 @@ mod test {
 
     let variable_kind = VariableKind::Float;
     variables.insert("speed".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let requirement = Requirement {
       condition: Condition {
@@ -1889,8 +1940,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1910,7 +1961,7 @@ mod test {
 
     let variable_kind = VariableKind::Float;
     variables.insert("speed".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let requirement = Requirement {
       condition: Condition {
@@ -1930,8 +1981,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1951,7 +2002,7 @@ mod test {
 
     let variable_kind = VariableKind::Float;
     variables.insert("speed".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let requirement = Requirement {
       condition: Condition {
@@ -1971,8 +2022,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -1993,7 +2044,7 @@ mod test {
 
     let variable_kind = VariableKind::Bool;
     variables.insert("bike".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let requirement = Requirement {
       condition: Condition {
@@ -2013,8 +2064,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -2032,7 +2083,7 @@ mod test {
 
     let variable_kind = VariableKind::Bool;
     variables.insert("bike".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let requirement = Requirement {
       condition: Condition {
@@ -2052,8 +2103,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -2071,7 +2122,7 @@ mod test {
 
     let variable_kind = VariableKind::String;
     variables.insert("message".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let requirement = Requirement {
       condition: Condition {
@@ -2091,8 +2142,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -2112,7 +2163,7 @@ mod test {
 
     let variable_kind = VariableKind::String;
     variables.insert("message".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let requirement = Requirement {
       condition: Condition {
@@ -2132,8 +2183,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -2153,7 +2204,7 @@ mod test {
 
     let variable_kind = VariableKind::Enum(vec!["Day".to_string(), "Night".to_string()]);
     variables.insert("time_of_day".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let requirement = Requirement {
       condition: Condition {
@@ -2173,8 +2224,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -2194,7 +2245,7 @@ mod test {
 
     let variable_kind = VariableKind::Enum(vec!["Day".to_string(), "Night".to_string()]);
     variables.insert("time_of_day".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let requirement = Requirement {
       condition: Condition {
@@ -2214,8 +2265,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);
@@ -2235,7 +2286,7 @@ mod test {
 
     let variable_kind = VariableKind::Bool;
     variables.insert("bike".to_string(), variable_kind.clone());
-    let config = Config { variables };
+    let config = Config { variables, ..Default::default() };
 
     let freq_mod = FrequencyModifier {
       condition: Condition {
@@ -2257,8 +2308,8 @@ mod test {
 
     let database = Database {
       blocks: vec![block],
-      sections: HashMap::default(),
       config,
+      ..Default::default()
     };
 
     let mut runtime = Runtime::new(database);

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 pub type BlockId = usize;
 pub type BucketName = String;
+pub type SectionName = String;
 
 #[derive(Debug, Default, Serialize, Deserialize, Eq, PartialEq, Clone, Hash)]
 pub struct SectionKey {
@@ -55,11 +56,11 @@ pub enum Block {
     settings: BlockSettings,
   },
   Section {
-    id: I18nId,
+    id: SectionName,
     settings: BlockSettings,
   },
   Subsection {
-    id: I18nId,
+    id: SectionName,
     settings: BlockSettings,
   },
 }
@@ -81,6 +82,15 @@ impl Block {
       Block::Bucket { name: _, settings } => settings,
       Block::Section { id: _, settings } => settings,
       Block::Subsection { id: _, settings } => settings,
+    }
+  }
+  pub fn get_i18n_id(&self) -> Option<I18nId> {
+    match self {
+      Block::Text { id, settings:_ } => Some(id.clone()),
+      Block::Choice { id, settings:_ } => Some(id.clone()),
+      Block::Bucket { name: _, settings:_ } => None,
+      Block::Section { id: _, settings:_ } => None,
+      Block::Subsection { id: _, settings:_ } => None,
     }
   }
 }

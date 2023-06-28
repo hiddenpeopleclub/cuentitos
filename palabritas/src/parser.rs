@@ -119,6 +119,7 @@ pub fn parse_database(token: Pair<Rule>, config: Config) -> Result<Database, Pal
     blocks: ordered_blocks,
     sections,
     config,
+    ..Default::default()
   })
 }
 
