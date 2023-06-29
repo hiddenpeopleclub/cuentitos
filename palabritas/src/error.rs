@@ -11,6 +11,7 @@ pub enum PalabritasError {
     reason: String,
   },
   PathIsNotAFile(PathBuf),
+  PathDoesntExist(PathBuf),
   CantReadFile {
     path: PathBuf,
     message: String,
@@ -84,6 +85,9 @@ impl Display for PalabritasError {
       }
       PalabritasError::PathIsNotAFile(path) => {
         write!(f, "{:?} is not a file", path)
+      }
+      PalabritasError::PathDoesntExist(path) => {
+        write!(f, "Path provided doesn't exist: {:?}", path)
       }
     }
   }

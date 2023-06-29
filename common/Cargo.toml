@@ -8,4 +8,5 @@ rand = "0.8.5"
 serde = { version = "1.0.144", features = ["derive"] }
 rmp-serde = "1.1.1"
 rmp = "^0.8"
+toml = "0.7.4"
 typetag = "0.2"

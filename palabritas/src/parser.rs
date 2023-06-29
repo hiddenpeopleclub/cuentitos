@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use cuentitos_common::{
-  Block, BlockId, BlockSettings, Chance, Condition, Database, FrequencyModifier, Modifier,
-  NextBlock, Operator, Requirement, SectionKey,
+  Block, BlockId, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Modifier,
+  NextBlock, Operator, Requirement, SectionKey, VariableKind
 };
 use pest::{iterators::Pair, Parser};
 
@@ -20,21 +20,42 @@ pub fn parse_database_from_path<P>(path: P) -> Result<Database, PalabritasError>
 where
   P: AsRef<Path>,
 {
-  if !path.as_ref().is_file() {
-    return Err(PalabritasError::PathIsNotAFile(path.as_ref().to_path_buf()));
+  if !path.as_ref().exists() {
+    return Err(PalabritasError::PathDoesntExist(
+      path.as_ref().to_path_buf(),
+    ));
   }
-  let str = match std::fs::read_to_string(path.as_ref()) {
+  let palabritas_path = match path.as_ref().is_file() {
+    true => path.as_ref().to_path_buf(),
+    false => {
+      //TODO: search for it instead
+      return Err(PalabritasError::PathIsNotAFile(path.as_ref().to_path_buf()));
+    }
+  };
+  let mut config_path = palabritas_path.clone();
+  config_path.pop();
+  let config = match Config::load(&config_path) {
+    Ok(config) => config,
+    Err(err) => {
+      return Err(PalabritasError::CantReadFile {
+        path: config_path,
+        message: err.to_string(),
+      });
+    }
+  };
+
+  let str = match std::fs::read_to_string(&palabritas_path) {
     Ok(str) => str,
     Err(e) => {
       return Err(PalabritasError::CantReadFile {
-        path: path.as_ref().to_path_buf(),
+        path: palabritas_path,
         message: e.to_string(),
       });
     }
   };
 
   match PalabritasParser::parse(Rule::Database, &str) {
-    Ok(mut result) => parse_database(result.next().unwrap()),
+    Ok(mut result) => parse_database(result.next().unwrap(), config),
     Err(error) => {
       let (line, col) = match error.line_col {
         LineColLocation::Pos(line_col) => line_col,
@@ -42,7 +63,7 @@ where
       };
 
       Err(PalabritasError::ParseError {
-        file: path.as_ref().display().to_string(),
+        file: palabritas_path.display().to_string(),
         line,
         col,
         reason: error.to_string(),
@@ -51,7 +72,7 @@ where
   }
 }
 
-pub fn parse_database(token: Pair<Rule>) -> Result<Database, PalabritasError> {
+pub fn parse_database(token: Pair<Rule>, config: Config) -> Result<Database, PalabritasError> {
   match_rule(&token, Rule::Database)?;
 
   let mut blocks: Vec<Vec<Block>> = Vec::default();
@@ -97,6 +118,7 @@ pub fn parse_database(token: Pair<Rule>) -> Result<Database, PalabritasError> {
   Ok(Database {
     blocks: ordered_blocks,
     sections,
+    config,
   })
 }
 
@@ -800,7 +822,7 @@ mod test {
   fn parse_database_correctly() {
     let unparsed_file = include_str!("../../examples/story-example.cuentitos");
     let token = short_parse(Rule::Database, &unparsed_file);
-    parse_database(token).unwrap();
+    parse_database(token, Config::default()).unwrap();
     //TODO: compare with fixture
   }
 
@@ -1082,6 +1104,36 @@ mod test {
     };
     assert_eq!(section, expected_value);
   }
+
+  #[test]
+  fn parse_section_commands_correctly() {
+    let identifier = make_random_snake_case();
+
+    let section_string = format!("# {}\n  req test", identifier);
+    let token = short_parse(Rule::Section, &section_string);
+    let mut blocks = Vec::default();
+    let mut sections = HashMap::default();
+    parse_section(token, &mut blocks, &mut sections).unwrap();
+
+    let section = blocks[0][0].clone();
+
+    let expected_value = Block::Section {
+      id: identifier,
+      settings: BlockSettings {
+        requirements: vec![ Requirement {
+          condition: Condition { 
+            variable: Variable { id: "test".to_string(), kind: VariableKind::Bool }, 
+            operator: Operator::Equal, 
+            value: "true".to_string()
+          }
+        }],
+        ..Default::default()
+      },
+    };
+    assert_eq!(section, expected_value);
+
+  }
+
   #[test]
   fn parse_section_with_subsections_correctly() {
     //Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
@@ -1268,6 +1320,48 @@ mod test {
     };
 
     let token = short_parse(Rule::Modifier, &modifier_string);
+    let modifier = parse_modifier(token).unwrap();
+
+    assert_eq!(modifier, expected_value);
+  }
+
+  #[test]
+  fn parse_modifier_with_set_command_in_floats() {
+    let identifier = make_random_identifier();
+    let new_value = rand::thread_rng().gen::<f32>().to_string();
+    let modifier_string = format!("mod {} ={}", identifier, new_value);
+
+    let expected_value = Modifier {
+      variable: Variable {
+        id: identifier,
+        ..Default::default()
+      },
+      new_value: format!("={}", new_value),
+    };
+
+    let token = short_parse(Rule::Modifier, &modifier_string);
+
+    let modifier = parse_modifier(token).unwrap();
+
+    assert_eq!(modifier, expected_value);
+  }
+
+  #[test]
+  fn parse_modifier_with_set_command_in_integers() {
+    let identifier = make_random_identifier();
+    let new_value = rand::thread_rng().gen::<i32>().to_string();
+    let modifier_string = format!("mod {} ={}", identifier, new_value);
+
+    let expected_value = Modifier {
+      variable: Variable {
+        id: identifier,
+        ..Default::default()
+      },
+      new_value: format!("={}", new_value),
+    };
+
+    let token = short_parse(Rule::Modifier, &modifier_string);
+
     let modifier = parse_modifier(token).unwrap();
 
     assert_eq!(modifier, expected_value);

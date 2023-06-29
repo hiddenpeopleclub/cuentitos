@@ -28,6 +28,9 @@ pub use divert::*;
 mod modifier;
 pub use modifier::*;
 
+mod config;
+pub use config::*;
+
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 mod i18n;
