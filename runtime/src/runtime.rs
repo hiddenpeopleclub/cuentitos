@@ -507,7 +507,9 @@ impl Runtime {
     let settings = self.get_block(*last_block_id).get_settings().clone();
 
     if !settings.children.is_empty() {
-      return self.push_first_child_in_stack(&settings);
+      if let Some(result) = self.push_next_child_in_stack(&settings, 0) {
+        return result;
+      }
     }
 
     if self.push_next_block() {
@@ -517,27 +519,42 @@ impl Runtime {
     }
   }
 
-  fn push_first_child_in_stack(&mut self, settings: &BlockSettings) -> bool {
-    match self.get_block(settings.children[0]) {
-      cuentitos_common::Block::Text { id: _, settings: _ } => self.push_stack(settings.children[0]),
+  fn push_next_child_in_stack(
+    &mut self,
+    settings: &BlockSettings,
+    next_child: usize,
+  ) -> Option<bool> {
+    if next_child >= settings.children.len() {
+      return None;
+    }
+
+    let id = settings.children[next_child];
+    match self.get_block(id) {
+      cuentitos_common::Block::Text { id: _, settings: _ } => {
+        Some(self.push_stack(settings.children[0]))
+      }
       cuentitos_common::Block::Choice { id: _, settings: _ } => {
-        println!("Make a choice");
-        false
+        if self.choices.contains(&id) {
+          println!("Make a choice");
+          Some(false)
+        } else {
+          self.push_next_child_in_stack(settings, next_child + 1)
+        }
       }
       cuentitos_common::Block::Bucket { name: _, settings } => {
         if let Some(new_block) = self.get_random_block_from_bucket(&settings.clone()) {
           if let cuentitos_common::Block::Choice { id: _, settings: _ } = self.get_block(new_block)
           {
             println!("Make a choice");
-            false
+            Some(false)
           } else {
-            self.push_stack(new_block)
+            Some(self.push_stack(new_block))
           }
         } else {
-          false
+          Some(false)
         }
       }
-      _ => false,
+      _ => Some(false),
     }
   }
 

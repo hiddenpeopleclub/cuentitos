@@ -52,6 +52,8 @@ impl Console {
         "" => {
           if let Some(output_text) = runtime.next_block() {
             print_output_text(output_text);
+          } else if let Some(output_text) = runtime.current_block() {
+            print_output_text(output_text);
           }
         }
         "sections" => {
@@ -75,14 +77,18 @@ impl Console {
             let substr: String = str.chars().skip(2).collect();
             let mut splitted = substr.split('/');
             if let Some(section) = splitted.next() {
+              let jump_ok;
               if let Some(subsection) = splitted.next() {
-                runtime.jump_to_section(section.to_string(), Some(subsection.to_string()));
+                jump_ok =
+                  runtime.jump_to_section(section.to_string(), Some(subsection.to_string()));
               } else {
-                runtime.jump_to_section(section.to_string(), None);
+                jump_ok = runtime.jump_to_section(section.to_string(), None);
               }
 
-              if let Some(output_text) = runtime.current_block() {
-                print_output_text(output_text);
+              if jump_ok {
+                if let Some(output_text) = runtime.current_block() {
+                  print_output_text(output_text);
+                }
               }
             }
           } else if let Ok(choice) = str.parse::<usize>() {
@@ -93,6 +99,8 @@ impl Console {
             if let Some(output_text) = runtime.pick_choice(choice - 1) {
               print_output_text(output_text);
             }
+          } else {
+            println!("Unkown command: {}", str);
           }
         }
       }
@@ -107,20 +115,31 @@ fn set_variable_value(variable: &str, value: &str, runtime: &mut Runtime) {
         VariableKind::Integer => {
           let int: i32 = value.parse().unwrap();
           runtime.set_variable(variable, int).unwrap();
+          let result: i32 = runtime.get_variable(variable).unwrap();
+          println!("{} = {}", variable, result);
         }
         VariableKind::Float => {
           let float: f32 = value.parse().unwrap();
           runtime.set_variable(variable, float).unwrap();
+          let result: f32 = runtime.get_variable(variable).unwrap();
+          println!("{} = {}", variable, result);
         }
         VariableKind::Bool => {
           let bool: bool = value.parse().unwrap();
           runtime.set_variable(variable, bool).unwrap();
+          let result: bool = runtime.get_variable(variable).unwrap();
+          println!("{} = {}", variable, result);
         }
         VariableKind::String => {
           runtime.set_variable(variable, value.to_string()).unwrap();
+          let result: String = runtime.get_variable(variable).unwrap();
+          println!("{} = {}", variable, result);
         }
         VariableKind::Enum(_) => match runtime.set_variable(variable, value.to_string()) {
-          Ok(_) => {}
+          Ok(_) => {
+            let result: String = runtime.get_variable(variable).unwrap();
+            println!("{} = {}", variable, result);
+          }
           Err(err) => println!("{}", err),
         },
       }
