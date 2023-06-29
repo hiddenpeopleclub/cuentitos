@@ -1,19 +1,22 @@
-use crate::{Block, Result};
+use crate::{Block, BlockId, Config, Result, SectionKey};
 use rmp_serde::Deserializer;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Default, Serialize, PartialEq, Deserialize, Clone)]
 pub struct Database {
   pub blocks: Vec<Block>,
+  pub sections: HashMap<SectionKey, BlockId>,
+  pub config: Config,
 }
 
 impl Database {
   pub fn from_u8(bytes: &[u8]) -> Result<Database> {
     let mut de = Deserializer::new(bytes);
-    let file: std::result::Result<Database, rmp_serde::decode::Error> =
+    let db: std::result::Result<Database, rmp_serde::decode::Error> =
       Deserialize::deserialize(&mut de);
-    match file {
-      Ok(file) => Ok(file),
+    match db {
+      Ok(db) => Ok(db),
       Err(error) => Err(Box::new(error)),
     }
   }

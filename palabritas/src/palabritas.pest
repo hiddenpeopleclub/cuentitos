@@ -1,4 +1,5 @@
-Char = { (!NEWLINE ~ ANY)+ }
+ReservedKeywords = { "req" | "freq" | "mod" | "->" | "`" | "*" | "#" | "##" | "//" }
+Char = { (!NewLine ~ ANY)+ }
 Integer = { "-"? ~ ASCII_DIGIT+ }
 Float = { Integer ~ "." ~ ASCII_DIGIT* }
 Percentage = { Integer ~ "%" }
@@ -8,25 +9,25 @@ ComparisonOperator = { "!=" | "=" | "<=" | ">=" | "<" | ">" | "!" }
 
 SnakeCase = { ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | "_" | ASCII_DIGIT)* }
 Identifier = { (ASCII_ALPHA | "_" ) ~ (ASCII_ALPHANUMERIC | "_")* }
-Value = { Identifier | Float | Percentage | Integer}
-Condition = { Identifier ~ " "* ~ (ComparisonOperator ~ " "*)? ~ Value }
+Value = { Identifier | "="? ~ Float | Percentage | "="? ~ Integer }
+Condition = { "!"? ~ Identifier ~ " "* ~ (ComparisonOperator ~ " "*)? ~ Value? }
 
 Requirement = { "req" ~ " "+ ~ Condition }
 Frequency = { "freq" ~ " "+ ~ Condition ~ " "+ ~ ( Float | Integer ) }
-Modifier = { "mod" ~ " "+ ~ Identifier ~ " "+ ~ Value}
+Modifier = { "mod" ~ " "+ ~ Identifier ~ " "+ ~ Value }
 Divert = { "->"  ~ " "* ~ Identifier ~ ("." ~ Identifier)? }
 Function = {"`" ~ SnakeCase ~ (" " ~ Value)* ~ "`"}
 
-Command = {NEWLINE ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert | Function) } 
+Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert | Function) } 
 
-Probability = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
+Chance = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
 
-Section = {"#" ~ " "* ~ Identifier ~ " "* ~ NEWLINE ~ ( NEWLINE | Block | Subsection )* }
-Subsection = { "##" ~ " "* ~ Identifier ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*}
+Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
+Subsection = { "##" ~ " "* ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
 
-Text = { Probability? ~ String }
-Choice = { "*" ~ " "* ~ Probability? ~ String }
-NamedBucket = { "[" ~ " "* ~ Probability? ~ SnakeCase ~ " "* ~ "]" }
+Text = { !Indentation ~ !ReservedKeywords ~ Chance? ~ String }
+Choice = { "*" ~ " "* ~ Chance? ~ String }
+NamedBucket = { "[" ~ " "* ~ Chance? ~ SnakeCase ~ " "* ~ "]" }
 
 NewBlock = {
     // The first line in the block
@@ -38,7 +39,11 @@ NewBlock = {
 }
 
 Block = {
-    (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
+    (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NewLine | EOI) ~ NewBlock*
 }
 
-File = { SOI ~ (NEWLINE | Block | Section )* ~ EOI }
+Database = { SOI ~ (NewLine | Block | Section )* ~ EOI }
+
+COMMENT = _{ "//" ~ (!(NewLine | EOI) ~ ANY)* ~ (NewLine | EOI) }
+NewLine = _{ EmptyLine | NEWLINE }
+EmptyLine = _{" "* ~ NEWLINE }

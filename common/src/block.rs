@@ -2,8 +2,13 @@ use crate::{FrequencyModifier, I18nId, Modifier, Requirement};
 use serde::{Deserialize, Serialize};
 
 pub type BlockId = usize;
-pub type SectionId = usize;
 pub type BucketName = String;
+
+#[derive(Debug, Default, Serialize, Deserialize, Eq, PartialEq, Clone, Hash)]
+pub struct SectionKey {
+  pub section: String,
+  pub subsection: Option<String>,
+}
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub enum NextBlock {
@@ -11,17 +16,25 @@ pub enum NextBlock {
   None,
   BlockId(BlockId),
   EndOfFile,
-  Section(SectionId),
+  Section(SectionKey),
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq, Clone)]
 pub struct BlockSettings {
   pub children: Vec<BlockId>,
   pub next: NextBlock,
-  pub chance: Option<f32>,
+  pub chance: Chance,
   pub frequency_modifiers: Vec<FrequencyModifier>,
   pub requirements: Vec<Requirement>,
   pub modifiers: Vec<Modifier>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Clone)]
+pub enum Chance {
+  #[default]
+  None,
+  Frequency(u32),
+  Probability(f32),
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -38,6 +51,14 @@ pub enum Block {
     name: Option<BucketName>,
     settings: BlockSettings,
   },
+  Section {
+    id: I18nId,
+    settings: BlockSettings,
+  },
+  Subsection {
+    id: I18nId,
+    settings: BlockSettings,
+  },
 }
 
 impl Block {
@@ -46,6 +67,8 @@ impl Block {
       Block::Text { id: _, settings } => settings,
       Block::Choice { id: _, settings } => settings,
       Block::Bucket { name: _, settings } => settings,
+      Block::Section { id: _, settings } => settings,
+      Block::Subsection { id: _, settings } => settings,
     }
   }
   pub fn get_settings(&self) -> &BlockSettings {
@@ -53,6 +76,8 @@ impl Block {
       Block::Text { id: _, settings } => settings,
       Block::Choice { id: _, settings } => settings,
       Block::Bucket { name: _, settings } => settings,
+      Block::Section { id: _, settings } => settings,
+      Block::Subsection { id: _, settings } => settings,
     }
   }
 }
