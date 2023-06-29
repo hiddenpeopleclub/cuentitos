@@ -1,4 +1,4 @@
-use crate::Variable;
+use crate::VariableId;
 
 use serde::{Deserialize, Serialize};
 
@@ -13,16 +13,19 @@ pub enum Operator {
   LessOrEqualThan,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Condition {
-  pub variable: Variable,
+  pub variable: VariableId,
   pub operator: Operator,
   pub value: String,
 }
 
-impl Condition {
-  pub fn meets_condition(&self) -> bool {
-    //TODO
-    true
+impl Default for Condition {
+  fn default() -> Self {
+    Self {
+      variable: Default::default(),
+      operator: Default::default(),
+      value: "true".to_string(),
+    }
   }
 }

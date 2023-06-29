@@ -1,11 +1,9 @@
+locales = ['en']
+default_locale = 'en'
+
 [variables]
-health = "integer"
-time = "integer"
-money = "integer"
-donkey = "bool"
-food = "integer"
-time_mod = "integer"
-energized = "float"
-message = "string"
+energy = "integer"
+time = "float"
+
 [variables.time_of_day]
-enum = ["Day", "Night"]
+enum = ["day", "night"]

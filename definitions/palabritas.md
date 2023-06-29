@@ -199,7 +199,7 @@ You decide to focus on the now...
   req time_of_day_night
 ```
 
-These three lines will only show at night, after `The moonlight gives...`. The second one only if the player is low on energy.
+Thse three lines will only show at night, after `The moonlight gives...`. The second one only if the player is low on energy.
 
 You can also add requirements to options.
 
@@ -323,13 +323,8 @@ For example:
   You wake up feeling refreshed. Let's see what this day brings.
 ```
 
-### Finishing
-Any time you want to tell the runtime that you're done (with a section, with a dialogue, whatever it is you're doing), you can divert to `END`.
-
+### Finishing the game
 `-> END`
-
-Depending on your game, you'll interpret what `END` means. It could be the end of the game, or it could just be the end of the current section or dialog.
-The runtime won't execute anything after you go to `END`. You'll have to manually divert to a section from the runtime for the execution to continue.
 
 ## Comments
 A line that starts with `//` is ignored.
@@ -357,27 +352,6 @@ You can use an arbitrary amount of parameters, they will be passed to the runtim
 ```
 It's up to the runtime how to interpret `0.3` in this case, and cuentitos will just pass it through.
 You can always use variables as a way to communicate with the runtime and check for types in compile time.
-
-## Unique
-
-There's an important feature that can be used to avoid repetition, if you tag a block as `unique`, it will only be displayed once, if the runtime hits that line again it will be ignored.
-
-```cuentitos
-# second_day_happy
-  A new day in the new city.
-    unique
-```
-
-In this case the line "A new day in the new city" will only be shown the first time the runtime enters `second_day_happy`. Anytime you divert to the section again, it will not show up.
-
-## Tags
-
-You can use tags to communicate things to the runtime that don't belong to the game state as the variables. For example, you can use it to display an icon saying that a given option is dangerous:
-
-```cuentitos
-    * Explore a museum
-      tag dangerous
-```
 
 ## Configuration
 ### Variables

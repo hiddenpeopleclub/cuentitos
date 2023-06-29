@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 pub struct Config {
   #[serde(default)]
   pub variables: HashMap<String, VariableKind>,
+  pub locales: Vec<String>,
+  pub default_locale: String,
 }
 
 impl Config {

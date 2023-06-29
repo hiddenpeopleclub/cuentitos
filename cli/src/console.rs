@@ -9,9 +9,23 @@ use std::path::PathBuf;
 #[derive(Debug)]
 pub struct Console {}
 impl Console {
-  fn prompt(name: &str) -> String {
+  fn prompt(section: Option<String>, subsection: Option<String>) -> String {
     let mut line = String::new();
-    print!("{}", name);
+
+    let mut prompt_str = String::from("\n");
+
+    if let Some(section) = section {
+      prompt_str.push_str(&section);
+    }
+
+    if let Some(subsection) = subsection {
+      prompt_str.push('/');
+      prompt_str.push_str(&subsection);
+    }
+
+    prompt_str.push_str(" > ");
+
+    print!("{}", prompt_str);
     std::io::stdout().flush().unwrap();
     std::io::stdin()
       .read_line(&mut line)
@@ -30,7 +44,9 @@ impl Console {
     let mut runtime = Runtime::new(file);
 
     loop {
-      let input = Self::prompt("> ");
+      let section = runtime.game_state.current_section.clone();
+      let subsection = runtime.game_state.current_subsection.clone();
+      let input = Self::prompt(section, subsection);
 
       match input.as_str() {
         "" => {
@@ -57,7 +73,7 @@ impl Console {
             }
           } else if str.starts_with("->") {
             let substr: String = str.chars().skip(2).collect();
-            let mut splitted = substr.split('.');
+            let mut splitted = substr.split('/');
             if let Some(section) = splitted.next() {
               if let Some(subsection) = splitted.next() {
                 runtime.jump_to_section(section.to_string(), Some(subsection.to_string()));

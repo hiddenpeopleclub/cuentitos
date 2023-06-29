@@ -7,16 +7,16 @@ As you take your first steps in this urban jungle, you feel a mix of emotions, h
     (50%) A solitary figure sits on the bench, engrossed in a book, seemingly unfazed by the surrounding city noise.
     This serene oasis gives you the confidence to face the challenges ahead as you acclimate to your new life in the bustling city.
   * I visit a popular street market to experience the city's unique flavors and energy.
-    (50) At the bustling street market, you discover a food stand offering mouthwatering delicacies. 
-      [morning_vendor]
+    (50) At the bustling street market, you discover a food stand offering mouthwa  tering delicacies. 
+      [(50%) happy_vendor]
         req time_of_day morning
-        [(100) happy_vendor]
-          (50%) You notice the stand owner, their eyes sparkling with joy as they animatedly describe their homemade offerings to an eager customer.
-          (50%) You see the owner beaming with joy, their infectious smile and animated gestures inviting customers to try their delectable creations.
-        [(25) tired_vendor]
-          (50%) You come across a vendor with furrowed brows and a tense expression, their voice raised as they heatedly argue with a customer over a transaction at their stand.
-          (50%) You spot a visibly agitated vendor, their clenched fists and piercing glare making it clear that they're unhappy with the current situation unfolding before them.
-      [night_vendor]
+        (50%) You notice the stand owner, their eyes sparkling with joy as they animatedly describe their homemade offerings to an eager customer.
+        (50%) You see the owner beaming with joy, their infectious smile and animated gestures inviting customers to try their delectable creations.
+      [(50%) tired_vendor]
+        req time_of_day morning
+        (50%) You come across a vendor with furrowed brows and a tense expression, their voice raised as they heatedly argue with a customer over a transaction at their stand.
+        (50%) You spot a visibly agitated vendor, their clenched fists and piercing glare making it clear that they're unhappy with the current situation unfolding before them.
+      [tired_vendor]
         req time_of_day night
         (50%) You observe a vendor at a small food stand, their shoulders slumped and eyes slightly glazed as they quietly serve customers, mustering just enough energy to complete each transaction.
         (50%) The vendor at a nearby food stand appears worn, their movements slow and deliberate, as they attempt to maintain a smile while attending to the seemingly endless stream of customers.
@@ -62,10 +62,10 @@ You decide to focus on the now...
     req energy >10
     [call]
       (30) The phone rings twice, and dad picks up. You have a good chat.
-        req energy >20
+        req energy>20
         mod energy -10
       (10) The phone rings twice, and mom picks up. You have a good chat.
-        req energy >20
+        req energy>20
         freq time_of_day morning 100
         mod energy -10
       (40) The phone rings ten times, nobody is at home.
@@ -74,21 +74,13 @@ You decide to focus on the now...
       mod energy 10
       mod time -7.5
       -> second_day
--> END
 
-// This is a comment
-
-# second_day_happy
-  A new day in the new city.
-    unique
-  // This is a nested comment
+# second_day
   You wake up feeling refreshed. Let's see what this day brings.
-  `play_sound alarm 0.3`
     * Explore a museum
-      tag dangerous
-      -> second_day.museum
+      -> second_day/museum
     * Go to the Farmer's Market
-      -> second_day.farmers_market
+      -> second_day/farmers_market
 
 ## museum
   You get to the museum door. You watch through the window. It seems crowded.
