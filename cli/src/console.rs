@@ -81,7 +81,7 @@ impl Console {
                 runtime.jump_to_section(section.to_string(), None);
               }
 
-              if let Some(output_text) = runtime.next_block() {
+              if let Some(output_text) = runtime.current_block() {
                 print_output_text(output_text);
               }
             }

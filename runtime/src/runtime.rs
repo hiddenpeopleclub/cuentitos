@@ -108,7 +108,25 @@ impl Runtime {
     while !self.next_block_meets_requirements() {
       self.pop_stack_and_find_next();
     }
-    self.get_next_block_output()
+    self.current_block()
+  }
+
+  pub fn current_block(&mut self) -> Option<Block> {
+    let id = self.block_stack.last().unwrap();
+    let block = self.get_block(*id);
+    let settings = block.get_settings();
+    let tags = settings.tags.clone();
+    let functions = settings.functions.clone();
+    if let cuentitos_common::Block::Text { id, settings: _ } = block {
+      return Some(Block {
+        text: self.database.i18n.get_translation(&self.current_locale, id),
+        choices: self.get_choices_strings(),
+        tags,
+        functions,
+      });
+    }
+
+    None
   }
 
   pub fn pick_choice(&mut self, choice: usize) -> Option<Block> {
@@ -366,24 +384,6 @@ impl Runtime {
     Some(num)
   }
 
-  fn get_next_block_output(&mut self) -> Option<Block> {
-    let id = self.block_stack.last().unwrap();
-    let block = self.get_block(*id);
-    let settings = block.get_settings();
-    let tags = settings.tags.clone();
-    let functions = settings.functions.clone();
-    if let cuentitos_common::Block::Text { id, settings: _ } = block {
-      return Some(Block {
-        text: self.database.i18n.get_translation(&self.current_locale, id),
-        choices: self.get_choices_strings(),
-        tags,
-        functions,
-      });
-    }
-
-    None
-  }
-
   fn get_frequency_with_modifier(&self, settings: &BlockSettings) -> u32 {
     match settings.chance {
       cuentitos_common::Chance::None => 0,
@@ -467,6 +467,7 @@ impl Runtime {
   fn push_stack(&mut self, id: BlockId) -> bool {
     self.block_stack.push(id);
     self.apply_modifiers();
+    self.update_choices();
 
     if self.get_block(id).get_settings().unique {
       if self.game_state.uniques_played.contains(&id) {
@@ -628,7 +629,6 @@ impl Runtime {
   }
 
   fn get_choices_strings(&mut self) -> Vec<String> {
-    self.update_choices();
     let mut choices_strings = Vec::default();
     for choice in &self.choices {
       if let cuentitos_common::Block::Choice { id, settings: _ } = self.get_block(*choice) {
@@ -854,6 +854,7 @@ mod test {
       current_locale: "en".to_string(),
       ..Default::default()
     };
+    runtime.update_choices();
     let choices = runtime.get_choices_strings();
     let expected_result = vec!["a".to_string(), "b".to_string()];
     assert_eq!(choices, expected_result);
@@ -951,7 +952,7 @@ mod test {
   }
 
   #[test]
-  fn get_next_block_output_works_correctly() {
+  fn current_block_works_correctly() {
     let settings = BlockSettings {
       children: vec![1, 2],
       ..Default::default()
@@ -997,7 +998,8 @@ mod test {
       ..Default::default()
     };
 
-    let output = runtime.get_next_block_output();
+    runtime.update_choices();
+    let output = runtime.current_block();
     let expected_output = Some(crate::Block {
       text: "parent".to_string(),
       choices: vec!["1".to_string(), "2".to_string()],
