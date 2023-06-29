@@ -765,7 +765,7 @@ fn parse_condition(token: Pair<Rule>) -> Option<Condition> {
           condition.operator = operator;
         }
       }
-      Rule::NotEqualOperator => {
+      Rule::NotOperator => {
           condition.operator = Operator::NotEqual;
       }
       Rule::Value => {
