@@ -91,7 +91,7 @@ impl Runtime {
       self.game_state.current_subsection = None;
       self.push_stack(*block_id)
     } else {
-      println!("Can't find section: {:?}", key);
+      println!("Can't find section: {}", key);
       false
     }
   }

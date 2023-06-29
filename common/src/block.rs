@@ -1,3 +1,5 @@
+
+use core::fmt;
 use crate::{FrequencyModifier, Function, I18nId, Modifier, Requirement};
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +12,21 @@ pub struct SectionKey {
   pub section: String,
   pub subsection: Option<String>,
 }
-
+impl fmt::Display for SectionKey {
+    
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    let mut key = String::new();
+    
+    key.push_str(&self.section);
+    
+    if let Some(subsection) = &self.subsection {
+      key.push_str("/");
+      key.push_str(&subsection);
+    }
+    
+    write!(f, "{}", key)
+  }
+}
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub enum NextBlock {
   #[default]
