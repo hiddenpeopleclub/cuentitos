@@ -1,3 +1,4 @@
+use i18n::I18n;
 use palabritas::parse_database_from_path;
 use rmp_serde::Serializer;
 use serde::Serialize;
@@ -5,20 +6,34 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
+mod i18n;
+
 pub fn compile<T, U>(source_path: T, destination_path: U)
 where
   T: AsRef<Path>,
   U: AsRef<Path>,
 {
-  let db_result = parse_database_from_path(source_path);
+  let db_result = parse_database_from_path(&source_path);
 
-  let db = match db_result {
+  let mut db = match db_result {
     Ok(db) => db,
-    Err(_) => {
-      println!("{}", db_result.unwrap_err());
+    Err(e) => {
+      println!("{}", e);
       return;
     }
   };
+
+  let i18n = match I18n::process(&mut db,source_path,&destination_path)
+  {
+    Ok(i18n) => i18n,
+    Err(e) => {
+      println!("{}", e);
+      return;
+    }
+  };
+
+  db.i18n = i18n;
+  
 
   let mut buf: Vec<u8> = Vec::new();
   let mut serializer = Serializer::new(&mut buf);
