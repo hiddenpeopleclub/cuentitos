@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-pub type LanguageDb = HashMap<String, String>;
+pub type I18nId = String;
+pub type LanguageDb = HashMap<I18nId, String>;
 pub type LanguageId = String;
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, Eq, PartialEq)]

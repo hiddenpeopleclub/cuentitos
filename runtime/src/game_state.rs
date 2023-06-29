@@ -1,16 +1,24 @@
-use cuentitos_common::ItemId;
-use cuentitos_common::ReputationId;
-use cuentitos_common::TimeOfDay;
-use cuentitos_common::VariableId;
+use cuentitos_common::{BlockId, Config, VariableId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone, Eq)]
 pub struct GameState {
   pub variables: HashMap<VariableId, String>,
-  pub items: HashMap<ItemId, u8>,
-  pub reputations: HashMap<ReputationId, i32>,
-  pub time_of_day: TimeOfDay,
-  pub decisions: Vec<String>,
-  pub tile: String,
+  pub current_section: Option<String>,
+  pub current_subsection: Option<String>,
+  pub uniques_played: Vec<BlockId>,
+}
+
+impl GameState {
+  pub fn from_config(config: &Config) -> Self {
+    let mut variables = HashMap::default();
+    for (key, kind) in &config.variables {
+      variables.insert(key.clone(), kind.get_default_value());
+    }
+    GameState {
+      variables,
+      ..Default::default()
+    }
+  }
 }

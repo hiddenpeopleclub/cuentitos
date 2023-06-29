@@ -1,0 +1,52 @@
+ReservedKeywords = { "req" | "freq" | "mod" | "unique" | "->" | "`" | "*" | "#" | "##" | "//" }
+Char = { (!NewLine ~ ANY)+ }
+Integer = { "-"? ~ ASCII_DIGIT+ }
+Float = { Integer ~ "." ~ ASCII_DIGIT* }
+Percentage = { Integer ~ "%" }
+Indentation = { "  " }
+String = @{ Char+ }
+ComparisonOperator = { "!=" | "=" | "<=" | ">=" | "<" | ">" | "!" }
+NotOperator = {"!"}
+
+SnakeCase = { ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | "_" | ASCII_DIGIT)* }
+Identifier = { (ASCII_ALPHA | "_" ) ~ (ASCII_ALPHANUMERIC | "_")* }
+Value = { Identifier | "="? ~ Float | Percentage | "="? ~ Integer }
+Condition = { ( Identifier ~ " "* ~ ( ComparisonOperator ~ " "* )? ~ Value? ) | ( NotOperator? ~ " "* ~ Identifier ~ " "*) }
+
+Requirement = { "req" ~ " "+ ~ Condition }
+Frequency = { "freq" ~ " "+ ~ Condition ~ " "+ ~ ( Float | Integer ) }
+Modifier = { "mod" ~ " "+ ~ Identifier ~ " "+ ~ Value }
+Divert = { "->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)? }
+Function = {"`" ~ " "* ~ Identifier ~ (" " ~ Value)* ~ " "* ~ "`"}
+Tag = {"tag" ~ " "+ ~ Identifier}
+Unique = {"unique"}
+
+Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert | Function | Unique | Tag) } 
+
+Chance = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
+
+Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
+Subsection = { "##" ~ " "* ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
+
+Text = { !Indentation ~ !ReservedKeywords ~ Chance? ~ String }
+Choice = { "*" ~ " "* ~ Chance? ~ String }
+NamedBucket = { "[" ~ " "* ~ Chance? ~ SnakeCase ~ " "* ~ "]" }
+
+NewBlock = {
+    // The first line in the block
+    PEEK_ALL ~ PUSH( Indentation+ ) ~ Block ~
+    // Subsequent lines in the block
+    (PEEK_ALL ~ Block)* ~
+    // Remove the last layer of indentation from the stack when exiting the block
+    DROP
+}
+
+Block = {
+    (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NewLine | EOI) ~ NewBlock*
+}
+
+Database = { SOI ~ (NewLine | Block | Section )* ~ EOI }
+
+COMMENT = _{ "//" ~ (!(NewLine | EOI) ~ ANY)* ~ (NewLine | EOI) }
+NewLine = _{ EmptyLine | NEWLINE }
+EmptyLine = _{" "* ~ NEWLINE }

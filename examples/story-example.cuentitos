@@ -1,0 +1,89 @@
+You've just arrived in the bustling city, full of excitement and anticipation for your new job. 
+The skyline reaches for the clouds, and the sounds of traffic and people surround you. 
+As you take your first steps in this urban jungle, you feel a mix of emotions, hoping to find your place in this new environment.
+  * I take a walk through a nearby park to relax and acclimate to the city.
+    As you stroll through the nearby park, the soothing sounds of rustling leaves and chirping birds help calm your senses. 
+    You find a quiet bench to sit on, taking a moment to breathe deeply and gather your thoughts. 
+    (50%) A solitary figure sits on the bench, engrossed in a book, seemingly unfazed by the surrounding city noise.
+    This serene oasis gives you the confidence to face the challenges ahead as you acclimate to your new life in the bustling city.
+  * I visit a popular street market to experience the city's unique flavors and energy.
+    (50) At the bustling street market, you discover a food stand offering mouthwa  tering delicacies. 
+      [(50%) happy_vendor]
+        req time_of_day morning
+        (50%) You notice the stand owner, their eyes sparkling with joy as they animatedly describe their homemade offerings to an eager customer.
+        (50%) You see the owner beaming with joy, their infectious smile and animated gestures inviting customers to try their delectable creations.
+      [(50%) tired_vendor]
+        req time_of_day morning
+        (50%) You come across a vendor with furrowed brows and a tense expression, their voice raised as they heatedly argue with a customer over a transaction at their stand.
+        (50%) You spot a visibly agitated vendor, their clenched fists and piercing glare making it clear that they're unhappy with the current situation unfolding before them.
+      [tired_vendor]
+        req time_of_day night
+        (50%) You observe a vendor at a small food stand, their shoulders slumped and eyes slightly glazed as they quietly serve customers, mustering just enough energy to complete each transaction.
+        (50%) The vendor at a nearby food stand appears worn, their movements slow and deliberate, as they attempt to maintain a smile while attending to the seemingly endless stream of customers.
+      You feel they're too busy to bother them with questions.
+    (2) As you try to navigate the crowded market, you're drawn to the entrancing melody of a street musician. 
+      The captivating sound creates a soothing bubble, momentarily transporting you away from the city's noise. 
+      You take a moment to appreciate the beauty of the music, feeling a connection to the artist and the vibrant energy they bring to the urban landscape.
+        * (50%) I leave two dollars to the artist.
+          The musician smiles and nods thanking you.
+        * I nod when the musician looks my way, to show I really enjoy the music.
+    (500) Wandering the market, you stumble upon a hidden alley adorned with vibrant street art. 
+      Each colorful mural tells a different story, capturing your imagination and sparking your creativity. 
+        * (50%) I grab my phone and take pictures of the murals.
+        * (50%) I keep walking, even if the murals look good, the darkness of the alley is unsettling.
+      This unexpected oasis of visual tranquility provides a respite from the chaos of the city, inspiring you to explore more of the urban canvas and the stories it holds.
+
+Feeling mentally and physically exhausted from the day's adventures, you decide it's time to head back to your hotel.
+As you enter the peaceful sanctuary of your room, you take a deep breath, relieved to have a quiet space where you can recharge and prepare for the challenges ahead.
+The sun shines bright through the window.
+  req time_of_day !night
+The moonlight gives the room a peaceful tone.
+  req time_of_day night
+You start to think about all the stuff you need to do tomorrow.
+  req time_of_day night
+That makes you feel overwhelmed.
+  req time_of_day night
+  req energy <10
+You decide to focus on the now...
+  req time_of_day night
+  * I make some tea
+    req item tea
+    A good cup of tea is always good to regulate after the sensory overload of the city.
+    You sit in the couch to enjoy your tea. Drink half of the cup and fall asleep.
+    mod energy 5
+    mod time -7.5
+    -> second_day
+  * I go to bed
+    Feeling depleted of spoons, you go right back to bed.
+    mod energy 10
+    mod time -7.5
+    -> second_day
+  * I call my parents
+    req energy >10
+    [call]
+      (30) The phone rings twice, and dad picks up. You have a good chat.
+        req energy>20
+        mod energy -10
+      (10) The phone rings twice, and mom picks up. You have a good chat.
+        req energy>20
+        freq time_of_day morning 100
+        mod energy -10
+      (40) The phone rings ten times, nobody is at home.
+        mod energy 10
+    You decide it's now time to go to sleep.
+      mod energy 10
+      mod time -7.5
+      -> second_day
+
+# second_day
+  You wake up feeling refreshed. Let's see what this day brings.
+    * Explore a museum
+      -> second_day/museum
+    * Go to the Farmer's Market
+      -> second_day/farmers_market
+
+## museum
+  You get to the museum door. You watch through the window. It seems crowded.
+
+## farmers_market
+  You get to the farmer's market. It's very early and some stands are still being set up.
