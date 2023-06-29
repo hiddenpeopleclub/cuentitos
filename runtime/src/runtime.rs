@@ -1,8 +1,12 @@
+use std::fmt::Display;
 use std::println;
 
+use crate::GameState;
 use cuentitos_common::BlockId;
 use cuentitos_common::BlockSettings;
 use cuentitos_common::Database;
+use cuentitos_common::SectionKey;
+use cuentitos_common::VariableKind;
 use rand::Rng;
 use rand::SeedableRng;
 use rand_pcg::Pcg32;
@@ -22,12 +26,15 @@ pub struct Runtime {
   #[serde(skip)]
   rng: Option<Pcg32>,
   seed: u64,
+  game_state: GameState,
 }
 
 impl Runtime {
   pub fn new(database: Database) -> Runtime {
+    let game_state: GameState = GameState::from_config(&database.config);
     Runtime {
       database,
+      game_state,
       ..Default::default()
     }
   }
@@ -35,6 +42,19 @@ impl Runtime {
   pub fn set_seed(&mut self, seed: u64) {
     self.seed = seed;
     self.rng = Some(Pcg32::seed_from_u64(seed));
+  }
+
+  pub fn jump_to_section(&mut self, section: String, subsection: Option<String>) {
+    let key = SectionKey {
+      section,
+      subsection,
+    };
+    if let Some(block_id) = self.database.sections.get(&key) {
+      self.block_stack.clear();
+      self.block_stack.push(*block_id);
+    } else {
+      println!("Can't find section: {:?}", key);
+    }
   }
 
   pub fn next_block(&mut self) -> Option<Block> {
@@ -98,6 +118,113 @@ impl Runtime {
     self.next_block()
   }
 
+  pub fn set_variable<R, T>(&mut self, variable: R, value: T) -> Result<(), String>
+  where
+    T: Display + std::str::FromStr + Default,
+    R: AsRef<str>,
+  {
+    let variable = variable.as_ref().to_string();
+    if self.database.config.variables.contains_key(&variable) {
+      let t = std::any::type_name::<T>();
+      if (t == "i32" && self.database.config.variables[&variable] == VariableKind::Integer)
+        || (t == "f32" && self.database.config.variables[&variable] == VariableKind::Float)
+        || (t == "bool" && self.database.config.variables[&variable] == VariableKind::Bool)
+        || (t == "alloc::string::String"
+          && self.database.config.variables[&variable] == VariableKind::String)
+        || (t == "&str" && self.database.config.variables[&variable] == VariableKind::String)
+        || self.is_valid_enum::<T>(&value.to_string())
+      {
+        self
+          .game_state
+          .variables
+          .insert(variable, value.to_string());
+      } else {
+        return Err("Invalid Variable Type".to_string());
+      }
+    } else {
+      return Err("Invalid Variable".to_string());
+    }
+    Ok(())
+  }
+
+  pub fn get_variable_kind<R>(&self, variable: R) -> Option<VariableKind>
+  where
+    R: AsRef<str>,
+  {
+    let variable = variable.as_ref();
+
+    if self.database.config.variables.contains_key(variable) {
+      Some(self.database.config.variables[variable].clone())
+    } else {
+      None
+    }
+  }
+
+  pub fn get_variable<R, T>(&self, variable: R) -> Result<T, String>
+  where
+    T: Display + std::str::FromStr + Default,
+    R: AsRef<str>,
+  {
+    let variable = variable.as_ref().to_string();
+    let value = match self.game_state.variables.get(&variable) {
+      Some(value) => value.clone(),
+      None => T::default().to_string(),
+    };
+    if self.database.config.variables.contains_key(&variable) {
+      let t = std::any::type_name::<T>();
+      if (t == "i32" && self.database.config.variables[&variable] == VariableKind::Integer)
+        || (t == "f32" && self.database.config.variables[&variable] == VariableKind::Float)
+        || (t == "bool" && self.database.config.variables[&variable] == VariableKind::Bool)
+        || (t == "alloc::string::String"
+          && self.database.config.variables[&variable] == VariableKind::String)
+        || (t == "&str" && self.database.config.variables[&variable] == VariableKind::String)
+        || self.is_valid_enum::<T>(&value)
+      {
+        if let Ok(value) = value.parse::<T>() {
+          return Ok(value);
+        } else {
+          return Err("Unknown Parsing Error".to_string());
+        }
+      }
+    } else {
+      return Err("Invalid Variable".to_string());
+    }
+
+    Err("Invalid Variable".to_string())
+  }
+
+  fn is_valid_enum<T>(&self, value: &String) -> bool
+  where
+    T: Display + std::str::FromStr + Default,
+  {
+    for kind in self.database.config.variables.values() {
+      if let VariableKind::Enum(possible_values) = kind {
+        let mut value_found = false;
+        for possible_value in possible_values {
+          if value == possible_value {
+            value_found = true;
+            break;
+          }
+        }
+
+        if value_found {
+          let mut all_values_parse = true;
+          for possible_value in possible_values {
+            if possible_value.parse::<T>().is_err() {
+              all_values_parse = false;
+              break;
+            }
+          }
+          if all_values_parse {
+            return true;
+          }
+        }
+      }
+    }
+
+    false
+  }
+
   fn random_float(&mut self) -> Option<f32> {
     if self.rng.is_none() {
       self.rng = Some(Pcg32::from_entropy())
@@ -139,6 +266,17 @@ impl Runtime {
   fn update_stack(&mut self) {
     if self.block_stack.is_empty() {
       self.block_stack.push(0);
+      let last_block_id = *self.block_stack.last().unwrap();
+      let last_block = self.get_block(last_block_id).clone();
+      match last_block {
+        cuentitos_common::Block::Section { id: _, settings: _ } => {
+          self.update_stack();
+        }
+        cuentitos_common::Block::Subsection { id: _, settings: _ } => {
+          self.update_stack();
+        }
+        _ => {}
+      }
       return;
     }
 
@@ -167,6 +305,7 @@ impl Runtime {
             return;
           }
         }
+        _ => {}
       }
     }
 
@@ -217,13 +356,27 @@ impl Runtime {
         self.block_stack = vec![0];
         return;
       }
-      cuentitos_common::NextBlock::Section(_) => todo!(),
+      cuentitos_common::NextBlock::Section(key) => {
+        self.jump_to_section(key.section.clone(), key.subsection.clone());
+        self.update_stack();
+      }
     }
 
     self.block_stack.pop();
 
     if self.block_stack.is_empty() {
       self.block_stack.push(last_block_id + 1);
+      let last_block_id = *self.block_stack.last().unwrap();
+      let last_block = self.get_block(last_block_id).clone();
+      match last_block {
+        cuentitos_common::Block::Section { id: _, settings: _ } => {
+          self.update_stack();
+        }
+        cuentitos_common::Block::Subsection { id: _, settings: _ } => {
+          self.update_stack();
+        }
+        _ => {}
+      }
       return;
     }
 
@@ -242,6 +395,9 @@ impl Runtime {
               self.block_stack.push(new_block);
               return;
             }
+          }
+          _ => {
+            continue;
           }
         }
         if let cuentitos_common::Block::Choice { id: _, settings: _ } = self.get_block(*child) {
@@ -314,18 +470,89 @@ impl Runtime {
 #[cfg(test)]
 mod test {
 
-  use std::vec;
+  use std::{collections::HashMap, fmt::Display, str::FromStr, vec};
 
   use crate::Runtime;
-  use cuentitos_common::{Block, BlockSettings, Database};
+  use cuentitos_common::{Block, BlockSettings, Config, Database, SectionKey, VariableKind};
 
   #[test]
   fn new_runtime_works_correctly() {
     let database = Database {
       blocks: vec![Block::default()],
+      sections: HashMap::default(),
+      config: Config::default(),
     };
     let runtime = Runtime::new(database.clone());
     assert_eq!(runtime.database, database);
+  }
+
+  #[test]
+  fn jump_to_section_works_correctly() {
+    let section_1 = Block::Section {
+      id: "section_1".to_string(),
+      settings: BlockSettings {
+        children: vec![3],
+        ..Default::default()
+      },
+    };
+    let section_2 = Block::Section {
+      id: "section_1".to_string(),
+      settings: BlockSettings::default(),
+    };
+    let subsection = Block::Subsection {
+      id: "subsection".to_string(),
+      settings: BlockSettings {
+        children: vec![4],
+        ..Default::default()
+      },
+    };
+    let text_1 = Block::Text {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+    let text_2 = Block::Text {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+
+    let mut sections: HashMap<SectionKey, usize> = HashMap::default();
+    sections.insert(
+      SectionKey {
+        section: "section_1".to_string(),
+        subsection: None,
+      },
+      0,
+    );
+    sections.insert(
+      SectionKey {
+        section: "section_2".to_string(),
+        subsection: None,
+      },
+      1,
+    );
+    sections.insert(
+      SectionKey {
+        section: "section_2".to_string(),
+        subsection: Some("subsection".to_string()),
+      },
+      2,
+    );
+    let database = Database {
+      blocks: vec![section_1, section_2, subsection, text_1, text_2],
+      sections,
+      config: Config::default(),
+    };
+
+    let mut runtime = Runtime {
+      database,
+      ..Default::default()
+    };
+    runtime.jump_to_section("section_2".to_string(), Some("subsection".to_string()));
+    runtime.update_stack();
+    assert_eq!(runtime.block_stack, vec![2, 4]);
+    runtime.jump_to_section("section_1".to_string(), None);
+    runtime.update_stack();
+    assert_eq!(runtime.block_stack, vec![0, 3]);
   }
 
   #[test]
@@ -357,6 +584,8 @@ mod test {
 
     let database = Database {
       blocks: vec![parent.clone(), choice_1, choice_2, child_text],
+      sections: HashMap::default(),
+      config: Config::default(),
     };
 
     let mut runtime = Runtime {
@@ -398,6 +627,8 @@ mod test {
 
     let database = Database {
       blocks: vec![parent.clone(), choice_1, choice_2, child_text],
+      sections: HashMap::default(),
+      config: Config::default(),
     };
     let mut runtime = Runtime {
       database,
@@ -431,6 +662,8 @@ mod test {
 
     let database = Database {
       blocks: vec![parent.clone(), child_1.clone(), child_2.clone()],
+      sections: HashMap::default(),
+      config: Config::default(),
     };
 
     let mut runtime = Runtime {
@@ -482,6 +715,8 @@ mod test {
         child_2.clone(),
         child_3.clone(),
       ],
+      sections: HashMap::default(),
+      config: Config::default(),
     };
 
     let mut runtime = Runtime {
@@ -521,6 +756,8 @@ mod test {
 
     let database = Database {
       blocks: vec![parent.clone(), choice_1.clone(), choice_2],
+      sections: HashMap::default(),
+      config: Config::default(),
     };
 
     let mut runtime = Runtime {
@@ -562,7 +799,10 @@ mod test {
 
     let database = Database {
       blocks: vec![parent.clone(), choice_1.clone(), choice_2.clone()],
+      sections: HashMap::default(),
+      config: Config::default(),
     };
+
     let mut runtime = Runtime {
       database,
       ..Default::default()
@@ -618,6 +858,8 @@ mod test {
 
     let database = Database {
       blocks: vec![bucket, text_1, text_2],
+      sections: HashMap::default(),
+      config: Config::default(),
     };
     let mut runtime = Runtime {
       database,
@@ -638,6 +880,162 @@ mod test {
       .get_random_block_from_bucket(&bucket_settings)
       .unwrap();
     assert_eq!(id, 2);
+  }
+
+  #[test]
+  fn int_variables_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Integer;
+    variables.insert("health".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let database = Database {
+      blocks: Vec::default(),
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+
+    let current_health: i32 = runtime.get_variable("health").unwrap();
+    let expected_value = variable_kind.get_default_value().parse().unwrap();
+    assert_eq!(current_health, expected_value);
+
+    runtime.set_variable("health", 100).unwrap();
+    let current_health: i32 = runtime.get_variable("health").unwrap();
+    assert_eq!(current_health, 100);
+  }
+
+  #[test]
+  fn float_variables_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Float;
+    variables.insert("speed".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let database = Database {
+      blocks: Vec::default(),
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+
+    let current_speed: f32 = runtime.get_variable("speed").unwrap();
+    let expected_value = variable_kind.get_default_value().parse().unwrap();
+    assert_eq!(current_speed, expected_value);
+
+    runtime.set_variable("speed", 1.5 as f32).unwrap();
+    let current_speed: f32 = runtime.get_variable("speed").unwrap();
+    assert_eq!(current_speed, 1.5);
+  }
+
+  #[test]
+  fn bool_variables_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Bool;
+    variables.insert("bike".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let database = Database {
+      blocks: Vec::default(),
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+
+    let current_bike: bool = runtime.get_variable("bike").unwrap();
+    let expected_value = variable_kind.get_default_value().parse().unwrap();
+    assert_eq!(current_bike, expected_value);
+
+    runtime.set_variable("bike", true).unwrap();
+    let current_speed: bool = runtime.get_variable("bike").unwrap();
+    assert_eq!(current_speed, true);
+  }
+
+  #[test]
+  fn string_variables_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::String;
+    variables.insert("message".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let database = Database {
+      blocks: Vec::default(),
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+
+    let current_message: String = runtime.get_variable("message").unwrap();
+    let expected_value = variable_kind.get_default_value();
+    assert_eq!(current_message, expected_value);
+
+    runtime
+      .set_variable("message", "hello".to_string())
+      .unwrap();
+    let current_message: String = runtime.get_variable("message").unwrap();
+    assert_eq!(current_message, "hello".to_string());
+  }
+
+  #[test]
+  fn enum_variables_work() {
+    let mut variables = HashMap::default();
+
+    let variable_kind = VariableKind::Enum(vec!["Day".to_string(), "Night".to_string()]);
+    variables.insert("time_of_day".to_string(), variable_kind.clone());
+    let config = Config { variables };
+
+    let database = Database {
+      blocks: Vec::default(),
+      sections: HashMap::default(),
+      config,
+    };
+
+    let mut runtime = Runtime::new(database);
+
+    let current_time_of_day: TimeOfDay = runtime.get_variable("time_of_day").unwrap();
+    let expected_value = variable_kind.get_default_value().parse().unwrap();
+    assert_eq!(current_time_of_day, expected_value);
+
+    runtime
+      .set_variable("time_of_day", TimeOfDay::Night)
+      .unwrap();
+    let current_time_of_day: TimeOfDay = runtime.get_variable("time_of_day").unwrap();
+    assert_eq!(current_time_of_day, TimeOfDay::Night);
+
+    #[derive(Debug, Default, PartialEq, Eq)]
+    enum TimeOfDay {
+      #[default]
+      Day,
+      Night,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct TestError;
+
+    impl FromStr for TimeOfDay {
+      type Err = TestError;
+
+      fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+          "Day" => Ok(TimeOfDay::Day),
+          "Night" => Ok(TimeOfDay::Night),
+          _ => Err(TestError),
+        }
+      }
+    }
+    impl Display for TimeOfDay {
+      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+      }
+    }
   }
 
   #[test]
@@ -677,6 +1075,8 @@ mod test {
         text_with_100_chances,
         text_with_0_chances,
       ],
+      sections: HashMap::default(),
+      config: Config::default(),
     };
     let mut runtime = Runtime {
       database,

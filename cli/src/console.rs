@@ -31,17 +31,45 @@ impl Console {
 
     loop {
       let input = Self::prompt("> ");
-      let mut args = input.split(' ');
 
-      match args.next() {
-        Some("") => {
+      match input.as_str() {
+        "" => {
           if let Some(output_text) = runtime.next_block() {
             print_output_text(output_text);
           }
         }
-        Some("q") => break,
-        Some(str) => {
-          if let Ok(choice) = str.parse::<usize>() {
+        "sections" => {
+          println!("Sections:");
+          for section in runtime.database.sections.keys() {
+            println!("{:?}", section);
+          }
+        }
+        "q" => break,
+        "variables" => print_variables(&runtime),
+        str => {
+          if str.starts_with("set ") {
+            let substr: String = str.chars().skip(4).collect();
+            let mut splitted = substr.split(' ');
+            if let Some(variable) = splitted.next() {
+              if let Some(value) = splitted.next() {
+                set_variable_value(variable, value, &mut runtime);
+              }
+            }
+          } else if str.starts_with("->") {
+            let substr: String = str.chars().skip(2).collect();
+            let mut splitted = substr.split('.');
+            if let Some(section) = splitted.next() {
+              if let Some(subsection) = splitted.next() {
+                runtime.jump_to_section(section.to_string(), Some(subsection.to_string()));
+              } else {
+                runtime.jump_to_section(section.to_string(), None);
+              }
+
+              if let Some(output_text) = runtime.next_block() {
+                print_output_text(output_text);
+              }
+            }
+          } else if let Ok(choice) = str.parse::<usize>() {
             if choice == 0 {
               println!("invalid option");
               continue;
@@ -51,12 +79,61 @@ impl Console {
             }
           }
         }
-        None => {}
       }
     }
   }
 }
 
+fn set_variable_value(variable: &str, value: &str, runtime: &mut Runtime) {
+  for (variable_name, kind) in runtime.database.config.variables.clone() {
+    if variable_name == variable {
+      match kind {
+        VariableKind::Integer => {
+          let int: i32 = value.parse().unwrap();
+          runtime.set_variable(variable, int).unwrap();
+        }
+        VariableKind::Float => {
+          let float: f32 = value.parse().unwrap();
+          runtime.set_variable(variable, float).unwrap();
+        }
+        VariableKind::Bool => {
+          let bool: bool = value.parse().unwrap();
+          runtime.set_variable(variable, bool).unwrap();
+        }
+        VariableKind::String => {
+          runtime.set_variable(variable, value.to_string()).unwrap();
+        }
+        VariableKind::Enum(_) => match runtime.set_variable(variable, value.to_string()) {
+          Ok(_) => {}
+          Err(err) => println!("{}", err),
+        },
+      }
+    }
+  }
+}
+
+fn print_variables(runtime: &Runtime) {
+  for (variable, kind) in &runtime.database.config.variables {
+    match kind {
+      VariableKind::Integer => {
+        let int: i32 = runtime.get_variable(variable).unwrap();
+        println!("{}: {}", variable, int);
+      }
+      VariableKind::Float => {
+        let float: f32 = runtime.get_variable(variable).unwrap();
+        println!("{}: {}", variable, float);
+      }
+      VariableKind::Bool => {
+        let bool: bool = runtime.get_variable(variable).unwrap();
+        println!("{}: {}", variable, bool);
+      }
+      _ => {
+        let string: String = runtime.get_variable(variable).unwrap();
+        println!("{}: {}", variable, string);
+      }
+    }
+  }
+}
 fn print_output_text(output_text: Block) {
   println!("{}", output_text.text);
   for i in 0..output_text.choices.len() {
