@@ -751,7 +751,7 @@ fn parse_condition(token: Pair<Rule>) -> Option<Condition> {
   if token.as_rule() != Rule::Condition {
     return None;
   }
-  /*Condition = { Identifier ~ " "* ~ (ComparisonOperator ~ " "*)? ~ Value } */
+  //Condition = { ( Identifier ~ " "* ~ ( ComparisonOperator ~ " "* )? ~ Value? ) | ( NotEqualOperator? ~ " "* ~ Identifier ~ " "*) }
 
   let mut condition = Condition::default();
 
@@ -764,6 +764,9 @@ fn parse_condition(token: Pair<Rule>) -> Option<Condition> {
         if let Some(operator) = parse_comparison_operator(inner_token) {
           condition.operator = operator;
         }
+      }
+      Rule::NotEqualOperator => {
+          condition.operator = Operator::NotEqual;
       }
       Rule::Value => {
         condition.value = inner_token.as_str().to_string();
@@ -1447,6 +1450,24 @@ mod test {
   }
 
   #[test]
+  fn parse_not_equal_condition_correctly() {
+    /*Condition = { Identifier ~ " "* ~ (ComparisonOperator ~ " "*)? ~ Value } */
+    let variable = make_random_identifier();
+
+    let condition_string = format!("!{}", variable);
+
+    let expected_value = Condition {
+      variable,
+      operator: Operator::NotEqual,
+      value: "true".to_string(),
+    };
+
+    let token = short_parse(Rule::Condition, &condition_string);
+    let condition = parse_condition(token).unwrap();
+
+    assert_eq!(condition, expected_value);
+  }
+  #[test]
   fn parse_operators_correctly() {
     let token = short_parse(Rule::ComparisonOperator, "=");
     assert_eq!(parse_comparison_operator(token).unwrap(), Operator::Equal);
@@ -1487,46 +1508,7 @@ mod test {
       Operator::NotEqual
     );
   }
-  /* #[test]
-   fn percentage_probability_parse_correctly() {
-     //probability = { "(" ~ " "* ~ ( percentage | float | integer ) ~ " "* ~ ")" ~ " "* }
-     let percentage = rand::thread_rng().gen_range(u8::MIN..u8::MAX);
-     let expected_value: PercentageProbability = PercentageProbability { value: percentage };
-
-     let chance_string = format!("({}%)", percentage);
-
-     let token = short_parse(Rule::Chance, &chance_string);
-
-     let probability = parse_chance(token).unwrap();
-     let probability = probability
-       .as_any()
-       .downcast_ref::<PercentageProbability>()
-       .unwrap();
-
-     assert_eq!(*probability, expected_value);
-   }
-
-   #[test]
-   fn float_probability_parse_correctly() {
-     let float = rand::thread_rng().gen_range(i8::MIN as f32..i8::MAX as f32);
-     let expected_value = FloatProbability { value: float };
-
-     let chance_string = format!("({})", float);
-
-     let token = PalabritasParser::parse(Rule::Chance, &chance_string)
-       .expect("unsuccessful parse")
-       .next()
-       .unwrap();
-
-     let probability = parse_chance(token).unwrap();
-     let probability = probability
-       .as_any()
-       .downcast_ref::<FloatProbability>()
-       .unwrap();
-
-     assert_eq!(*probability, expected_value);
-   }
-  */
+ 
   #[test]
   fn parse_char_rule() {
     //char = { ASCII_ALPHANUMERIC | "." | "_" | "/" | "," | ";" | "'" | " " | "?" | "!" | "¿" | "¡"}

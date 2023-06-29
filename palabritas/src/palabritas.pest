@@ -6,11 +6,12 @@ Percentage = { Integer ~ "%" }
 Indentation = { "  " }
 String = @{ Char+ }
 ComparisonOperator = { "!=" | "=" | "<=" | ">=" | "<" | ">" | "!" }
+NotEqualOperator = {"!"}
 
 SnakeCase = { ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | "_" | ASCII_DIGIT)* }
 Identifier = { (ASCII_ALPHA | "_" ) ~ (ASCII_ALPHANUMERIC | "_")* }
 Value = { Identifier | "="? ~ Float | Percentage | "="? ~ Integer }
-Condition = { "!"? ~ Identifier ~ " "* ~ (ComparisonOperator ~ " "*)? ~ Value? }
+Condition = { ( Identifier ~ " "* ~ ( ComparisonOperator ~ " "* )? ~ Value? ) | ( NotEqualOperator? ~ " "* ~ Identifier ~ " "*) }
 
 Requirement = { "req" ~ " "+ ~ Condition }
 Frequency = { "freq" ~ " "+ ~ Condition ~ " "+ ~ ( Float | Integer ) }
