@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use cuentitos_common::{
-  Block, BlockId, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Modifier,
-  NextBlock, Operator, Requirement, SectionKey,
+  Block, BlockId, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Function,
+  Modifier, NextBlock, Operator, Requirement, SectionKey,
 };
 use pest::{iterators::Pair, Parser};
 
@@ -119,6 +119,7 @@ pub fn parse_database(token: Pair<Rule>, config: Config) -> Result<Database, Pal
     blocks: ordered_blocks,
     sections,
     config,
+    ..Default::default()
   })
 }
 
@@ -578,7 +579,7 @@ fn add_command_to_settings(token: Pair<Rule>, settings: &mut BlockSettings) {
 
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
-      //Command = {NEWLINE ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert) }
+      //Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert | Function | Unique | Tag) }
       Rule::Requirement => {
         if let Some(requirement) = parse_requirement(inner_token) {
           settings.requirements.push(requirement);
@@ -602,6 +603,16 @@ fn add_command_to_settings(token: Pair<Rule>, settings: &mut BlockSettings) {
       Rule::Unique => {
         settings.unique = true;
       }
+      Rule::Tag => {
+        if let Some(tag) = parse_tag(inner_token) {
+          settings.tags.push(tag);
+        }
+      }
+      Rule::Function => {
+        if let Some(function) = parse_function(inner_token) {
+          settings.functions.push(function);
+        }
+      }
       _ => {}
     }
   }
@@ -611,6 +622,34 @@ fn add_command_to_block(token: Pair<Rule>, block: &mut Block) {
   add_command_to_settings(token, settings);
 }
 
+fn parse_function(token: Pair<Rule>) -> Option<Function> {
+  if token.as_rule() != Rule::Function {
+    return None;
+  }
+  let mut name = String::default();
+  let mut parameters = Vec::default();
+  for inner_token in token.into_inner() {
+    if inner_token.as_rule() == Rule::Identifier {
+      name = inner_token.as_str().to_string();
+    }
+    if inner_token.as_rule() == Rule::Value {
+      parameters.push(inner_token.as_str().to_string());
+    }
+  }
+  Some(Function { name, parameters })
+}
+
+fn parse_tag(token: Pair<Rule>) -> Option<String> {
+  if token.as_rule() != Rule::Tag {
+    return None;
+  }
+  for inner_token in token.into_inner() {
+    if inner_token.as_rule() == Rule::Identifier {
+      return Some(inner_token.as_str().to_string());
+    }
+  }
+  None
+}
 fn parse_divert(token: Pair<Rule>) -> Option<NextBlock> {
   if token.as_rule() != Rule::Divert {
     return None;
@@ -712,7 +751,7 @@ fn parse_condition(token: Pair<Rule>) -> Option<Condition> {
   if token.as_rule() != Rule::Condition {
     return None;
   }
-  /*Condition = { Identifier ~ " "* ~ (ComparisonOperator ~ " "*)? ~ Value } */
+  //Condition = { ( Identifier ~ " "* ~ ( ComparisonOperator ~ " "* )? ~ Value? ) | ( NotEqualOperator? ~ " "* ~ Identifier ~ " "*) }
 
   let mut condition = Condition::default();
 
@@ -725,6 +764,9 @@ fn parse_condition(token: Pair<Rule>) -> Option<Condition> {
         if let Some(operator) = parse_comparison_operator(inner_token) {
           condition.operator = operator;
         }
+      }
+      Rule::NotOperator => {
+          condition.operator = Operator::NotEqual;
       }
       Rule::Value => {
         condition.value = inner_token.as_str().to_string();
@@ -797,6 +839,8 @@ fn match_rule(token: &Pair<Rule>, expected_rule: Rule) -> Result<(), PalabritasE
 
 #[cfg(test)]
 mod test {
+
+  use std::vec;
 
   use crate::parser::*;
   use cuentitos_common::{
@@ -1263,10 +1307,39 @@ mod test {
   }
 
   #[test]
-  fn database_sections_get_added_correctly() {}
+  fn parse_tag_correctly() {
+    //Tag = {"tag" ~ " "+ ~ Identifier}
+    let identifier = make_random_identifier();
+    let tag_string = format!("tag {}", identifier);
+
+    let token = short_parse(Rule::Tag, &tag_string);
+    let value = parse_tag(token).unwrap();
+
+    assert_eq!(value, identifier);
+  }
+
+  #[test]
+  fn parse_function_correctly() {
+    //Function = {"`" ~ " "* ~ Identifier ~ (" " ~ Value)* ~ " "* ~ "`"}
+    let name = make_random_identifier();
+    let parameter_1 = make_random_identifier();
+    let parameter_2 = make_random_identifier();
+    let function_string = format!("`{} {} {}`", name, parameter_1, parameter_2);
+
+    let token = short_parse(Rule::Function, &function_string);
+    let value = parse_function(token).unwrap();
+
+    let expected_value = Function {
+      name,
+      parameters: vec![parameter_1, parameter_2],
+    };
+
+    assert_eq!(value, expected_value);
+  }
+
   #[test]
   fn parse_divert_correctly() {
-    //Divert = { "->"  ~ " "* ~ Identifier ~ ("." ~ Identifier)? }
+    //Divert = { "->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)? }
     let section = make_random_identifier();
     let divert_string = format!("-> {}", section);
 
@@ -1377,6 +1450,24 @@ mod test {
   }
 
   #[test]
+  fn parse_not_equal_condition_correctly() {
+    /*Condition = { Identifier ~ " "* ~ (ComparisonOperator ~ " "*)? ~ Value } */
+    let variable = make_random_identifier();
+
+    let condition_string = format!("!{}", variable);
+
+    let expected_value = Condition {
+      variable,
+      operator: Operator::NotEqual,
+      value: "true".to_string(),
+    };
+
+    let token = short_parse(Rule::Condition, &condition_string);
+    let condition = parse_condition(token).unwrap();
+
+    assert_eq!(condition, expected_value);
+  }
+  #[test]
   fn parse_operators_correctly() {
     let token = short_parse(Rule::ComparisonOperator, "=");
     assert_eq!(parse_comparison_operator(token).unwrap(), Operator::Equal);
@@ -1417,46 +1508,7 @@ mod test {
       Operator::NotEqual
     );
   }
-  /* #[test]
-   fn percentage_probability_parse_correctly() {
-     //probability = { "(" ~ " "* ~ ( percentage | float | integer ) ~ " "* ~ ")" ~ " "* }
-     let percentage = rand::thread_rng().gen_range(u8::MIN..u8::MAX);
-     let expected_value: PercentageProbability = PercentageProbability { value: percentage };
-
-     let chance_string = format!("({}%)", percentage);
-
-     let token = short_parse(Rule::Chance, &chance_string);
-
-     let probability = parse_chance(token).unwrap();
-     let probability = probability
-       .as_any()
-       .downcast_ref::<PercentageProbability>()
-       .unwrap();
-
-     assert_eq!(*probability, expected_value);
-   }
-
-   #[test]
-   fn float_probability_parse_correctly() {
-     let float = rand::thread_rng().gen_range(i8::MIN as f32..i8::MAX as f32);
-     let expected_value = FloatProbability { value: float };
-
-     let chance_string = format!("({})", float);
-
-     let token = PalabritasParser::parse(Rule::Chance, &chance_string)
-       .expect("unsuccessful parse")
-       .next()
-       .unwrap();
-
-     let probability = parse_chance(token).unwrap();
-     let probability = probability
-       .as_any()
-       .downcast_ref::<FloatProbability>()
-       .unwrap();
-
-     assert_eq!(*probability, expected_value);
-   }
-  */
+ 
   #[test]
   fn parse_char_rule() {
     //char = { ASCII_ALPHANUMERIC | "." | "_" | "/" | "," | ";" | "'" | " " | "?" | "!" | "¿" | "¡"}
@@ -1781,6 +1833,26 @@ mod test {
   fn parse_unique_rule() {
     //Unique = {"unique"}
     assert_parse_rule(Rule::Unique, "unique");
+  }
+
+  #[test]
+  fn parse_tag_rule() {
+    //Tag = {"tag" ~ " "+ ~ Identifier}
+    let identifier = make_random_identifier();
+    assert_parse_rule(Rule::Tag, &format!("tag {}", identifier));
+  }
+
+  #[test]
+  fn parse_function_rule() {
+    //Function = {"`" ~ " "* ~ Identifier ~ (" " ~ Value)* ~ " "* ~ "`"}
+    let function = make_random_identifier();
+    assert_parse_rule(Rule::Function, &format!("`{}`", function));
+    let parameter_1 = make_random_identifier();
+    let parameter_2 = make_random_identifier();
+    assert_parse_rule(
+      Rule::Function,
+      &format!("`{} {} {}`", function, parameter_1, parameter_2),
+    );
   }
 
   fn assert_parse_rule(rule: Rule, input: &str) {

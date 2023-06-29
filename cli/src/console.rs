@@ -9,9 +9,23 @@ use std::path::PathBuf;
 #[derive(Debug)]
 pub struct Console {}
 impl Console {
-  fn prompt(name: &str) -> String {
+  fn prompt(section: Option<String>, subsection: Option<String>) -> String {
     let mut line = String::new();
-    print!("{}", name);
+    
+    let mut prompt_str = String::from("\n");
+
+    if let Some(section) = section {
+      prompt_str.push_str(&section);
+    }
+    
+    if let Some(subsection) = subsection {
+      prompt_str.push_str("/");
+      prompt_str.push_str(&subsection);
+    }
+
+    prompt_str.push_str(" > ");
+
+    print!("{}", prompt_str);
     std::io::stdout().flush().unwrap();
     std::io::stdin()
       .read_line(&mut line)
@@ -30,15 +44,9 @@ impl Console {
     let mut runtime = Runtime::new(file);
 
     loop {
-      let prompt_str = match &runtime.game_state.current_section {
-        Some(section) => match &runtime.game_state.current_subsection {
-          Some(subsection) => format!("{}/{}>", section, subsection),
-          None => format!("{}>", section),
-        },
-        None => ">".to_string(),
-      };
-
-      let input = Self::prompt(prompt_str.as_str());
+      let section = runtime.game_state.current_section.clone();
+      let subsection = runtime.game_state.current_subsection.clone();
+      let input = Self::prompt(section, subsection);
 
       match input.as_str() {
         "" => {

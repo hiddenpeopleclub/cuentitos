@@ -6,20 +6,22 @@ Percentage = { Integer ~ "%" }
 Indentation = { "  " }
 String = @{ Char+ }
 ComparisonOperator = { "!=" | "=" | "<=" | ">=" | "<" | ">" | "!" }
+NotOperator = {"!"}
 
 SnakeCase = { ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | "_" | ASCII_DIGIT)* }
 Identifier = { (ASCII_ALPHA | "_" ) ~ (ASCII_ALPHANUMERIC | "_")* }
 Value = { Identifier | "="? ~ Float | Percentage | "="? ~ Integer }
-Condition = { "!"? ~ Identifier ~ " "* ~ (ComparisonOperator ~ " "*)? ~ Value? }
+Condition = { ( Identifier ~ " "* ~ ( ComparisonOperator ~ " "* )? ~ Value? ) | ( NotOperator? ~ " "* ~ Identifier ~ " "*) }
 
 Requirement = { "req" ~ " "+ ~ Condition }
 Frequency = { "freq" ~ " "+ ~ Condition ~ " "+ ~ ( Float | Integer ) }
 Modifier = { "mod" ~ " "+ ~ Identifier ~ " "+ ~ Value }
 Divert = { "->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)? }
-Function = {"`" ~ SnakeCase ~ (" " ~ Value)* ~ "`"}
+Function = {"`" ~ " "* ~ Identifier ~ (" " ~ Value)* ~ " "* ~ "`"}
+Tag = {"tag" ~ " "+ ~ Identifier}
 Unique = {"unique"}
 
-Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert | Function | Unique) } 
+Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert | Function | Unique | Tag) } 
 
 Chance = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
 
