@@ -25,9 +25,19 @@ pub enum PalabritasError {
     rule_found: Rule,
   },
   DivisionByZero(ErrorInfo),
+  VariableDoesntExist {
+    info: ErrorInfo,
+    variable: String,
+  },
+  InvalidVariableValue {
+    info: ErrorInfo,
+    variable: String,
+    value: String,
+    variable_type: String,
+  },
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ErrorInfo {
   pub line: usize,
   pub string: String,
@@ -92,6 +102,21 @@ impl Display for PalabritasError {
       }
       PalabritasError::DivisionByZero(path) => {
         write!(f, "Can't divide by zero: {:?}", path)
+      }
+      PalabritasError::VariableDoesntExist { info, variable } => {
+        write!(f, "Variable {} doesn't exist.\n{}", variable, info)
+      }
+      PalabritasError::InvalidVariableValue {
+        info,
+        variable,
+        value,
+        variable_type,
+      } => {
+        write!(
+          f,
+          "Invalid value for variable {}. Expected {}, but found {}\n{}",
+          variable, value, variable_type, info
+        )
       }
     }
   }

@@ -87,10 +87,10 @@ pub fn parse_database(token: Pair<Rule>, config: Config) -> Result<Database, Pal
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Block => {
-        parse_block(inner_token, &mut blocks, 0, &mut i18n)?;
+        parse_block(inner_token, &mut blocks, 0, &mut i18n, &config)?;
       }
       Rule::Section => {
-        parse_section(inner_token, &mut blocks, &mut sections, &mut i18n)?;
+        parse_section(inner_token, &mut blocks, &mut sections, &mut i18n, &config)?;
       }
       _ => {}
     }
@@ -152,7 +152,7 @@ pub fn parse_chance_str(input: &str) -> Result<Chance, PalabritasError> {
 
 pub fn parse_condition_str(input: &str) -> Result<Condition, PalabritasError> {
   let token = parse_str(input, Rule::Condition)?;
-  parse_condition(token)
+  parse_condition(token, &Config::default())
 }
 
 pub fn parse_choice_str(input: &str) -> Result<Block, PalabritasError> {
@@ -167,6 +167,7 @@ pub fn parse_section_str(input: &str) -> Result<Block, PalabritasError> {
     &mut Vec::default(),
     &mut HashMap::default(),
     &mut I18n::default(),
+    &Config::default(),
   )
 }
 
@@ -187,17 +188,17 @@ pub fn parse_divert_str(input: &str) -> Result<NextBlock, PalabritasError> {
 
 pub fn parse_modifier_str(input: &str) -> Result<Modifier, PalabritasError> {
   let token = parse_str(input, Rule::Modifier)?;
-  parse_modifier(token)
+  parse_modifier(token, &Config::default())
 }
 
 pub fn parse_frequency_str(input: &str) -> Result<FrequencyModifier, PalabritasError> {
   let token = parse_str(input, Rule::Frequency)?;
-  parse_frequency(token)
+  parse_frequency(token, &Config::default())
 }
 
 pub fn parse_requirement_str(input: &str) -> Result<Requirement, PalabritasError> {
   let token = parse_str(input, Rule::Requirement)?;
-  parse_requirement(token)
+  parse_requirement(token, &Config::default())
 }
 
 pub fn parse_comparison_operator_str(input: &str) -> Result<ComparisonOperator, PalabritasError> {
@@ -242,6 +243,7 @@ fn parse_section(
   blocks: &mut Vec<Vec<Block>>,
   sections: &mut HashMap<SectionKey, BlockId>,
   i18n: &mut I18n,
+  config: &Config,
 ) -> Result<Block, PalabritasError> {
   match_rule(&token, Rule::Section)?;
   if blocks.is_empty() {
@@ -260,16 +262,16 @@ fn parse_section(
         id = inner_token.as_str().to_string();
       }
       Rule::Command => {
-        add_command_to_settings(inner_token, &mut settings)?;
+        add_command_to_settings(inner_token, &mut settings, config)?;
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
-          parse_block(inner_blocks_token, blocks, 1, i18n)?;
+          parse_block(inner_blocks_token, blocks, 1, i18n, config)?;
           settings.children.push(blocks[1].len() - 1);
         }
       }
       Rule::Subsection => {
-        parse_subsection(inner_token, blocks, &id, sections, i18n)?;
+        parse_subsection(inner_token, blocks, &id, sections, i18n, config)?;
       }
       _ => {}
     }
@@ -295,6 +297,7 @@ fn parse_subsection(
   section_name: &str,
   sections: &mut HashMap<SectionKey, BlockId>,
   i18n: &mut I18n,
+  config: &Config,
 ) -> Result<(), PalabritasError> {
   match_rule(&token, Rule::Subsection)?;
 
@@ -314,16 +317,16 @@ fn parse_subsection(
         id = inner_token.as_str().to_string();
       }
       Rule::Command => {
-        add_command_to_settings(inner_token, &mut settings)?;
+        add_command_to_settings(inner_token, &mut settings, config)?;
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
-          parse_block(inner_blocks_token, blocks, 1, i18n)?;
+          parse_block(inner_blocks_token, blocks, 1, i18n, config)?;
           settings.children.push(blocks[1].len() - 1);
         }
       }
       Rule::Subsection => {
-        parse_subsection(inner_token, blocks, section_name, sections, i18n)?;
+        parse_subsection(inner_token, blocks, section_name, sections, i18n, config)?;
       }
       _ => {}
     }
@@ -345,6 +348,7 @@ fn parse_block(
   blocks: &mut Vec<Vec<Block>>,
   child_order: usize,
   i18n: &mut I18n,
+  config: &Config,
 ) -> Result<(), PalabritasError> {
   match_rule(&token, Rule::Block)?;
 
@@ -363,12 +367,12 @@ fn parse_block(
         block = parse_choice(inner_token)?;
       }
       Rule::Command => {
-        add_command_to_block(inner_token, &mut block)?;
+        add_command_to_block(inner_token, &mut block, config)?;
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
           let settings = block.get_settings_mut();
-          parse_block(inner_blocks_token, blocks, child_order + 1, i18n)?;
+          parse_block(inner_blocks_token, blocks, child_order + 1, i18n, config)?;
           settings.children.push(blocks[child_order + 1].len() - 1);
         }
       }
@@ -702,6 +706,7 @@ fn parse_text(token: Pair<Rule>) -> Result<Block, PalabritasError> {
 fn add_command_to_settings(
   token: Pair<Rule>,
   settings: &mut BlockSettings,
+  config: &Config,
 ) -> Result<(), PalabritasError> {
   match_rule(&token, Rule::Command)?;
 
@@ -709,15 +714,15 @@ fn add_command_to_settings(
     match inner_token.as_rule() {
       //Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert | Function | Unique | Tag) }
       Rule::Requirement => {
-        let requirement = parse_requirement(inner_token)?;
+        let requirement = parse_requirement(inner_token, config)?;
         settings.requirements.push(requirement);
       }
       Rule::Frequency => {
-        let frequency = parse_frequency(inner_token)?;
+        let frequency = parse_frequency(inner_token, config)?;
         settings.frequency_modifiers.push(frequency);
       }
       Rule::Modifier => {
-        let modifier = parse_modifier(inner_token)?;
+        let modifier = parse_modifier(inner_token, config)?;
         settings.modifiers.push(modifier);
       }
       Rule::Divert => {
@@ -740,9 +745,13 @@ fn add_command_to_settings(
 
   Ok(())
 }
-fn add_command_to_block(token: Pair<Rule>, block: &mut Block) -> Result<(), PalabritasError> {
+fn add_command_to_block(
+  token: Pair<Rule>,
+  block: &mut Block,
+  config: &Config,
+) -> Result<(), PalabritasError> {
   let settings = block.get_settings_mut();
-  add_command_to_settings(token, settings)
+  add_command_to_settings(token, settings, config)
 }
 
 fn parse_function(token: Pair<Rule>) -> Result<Function, PalabritasError> {
@@ -803,11 +812,13 @@ fn parse_divert(token: Pair<Rule>) -> Result<NextBlock, PalabritasError> {
   }
 }
 
-fn parse_modifier(token: Pair<Rule>) -> Result<Modifier, PalabritasError> {
+fn parse_modifier(token: Pair<Rule>, config: &Config) -> Result<Modifier, PalabritasError> {
   match_rule(&token, Rule::Modifier)?;
   //Modifier = { "set" ~ " "+ ~ ( (Identifier ~ " "+ ~ ModifierOperator? ~ Value) | (NotOperator? ~ " "* ~ Identifier) ) ~ " "* }
-  let line = token.line_col().0;
-  let string = token.as_str().to_string();
+  let error_info = ErrorInfo {
+    line: token.line_col().0,
+    string: token.as_str().to_string(),
+  };
   let mut modifier = Modifier::default();
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
@@ -831,10 +842,82 @@ fn parse_modifier(token: Pair<Rule>) -> Result<Modifier, PalabritasError> {
     }
   }
 
+  check_variable_existance(&modifier.variable, config, &error_info)?;
+  check_variable_value_matches_type(&modifier.variable, &modifier.value, config, &error_info)?;
+
   if modifier.operator == ModifierOperator::Divide && modifier.value == *"0" {
-    Err(PalabritasError::DivisionByZero(ErrorInfo { line, string }))
+    Err(PalabritasError::DivisionByZero(error_info))
   } else {
     Ok(modifier)
+  }
+}
+
+fn check_variable_existance(
+  variable: &str,
+  config: &Config,
+  error_info: &ErrorInfo,
+) -> Result<(), PalabritasError> {
+  if config.variables.get(variable).is_some() {
+    Ok(())
+  } else {
+    Err(PalabritasError::VariableDoesntExist {
+      info: error_info.clone(),
+      variable: variable.to_string(),
+    })
+  }
+}
+
+fn check_variable_value_matches_type(
+  variable: &str,
+  value: &str,
+  config: &Config,
+  error_info: &ErrorInfo,
+) -> Result<(), PalabritasError> {
+  if let Some(kind) = config.variables.get(variable) {
+    match kind {
+      cuentitos_common::VariableKind::Integer => {
+        if value.parse::<i32>().is_ok() {
+          Ok(())
+        } else {
+          Err(PalabritasError::InvalidVariableValue {
+            info: error_info.clone(),
+            variable: variable.to_string(),
+            value: value.to_string(),
+            variable_type: format!("{:?}", kind),
+          })
+        }
+      }
+      cuentitos_common::VariableKind::Float => {
+        if value.parse::<f32>().is_ok() {
+          Ok(())
+        } else {
+          Err(PalabritasError::InvalidVariableValue {
+            info: error_info.clone(),
+            variable: variable.to_string(),
+            value: value.to_string(),
+            variable_type: format!("{:?}", kind),
+          })
+        }
+      }
+      cuentitos_common::VariableKind::Bool => {
+        if value.parse::<bool>().is_ok() {
+          Ok(())
+        } else {
+          Err(PalabritasError::InvalidVariableValue {
+            info: error_info.clone(),
+            variable: variable.to_string(),
+            value: value.to_string(),
+            variable_type: format!("{:?}", kind),
+          })
+        }
+      }
+      _ => Ok(()),
+    }
+  } else {
+    Err(PalabritasError::VariableDoesntExist {
+      info: error_info.clone(),
+      variable: variable.to_string(),
+    })
   }
 }
 
@@ -851,14 +934,17 @@ fn parse_modifier_operator(token: Pair<Rule>) -> Result<ModifierOperator, Palabr
     _ => Ok(ModifierOperator::default()),
   }
 }
-fn parse_frequency(token: Pair<Rule>) -> Result<FrequencyModifier, PalabritasError> {
+fn parse_frequency(
+  token: Pair<Rule>,
+  config: &Config,
+) -> Result<FrequencyModifier, PalabritasError> {
   match_rule(&token, Rule::Frequency)?;
 
   let mut frequency = FrequencyModifier::default();
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Condition => {
-        frequency.condition = parse_condition(inner_token)?;
+        frequency.condition = parse_condition(inner_token, config)?;
       }
 
       Rule::Float | Rule::Integer => {
@@ -872,22 +958,26 @@ fn parse_frequency(token: Pair<Rule>) -> Result<FrequencyModifier, PalabritasErr
   Ok(frequency)
 }
 
-fn parse_requirement(token: Pair<Rule>) -> Result<Requirement, PalabritasError> {
+fn parse_requirement(token: Pair<Rule>, config: &Config) -> Result<Requirement, PalabritasError> {
   match_rule(&token, Rule::Requirement)?;
 
   let mut condition = Condition::default();
   for inner_token in token.into_inner() {
     if inner_token.as_rule() == Rule::Condition {
-      condition = parse_condition(inner_token)?;
+      condition = parse_condition(inner_token, config)?;
     }
   }
 
   Ok(Requirement { condition })
 }
 
-fn parse_condition(token: Pair<Rule>) -> Result<Condition, PalabritasError> {
+fn parse_condition(token: Pair<Rule>, config: &Config) -> Result<Condition, PalabritasError> {
   match_rule(&token, Rule::Condition)?;
   //Condition = { ( Identifier ~ " "* ~ ( ComparisonOperator ~ " "* )? ~ Value? ) | ( NotEqualOperator? ~ " "* ~ Identifier ~ " "*) }
+  let error_info = ErrorInfo {
+    line: token.line_col().0,
+    string: token.as_str().to_string(),
+  };
 
   let mut condition = Condition::default();
 
@@ -908,6 +998,9 @@ fn parse_condition(token: Pair<Rule>) -> Result<Condition, PalabritasError> {
       _ => {}
     }
   }
+
+  check_variable_existance(&condition.variable, config, &error_info)?;
+  check_variable_value_matches_type(&condition.variable, &condition.value, config, &error_info)?;
   Ok(condition)
 }
 
@@ -974,7 +1067,7 @@ mod test {
 
   use crate::parser::*;
   use cuentitos_common::{
-    Block, BlockSettings, Condition, FrequencyModifier, Modifier, Requirement,
+    Block, BlockSettings, Condition, FrequencyModifier, Modifier, Requirement, VariableKind,
   };
 
   use rand::distributions::Alphanumeric;
@@ -1211,7 +1304,14 @@ mod test {
     let token = parse_str(&section_string, Rule::Section).unwrap();
     let mut blocks = Vec::default();
     let mut sections = HashMap::default();
-    parse_section(token, &mut blocks, &mut sections, &mut I18n::default()).unwrap();
+    parse_section(
+      token,
+      &mut blocks,
+      &mut sections,
+      &mut I18n::default(),
+      &Config::default(),
+    )
+    .unwrap();
 
     let section = blocks[0][0].clone();
 
@@ -1278,6 +1378,14 @@ mod test {
     let value = rand::thread_rng().gen::<f32>().to_string();
     let modifier_string = format!("\n set {} {}", variable, value);
 
+    let mut variables = HashMap::default();
+    variables.insert(variable.clone(), VariableKind::Float);
+
+    let mut config = Config {
+      variables,
+      ..Default::default()
+    };
+
     let expected_modifier = Modifier {
       variable,
       value,
@@ -1287,7 +1395,7 @@ mod test {
     block_settings.modifiers.push(expected_modifier);
 
     let token = parse_str(&modifier_string, Rule::Command).unwrap();
-    add_command_to_block(token, &mut block).unwrap();
+    add_command_to_block(token, &mut block, &config).unwrap();
 
     //Divert
     let section = make_random_identifier();
@@ -1299,20 +1407,24 @@ mod test {
     });
 
     let token = parse_str(&divert_string, Rule::Command).unwrap();
-    add_command_to_block(token, &mut block).unwrap();
+    add_command_to_block(token, &mut block, &config).unwrap();
 
     //Unique
 
     block_settings.unique = true;
     let token = parse_str("\n unique", Rule::Command).unwrap();
-    add_command_to_block(token, &mut block).unwrap();
+    add_command_to_block(token, &mut block, &config).unwrap();
 
     //Frequency
 
     let condition_string = make_random_condition();
     let condition = parse_condition_str(&condition_string).unwrap();
-
     let change_value: i32 = rand::thread_rng().gen();
+
+    config
+      .variables
+      .insert(condition.variable.clone(), VariableKind::String);
+
     let frequency_string = format!("\n freq {} {}", condition_string, change_value);
     let expected_frequency = FrequencyModifier {
       condition,
@@ -1322,12 +1434,16 @@ mod test {
     block_settings.frequency_modifiers.push(expected_frequency);
 
     let token = parse_str(&frequency_string, Rule::Command).unwrap();
-    add_command_to_block(token, &mut block).unwrap();
+    add_command_to_block(token, &mut block, &config).unwrap();
 
     //Requirement
 
     let condition_string = make_random_condition();
     let condition = parse_condition_str(&condition_string).unwrap();
+
+    config
+      .variables
+      .insert(condition.variable.clone(), VariableKind::String);
 
     let requirement_string = format!("\n req {}", condition_string);
     let expected_requirement = Requirement { condition };
@@ -1335,7 +1451,7 @@ mod test {
     block_settings.requirements.push(expected_requirement);
 
     let token = parse_str(&requirement_string, Rule::Command).unwrap();
-    add_command_to_block(token, &mut block).unwrap();
+    add_command_to_block(token, &mut block, &config).unwrap();
 
     let expected_block = Block::Text {
       id: text_id,
@@ -1980,7 +2096,13 @@ mod test {
   fn parse_block_str(input: &str) -> Result<Vec<Vec<Block>>, PalabritasError> {
     let token = parse_str(input, Rule::Block)?;
     let mut blocks = Vec::default();
-    parse_block(token, &mut blocks, 0, &mut I18n::default())?;
+    parse_block(
+      token,
+      &mut blocks,
+      0,
+      &mut I18n::default(),
+      &Config::default(),
+    )?;
     Ok(blocks)
   }
 }
