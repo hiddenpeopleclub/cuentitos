@@ -24,6 +24,7 @@ pub enum PalabritasError {
     expected_rule: Rule,
     rule_found: Rule,
   },
+  DivisionByZero(ErrorInfo),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -88,6 +89,9 @@ impl Display for PalabritasError {
       }
       PalabritasError::PathDoesntExist(path) => {
         write!(f, "Path provided doesn't exist: {:?}", path)
+      }
+      PalabritasError::DivisionByZero(path) => {
+        write!(f, "Can't divide by zero: {:?}", path)
       }
     }
   }

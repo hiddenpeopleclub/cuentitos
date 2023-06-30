@@ -50,29 +50,29 @@ You decide to focus on the now...
     req item tea
     A good cup of tea is always good to regulate after the sensory overload of the city.
     You sit in the couch to enjoy your tea. Drink half of the cup and fall asleep.
-    mod energy 5
-    mod time -7.5
+    set energy +5
+    set time -7.5
     -> second_day
   * I go to bed
     Feeling depleted of spoons, you go right back to bed.
-    mod energy 10
-    mod time -7.5
+    set energy +10
+    set time -7.5
     -> second_day
   * I call my parents
     req energy >10
     [call]
       (30) The phone rings twice, and dad picks up. You have a good chat.
         req energy>20
-        mod energy -10
+        set energy -10
       (10) The phone rings twice, and mom picks up. You have a good chat.
         req energy>20
         freq time_of_day morning 100
-        mod energy -10
+        set energy -10
       (40) The phone rings ten times, nobody is at home.
-        mod energy 10
+        set energy +10
     You decide it's now time to go to sleep.
-      mod energy 10
-      mod time -7.5
+      set energy +10
+      set time -7.5
       -> second_day
 
 # second_day

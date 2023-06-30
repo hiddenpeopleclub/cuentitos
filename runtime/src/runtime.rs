@@ -2,6 +2,8 @@ use std::fmt::Display;
 use std::println;
 
 use crate::GameState;
+use cuentitos_common::condition::ComparisonOperator;
+use cuentitos_common::modifier::ModifierOperator;
 use cuentitos_common::BlockId;
 use cuentitos_common::BlockSettings;
 use cuentitos_common::Condition;
@@ -254,16 +256,12 @@ impl Runtime {
           if let Ok(current_value) = self.get_variable::<&str, i32>(&condition.variable) {
             if let Ok(condition_value) = condition.value.parse::<i32>() {
               match condition.operator {
-                cuentitos_common::Operator::Equal => return current_value == condition_value,
-                cuentitos_common::Operator::NotEqual => return current_value != condition_value,
-                cuentitos_common::Operator::GreaterThan => return current_value > condition_value,
-                cuentitos_common::Operator::LessThan => return current_value < condition_value,
-                cuentitos_common::Operator::GreaterOrEqualThan => {
-                  return current_value >= condition_value
-                }
-                cuentitos_common::Operator::LessOrEqualThan => {
-                  return current_value <= condition_value
-                }
+                ComparisonOperator::Equal => return current_value == condition_value,
+                ComparisonOperator::NotEqual => return current_value != condition_value,
+                ComparisonOperator::GreaterThan => return current_value > condition_value,
+                ComparisonOperator::LessThan => return current_value < condition_value,
+                ComparisonOperator::GreaterOrEqualThan => return current_value >= condition_value,
+                ComparisonOperator::LessOrEqualThan => return current_value <= condition_value,
               }
             }
           }
@@ -272,16 +270,12 @@ impl Runtime {
           if let Ok(current_value) = self.get_variable::<&str, f32>(&condition.variable) {
             if let Ok(condition_value) = condition.value.parse::<f32>() {
               match condition.operator {
-                cuentitos_common::Operator::Equal => return current_value == condition_value,
-                cuentitos_common::Operator::NotEqual => return current_value != condition_value,
-                cuentitos_common::Operator::GreaterThan => return current_value > condition_value,
-                cuentitos_common::Operator::LessThan => return current_value < condition_value,
-                cuentitos_common::Operator::GreaterOrEqualThan => {
-                  return current_value >= condition_value
-                }
-                cuentitos_common::Operator::LessOrEqualThan => {
-                  return current_value <= condition_value
-                }
+                ComparisonOperator::Equal => return current_value == condition_value,
+                ComparisonOperator::NotEqual => return current_value != condition_value,
+                ComparisonOperator::GreaterThan => return current_value > condition_value,
+                ComparisonOperator::LessThan => return current_value < condition_value,
+                ComparisonOperator::GreaterOrEqualThan => return current_value >= condition_value,
+                ComparisonOperator::LessOrEqualThan => return current_value <= condition_value,
               }
             }
           }
@@ -290,8 +284,8 @@ impl Runtime {
           if let Ok(current_value) = self.get_variable::<&str, bool>(&condition.variable) {
             if let Ok(condition_value) = condition.value.parse::<bool>() {
               match condition.operator {
-                cuentitos_common::Operator::Equal => return current_value == condition_value,
-                cuentitos_common::Operator::NotEqual => return current_value != condition_value,
+                ComparisonOperator::Equal => return current_value == condition_value,
+                ComparisonOperator::NotEqual => return current_value != condition_value,
                 _ => {}
               }
             }
@@ -301,8 +295,8 @@ impl Runtime {
           if let Ok(current_value) = self.get_variable::<&str, String>(&condition.variable) {
             if let Ok(condition_value) = condition.value.parse::<String>() {
               match condition.operator {
-                cuentitos_common::Operator::Equal => return current_value == condition_value,
-                cuentitos_common::Operator::NotEqual => return current_value != condition_value,
+                ComparisonOperator::Equal => return current_value == condition_value,
+                ComparisonOperator::NotEqual => return current_value != condition_value,
                 _ => {}
               }
             }
@@ -399,74 +393,97 @@ impl Runtime {
       cuentitos_common::Chance::Probability(_) => 0,
     }
   }
-  fn apply_modifiers(&mut self) {
+
+  fn apply_integer_modifier(
+    &mut self,
+    variable: &String,
+    value: i32,
+    operator: &ModifierOperator,
+  ) -> Result<(), String> {
+    let previous_value = self.get_variable::<&str, i32>(variable);
+    match previous_value {
+      Ok(previous_value) => match operator {
+        ModifierOperator::Set => self.set_variable(variable, value),
+        ModifierOperator::Add => self.set_variable(variable, previous_value + value),
+        ModifierOperator::Substract => self.set_variable(variable, previous_value - value),
+        ModifierOperator::Multiply => self.set_variable(variable, previous_value * value),
+        ModifierOperator::Divide => self.set_variable(variable, previous_value / value),
+      },
+      Err(e) => Err(e),
+    }
+  }
+
+  fn apply_float_modifier(
+    &mut self,
+    variable: &String,
+    value: f32,
+    operator: &ModifierOperator,
+  ) -> Result<(), String> {
+    let previous_value = self.get_variable::<&str, f32>(variable);
+    match previous_value {
+      Ok(previous_value) => match operator {
+        ModifierOperator::Set => self.set_variable(variable, value),
+        ModifierOperator::Add => self.set_variable(variable, previous_value + value),
+        ModifierOperator::Substract => self.set_variable(variable, previous_value - value),
+        ModifierOperator::Multiply => self.set_variable(variable, previous_value * value),
+        ModifierOperator::Divide => self.set_variable(variable, previous_value / value),
+      },
+      Err(e) => Err(e),
+    }
+  }
+
+  fn apply_modifiers(&mut self) -> Result<(), String> {
     let id = self.block_stack.last().unwrap();
     let block = self.get_block(*id);
     for modifier in block.get_settings().modifiers.clone() {
       match self.get_variable_kind(&modifier.variable) {
-        Some(kind) => {
-          let result = match kind {
-            VariableKind::Integer => {
-              let value = &modifier.added_value.parse::<i32>();
-              match value {
-                Ok(value) => {
-                  if modifier.is_override {
-                    self.set_variable(&modifier.variable, *value)
-                  } else if let Ok(previous_value) =
-                    self.get_variable::<&str, i32>(&modifier.variable)
-                  {
-                    self.set_variable(&modifier.variable, *value + previous_value)
-                  } else {
-                    self.set_variable(&modifier.variable, *value)
-                  }
-                }
-                Err(e) => Err(e.to_string()),
+        Some(kind) => match kind {
+          VariableKind::Integer => {
+            let value = &modifier.value.parse::<i32>();
+            match value {
+              Ok(value) => {
+                self.apply_integer_modifier(&modifier.variable, *value, &modifier.operator)?;
               }
+              Err(e) => return Err(e.to_string()),
             }
-            VariableKind::Float => {
-              let value = &modifier.added_value.parse::<f32>();
-              match value {
-                Ok(value) => {
-                  if modifier.is_override {
-                    self.set_variable(&modifier.variable, *value)
-                  } else if let Ok(previous_value) =
-                    self.get_variable::<&str, f32>(&modifier.variable)
-                  {
-                    self.set_variable(&modifier.variable, *value + previous_value)
-                  } else {
-                    self.set_variable(&modifier.variable, *value)
-                  }
-                }
-                Err(e) => Err(e.to_string()),
-              }
-            }
-            VariableKind::Bool => {
-              let value = &modifier.added_value.parse::<bool>();
-              match value {
-                Ok(value) => self.set_variable(&modifier.variable, *value),
-                Err(e) => Err(e.to_string()),
-              }
-            }
-            _ => self.set_variable(&modifier.variable, modifier.added_value),
-          };
-
-          if result.is_err() {
-            println!("{}", result.unwrap_err());
           }
-        }
+          VariableKind::Float => {
+            let value = &modifier.value.parse::<f32>();
+            match value {
+              Ok(value) => {
+                self.apply_float_modifier(&modifier.variable, *value, &modifier.operator)?;
+              }
+              Err(e) => return Err(e.to_string()),
+            }
+          }
+          VariableKind::Bool => {
+            let value = &modifier.value.parse::<bool>();
+            match value {
+              Ok(value) => {
+                self.set_variable(&modifier.variable, *value)?;
+              }
+              Err(e) => return Err(e.to_string()),
+            }
+          }
+          _ => {
+            self.set_variable(&modifier.variable, modifier.value)?;
+          }
+        },
         None => {
-          println!(
-            "Can't modify variable {:?} because it doesn't exists.",
-            modifier.variable
-          )
+          return Err("Can't modify variable {:?} because it doesn't exists.".to_string());
         }
       }
     }
+
+    Ok(())
   }
 
   fn push_stack(&mut self, id: BlockId) -> bool {
     self.block_stack.push(id);
-    self.apply_modifiers();
+    match self.apply_modifiers() {
+      Ok(_) => {}
+      Err(e) => println!("{}", e),
+    }
     self.update_choices();
 
     if self.get_block(id).get_settings().unique {
@@ -699,8 +716,9 @@ mod test {
 
   use crate::Runtime;
   use cuentitos_common::{
-    Block, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Function, I18n,
-    LanguageDb, LanguageId, Modifier, NextBlock, Requirement, SectionKey, VariableKind,
+    condition::ComparisonOperator, modifier::ModifierOperator, Block, BlockSettings, Chance,
+    Condition, Config, Database, FrequencyModifier, Function, I18n, LanguageDb, LanguageId,
+    Modifier, NextBlock, Requirement, SectionKey, VariableKind,
   };
 
   #[test]
@@ -876,6 +894,7 @@ mod test {
     let expected_result = vec!["a".to_string(), "b".to_string()];
     assert_eq!(choices, expected_result);
   }
+
   #[test]
   fn updates_stack_to_first_child_correctly() {
     let settings = BlockSettings {
@@ -1187,13 +1206,31 @@ mod test {
       ..Default::default()
     };
 
-    let modifier = Modifier {
+    let modifier_1 = Modifier {
       variable: "health".to_string(),
-      added_value: "100".to_string(),
-      is_override: false,
+      value: "100".to_string(),
+      operator: ModifierOperator::Set,
     };
+    let modifier_2 = Modifier {
+      variable: "health".to_string(),
+      value: "50".to_string(),
+      operator: ModifierOperator::Substract,
+    };
+
+    let modifier_3 = Modifier {
+      variable: "health".to_string(),
+      value: "3".to_string(),
+      operator: ModifierOperator::Multiply,
+    };
+
+    let modifier_4 = Modifier {
+      variable: "health".to_string(),
+      value: "2".to_string(),
+      operator: ModifierOperator::Divide,
+    };
+
     let settings = BlockSettings {
-      modifiers: vec![modifier],
+      modifiers: vec![modifier_1, modifier_2, modifier_3, modifier_4],
       ..Default::default()
     };
     let block = Block::Text {
@@ -1212,12 +1249,9 @@ mod test {
     let current_health: i32 = runtime.get_variable("health").unwrap();
     let expected_value = variable_kind.get_default_value().parse().unwrap();
     assert_eq!(current_health, expected_value);
-    runtime.apply_modifiers();
+    runtime.apply_modifiers().unwrap();
     let current_health: i32 = runtime.get_variable("health").unwrap();
-    assert_eq!(current_health, expected_value + 100);
-    runtime.apply_modifiers();
-    let current_health: i32 = runtime.get_variable("health").unwrap();
-    assert_eq!(current_health, expected_value + 200);
+    assert_eq!(current_health, 75);
   }
 
   #[test]
@@ -1231,13 +1265,31 @@ mod test {
       ..Default::default()
     };
 
-    let modifier = Modifier {
+    let modifier_1 = Modifier {
       variable: "speed".to_string(),
-      added_value: "1.5".to_string(),
-      is_override: false,
+      value: "1".to_string(),
+      operator: ModifierOperator::Set,
     };
+    let modifier_2 = Modifier {
+      variable: "speed".to_string(),
+      value: "0.5".to_string(),
+      operator: ModifierOperator::Substract,
+    };
+
+    let modifier_3 = Modifier {
+      variable: "speed".to_string(),
+      value: "3".to_string(),
+      operator: ModifierOperator::Multiply,
+    };
+
+    let modifier_4 = Modifier {
+      variable: "speed".to_string(),
+      value: "2".to_string(),
+      operator: ModifierOperator::Divide,
+    };
+
     let settings = BlockSettings {
-      modifiers: vec![modifier],
+      modifiers: vec![modifier_1, modifier_2, modifier_3, modifier_4],
       ..Default::default()
     };
     let block = Block::Text {
@@ -1256,100 +1308,9 @@ mod test {
     let current_speed: f32 = runtime.get_variable("speed").unwrap();
     let expected_value = variable_kind.get_default_value().parse().unwrap();
     assert_eq!(current_speed, expected_value);
-    runtime.apply_modifiers();
+    runtime.apply_modifiers().unwrap();
     let current_speed: f32 = runtime.get_variable("speed").unwrap();
-    assert_eq!(current_speed, expected_value + 1.5);
-    runtime.apply_modifiers();
-    let current_speed: f32 = runtime.get_variable("speed").unwrap();
-    assert_eq!(current_speed, expected_value + 3.);
-  }
-
-  #[test]
-  fn integer_override_modifiers_work() {
-    let mut variables = HashMap::default();
-
-    let variable_kind = VariableKind::Integer;
-    variables.insert("health".to_string(), variable_kind.clone());
-    let config = Config {
-      variables,
-      ..Default::default()
-    };
-
-    let modifier = Modifier {
-      variable: "health".to_string(),
-      added_value: "100".to_string(),
-      is_override: true,
-    };
-    let settings = BlockSettings {
-      modifiers: vec![modifier],
-      ..Default::default()
-    };
-    let block = Block::Text {
-      id: String::default(),
-      settings,
-    };
-
-    let database = Database {
-      blocks: vec![block],
-      config,
-      ..Default::default()
-    };
-
-    let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
-    let current_health: i32 = runtime.get_variable("health").unwrap();
-    let expected_value = variable_kind.get_default_value().parse().unwrap();
-    assert_eq!(current_health, expected_value);
-    runtime.apply_modifiers();
-    let current_health: i32 = runtime.get_variable("health").unwrap();
-    assert_eq!(current_health, 100);
-    runtime.apply_modifiers();
-    let current_health: i32 = runtime.get_variable("health").unwrap();
-    assert_eq!(current_health, 100);
-  }
-
-  #[test]
-  fn float_override_modifiers_work() {
-    let mut variables = HashMap::default();
-
-    let variable_kind = VariableKind::Float;
-    variables.insert("speed".to_string(), variable_kind.clone());
-    let config = Config {
-      variables,
-      ..Default::default()
-    };
-
-    let modifier = Modifier {
-      variable: "speed".to_string(),
-      added_value: "1.5".to_string(),
-      is_override: true,
-    };
-    let settings = BlockSettings {
-      modifiers: vec![modifier],
-      ..Default::default()
-    };
-    let block = Block::Text {
-      id: String::default(),
-      settings,
-    };
-
-    let database = Database {
-      blocks: vec![block],
-      config,
-      ..Default::default()
-    };
-
-    let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
-    let current_speed: f32 = runtime.get_variable("speed").unwrap();
-    let expected_value = variable_kind.get_default_value().parse().unwrap();
-    assert_eq!(current_speed, expected_value);
-    runtime.apply_modifiers();
-    let current_speed: f32 = runtime.get_variable("speed").unwrap();
-    assert_eq!(current_speed, 1.5);
-    runtime.apply_modifiers();
-    let current_speed: f32 = runtime.get_variable("speed").unwrap();
-    assert_eq!(current_speed, 1.5);
+    assert_eq!(current_speed, 0.75);
   }
 
   #[test]
@@ -1365,8 +1326,8 @@ mod test {
 
     let modifier = Modifier {
       variable: "bike".to_string(),
-      added_value: "true".to_string(),
-      is_override: false,
+      value: "true".to_string(),
+      ..Default::default()
     };
     let settings = BlockSettings {
       modifiers: vec![modifier],
@@ -1388,7 +1349,7 @@ mod test {
     let current_bike: bool = runtime.get_variable("bike").unwrap();
     let expected_value = variable_kind.get_default_value().parse().unwrap();
     assert_eq!(current_bike, expected_value);
-    runtime.apply_modifiers();
+    runtime.apply_modifiers().unwrap();
     let current_bike: bool = runtime.get_variable("bike").unwrap();
     assert_eq!(current_bike, true);
   }
@@ -1406,8 +1367,8 @@ mod test {
 
     let modifier = Modifier {
       variable: "message".to_string(),
-      added_value: "hello".to_string(),
-      is_override: false,
+      value: "hello".to_string(),
+      ..Default::default()
     };
     let settings = BlockSettings {
       modifiers: vec![modifier],
@@ -1430,7 +1391,7 @@ mod test {
     let expected_value = variable_kind.get_default_value();
     assert_eq!(current_message, expected_value);
 
-    runtime.apply_modifiers();
+    runtime.apply_modifiers().unwrap();
     let current_message: String = runtime.get_variable("message").unwrap();
     assert_eq!(current_message, "hello".to_string());
   }
@@ -1448,8 +1409,8 @@ mod test {
 
     let modifier = Modifier {
       variable: "time_of_day".to_string(),
-      added_value: "Night".to_string(),
-      is_override: false,
+      value: "Night".to_string(),
+      ..Default::default()
     };
     let settings = BlockSettings {
       modifiers: vec![modifier],
@@ -1473,7 +1434,7 @@ mod test {
     let expected_value = variable_kind.get_default_value().parse().unwrap();
     assert_eq!(current_time_of_day, expected_value);
 
-    runtime.apply_modifiers();
+    runtime.apply_modifiers().unwrap();
     let current_time_of_day: TimeOfDay = runtime.get_variable("time_of_day").unwrap();
     assert_eq!(current_time_of_day, TimeOfDay::Night);
   }
@@ -1608,7 +1569,7 @@ mod test {
     let requirement = Requirement {
       condition: Condition {
         variable: "health".to_string(),
-        operator: cuentitos_common::Operator::Equal,
+        operator: ComparisonOperator::Equal,
         value: "100".to_string(),
       },
     };
@@ -1653,7 +1614,7 @@ mod test {
     let requirement = Requirement {
       condition: Condition {
         variable: "health".to_string(),
-        operator: cuentitos_common::Operator::GreaterOrEqualThan,
+        operator: ComparisonOperator::GreaterOrEqualThan,
         value: "100".to_string(),
       },
     };
@@ -1698,7 +1659,7 @@ mod test {
     let requirement = Requirement {
       condition: Condition {
         variable: "health".to_string(),
-        operator: cuentitos_common::Operator::GreaterThan,
+        operator: ComparisonOperator::GreaterThan,
         value: "100".to_string(),
       },
     };
@@ -1743,7 +1704,7 @@ mod test {
     let requirement = Requirement {
       condition: Condition {
         variable: "health".to_string(),
-        operator: cuentitos_common::Operator::LessOrEqualThan,
+        operator: ComparisonOperator::LessOrEqualThan,
         value: "100".to_string(),
       },
     };
@@ -1787,7 +1748,7 @@ mod test {
     let requirement = Requirement {
       condition: Condition {
         variable: "health".to_string(),
-        operator: cuentitos_common::Operator::LessThan,
+        operator: ComparisonOperator::LessThan,
         value: "100".to_string(),
       },
     };
@@ -1831,7 +1792,7 @@ mod test {
     let requirement = Requirement {
       condition: Condition {
         variable: "health".to_string(),
-        operator: cuentitos_common::Operator::NotEqual,
+        operator: ComparisonOperator::NotEqual,
         value: "100".to_string(),
       },
     };
@@ -1875,7 +1836,7 @@ mod test {
     let requirement = Requirement {
       condition: Condition {
         variable: "speed".to_string(),
-        operator: cuentitos_common::Operator::Equal,
+        operator: ComparisonOperator::Equal,
         value: "1.5".to_string(),
       },
     };
@@ -1920,7 +1881,7 @@ mod test {
     let requirement = Requirement {
       condition: Condition {
         variable: "speed".to_string(),
-        operator: cuentitos_common::Operator::GreaterOrEqualThan,
+        operator: ComparisonOperator::GreaterOrEqualThan,
         value: "1.5".to_string(),
       },
     };
@@ -1965,7 +1926,7 @@ mod test {
     let requirement = Requirement {
       condition: Condition {
         variable: "speed".to_string(),
-        operator: cuentitos_common::Operator::GreaterThan,
+        operator: ComparisonOperator::GreaterThan,
         value: "1.5".to_string(),
       },
     };
@@ -2010,7 +1971,7 @@ mod test {
     let requirement = Requirement {
       condition: Condition {
         variable: "speed".to_string(),
-        operator: cuentitos_common::Operator::LessOrEqualThan,
+        operator: ComparisonOperator::LessOrEqualThan,
         value: "1.5".to_string(),
       },
     };
@@ -2054,7 +2015,7 @@ mod test {
     let requirement = Requirement {
       condition: Condition {
         variable: "speed".to_string(),
-        operator: cuentitos_common::Operator::LessThan,
+        operator: ComparisonOperator::LessThan,
         value: "1.5".to_string(),
       },
     };
@@ -2098,7 +2059,7 @@ mod test {
     let requirement = Requirement {
       condition: Condition {
         variable: "speed".to_string(),
-        operator: cuentitos_common::Operator::NotEqual,
+        operator: ComparisonOperator::NotEqual,
         value: "1.5".to_string(),
       },
     };
@@ -2143,7 +2104,7 @@ mod test {
     let requirement = Requirement {
       condition: Condition {
         variable: "bike".to_string(),
-        operator: cuentitos_common::Operator::Equal,
+        operator: ComparisonOperator::Equal,
         value: "true".to_string(),
       },
     };
@@ -2185,7 +2146,7 @@ mod test {
     let requirement = Requirement {
       condition: Condition {
         variable: "bike".to_string(),
-        operator: cuentitos_common::Operator::NotEqual,
+        operator: ComparisonOperator::NotEqual,
         value: "true".to_string(),
       },
     };
@@ -2227,7 +2188,7 @@ mod test {
     let requirement = Requirement {
       condition: Condition {
         variable: "message".to_string(),
-        operator: cuentitos_common::Operator::Equal,
+        operator: ComparisonOperator::Equal,
         value: "hello".to_string(),
       },
     };
@@ -2271,7 +2232,7 @@ mod test {
     let requirement = Requirement {
       condition: Condition {
         variable: "message".to_string(),
-        operator: cuentitos_common::Operator::NotEqual,
+        operator: ComparisonOperator::NotEqual,
         value: "hello".to_string(),
       },
     };
@@ -2315,7 +2276,7 @@ mod test {
     let requirement = Requirement {
       condition: Condition {
         variable: "time_of_day".to_string(),
-        operator: cuentitos_common::Operator::Equal,
+        operator: ComparisonOperator::Equal,
         value: "Night".to_string(),
       },
     };
@@ -2359,7 +2320,7 @@ mod test {
     let requirement = Requirement {
       condition: Condition {
         variable: "time_of_day".to_string(),
-        operator: cuentitos_common::Operator::NotEqual,
+        operator: ComparisonOperator::NotEqual,
         value: "Night".to_string(),
       },
     };
@@ -2403,7 +2364,7 @@ mod test {
     let freq_mod = FrequencyModifier {
       condition: Condition {
         variable: "bike".to_string(),
-        operator: cuentitos_common::Operator::Equal,
+        operator: ComparisonOperator::Equal,
         value: "true".to_string(),
       },
       value: -100,

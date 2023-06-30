@@ -2,9 +2,11 @@ extern crate pest;
 use std::collections::HashMap;
 use std::path::Path;
 
+use cuentitos_common::condition::ComparisonOperator;
+use cuentitos_common::modifier::ModifierOperator;
 use cuentitos_common::{
   Block, BlockId, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Function,
-  Modifier, NextBlock, Operator, Requirement, SectionKey,
+  Modifier, NextBlock, Requirement, SectionKey,
 };
 use pest::{iterators::Pair, Parser};
 
@@ -145,7 +147,7 @@ fn parse_section(
         id = inner_token.as_str().to_string();
       }
       Rule::Command => {
-        add_command_to_settings(inner_token, &mut settings);
+        add_command_to_settings(inner_token, &mut settings)?;
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
@@ -198,7 +200,7 @@ fn parse_subsection(
         id = inner_token.as_str().to_string();
       }
       Rule::Command => {
-        add_command_to_settings(inner_token, &mut settings);
+        add_command_to_settings(inner_token, &mut settings)?;
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
@@ -253,7 +255,7 @@ fn parse_block(
         }
       }
       Rule::Command => {
-        add_command_to_block(inner_token, &mut block);
+        add_command_to_block(inner_token, &mut block)?;
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
@@ -572,10 +574,11 @@ fn parse_text(token: Pair<Rule>) -> Option<Block> {
   Some(Block::Text { id: text, settings })
 }
 
-fn add_command_to_settings(token: Pair<Rule>, settings: &mut BlockSettings) {
-  if token.as_rule() != Rule::Command {
-    return;
-  }
+fn add_command_to_settings(
+  token: Pair<Rule>,
+  settings: &mut BlockSettings,
+) -> Result<(), PalabritasError> {
+  match_rule(&token, Rule::Command)?;
 
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
@@ -591,9 +594,8 @@ fn add_command_to_settings(token: Pair<Rule>, settings: &mut BlockSettings) {
         }
       }
       Rule::Modifier => {
-        if let Some(modifier) = parse_modifier(inner_token) {
-          settings.modifiers.push(modifier);
-        }
+        let modifier = parse_modifier(inner_token)?;
+        settings.modifiers.push(modifier);
       }
       Rule::Divert => {
         if let Some(divert) = parse_divert(inner_token) {
@@ -616,10 +618,12 @@ fn add_command_to_settings(token: Pair<Rule>, settings: &mut BlockSettings) {
       _ => {}
     }
   }
+
+  Ok(())
 }
-fn add_command_to_block(token: Pair<Rule>, block: &mut Block) {
+fn add_command_to_block(token: Pair<Rule>, block: &mut Block) -> Result<(), PalabritasError> {
   let settings = block.get_settings_mut();
-  add_command_to_settings(token, settings);
+  add_command_to_settings(token, settings)
 }
 
 fn parse_function(token: Pair<Rule>) -> Option<Function> {
@@ -680,12 +684,11 @@ fn parse_divert(token: Pair<Rule>) -> Option<NextBlock> {
   })
 }
 
-fn parse_modifier(token: Pair<Rule>) -> Option<Modifier> {
-  if token.as_rule() != Rule::Modifier {
-    return None;
-  }
-  //Modifier = { "mod" ~ " "+ ~ Identifier ~ " "+ ~ Value}
-
+fn parse_modifier(token: Pair<Rule>) -> Result<Modifier, PalabritasError> {
+  match_rule(&token, Rule::Modifier)?;
+  //Modifier = { "set" ~ " "+ ~ ( (Identifier ~ " "+ ~ ModifierOperator? ~ Value) | (NotOperator? ~ " "* ~ Identifier) ) ~ " "* }
+  let line = token.line_col().0;
+  let string = token.as_str().to_string();
   let mut modifier = Modifier::default();
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
@@ -694,19 +697,45 @@ fn parse_modifier(token: Pair<Rule>) -> Option<Modifier> {
       }
 
       Rule::Value => {
-        if inner_token.as_str().starts_with('=') {
-          modifier.is_override = true;
-          modifier.added_value = inner_token.as_str()[1..].to_string();
-        } else {
-          modifier.added_value = inner_token.as_str().to_string();
+        modifier.value = inner_token.as_str().to_string();
+      }
+
+      Rule::ModifierOperator => {
+        if let Some(operator) = parse_modifier_operator(inner_token) {
+          modifier.operator = operator;
         }
       }
+
+      Rule::NotOperator => {
+        modifier.value = false.to_string();
+      }
+
       _ => {}
     }
   }
-  Some(modifier)
+
+  if modifier.operator == ModifierOperator::Divide && modifier.value == *"0" {
+    Err(PalabritasError::DivisionByZero(ErrorInfo { line, string }))
+  } else {
+    Ok(modifier)
+  }
 }
 
+fn parse_modifier_operator(token: Pair<Rule>) -> Option<ModifierOperator> {
+  //ModifierOperator = {"+" | "-" | "*" | "/" | "="}
+  if token.as_rule() != Rule::ModifierOperator {
+    return None;
+  }
+
+  match token.as_str() {
+    "+" => Some(ModifierOperator::Add),
+    "-" => Some(ModifierOperator::Substract),
+    "*" => Some(ModifierOperator::Multiply),
+    "/" => Some(ModifierOperator::Divide),
+    "=" => Some(ModifierOperator::Set),
+    _ => None,
+  }
+}
 fn parse_frequency(token: Pair<Rule>) -> Option<FrequencyModifier> {
   if token.as_rule() != Rule::Frequency {
     return None;
@@ -766,7 +795,7 @@ fn parse_condition(token: Pair<Rule>) -> Option<Condition> {
         }
       }
       Rule::NotOperator => {
-        condition.operator = Operator::NotEqual;
+        condition.operator = ComparisonOperator::NotEqual;
       }
       Rule::Value => {
         condition.value = inner_token.as_str().to_string();
@@ -777,19 +806,19 @@ fn parse_condition(token: Pair<Rule>) -> Option<Condition> {
   Some(condition)
 }
 
-fn parse_comparison_operator(token: Pair<Rule>) -> Option<Operator> {
+fn parse_comparison_operator(token: Pair<Rule>) -> Option<ComparisonOperator> {
   if token.as_rule() != Rule::ComparisonOperator {
     return None;
   }
 
   match token.as_str() {
-    "!=" => Some(Operator::NotEqual),
-    "!" => Some(Operator::NotEqual),
-    "=" => Some(Operator::Equal),
-    "<=" => Some(Operator::LessOrEqualThan),
-    ">=" => Some(Operator::GreaterOrEqualThan),
-    "<" => Some(Operator::LessThan),
-    ">" => Some(Operator::GreaterThan),
+    "!=" => Some(ComparisonOperator::NotEqual),
+    "!" => Some(ComparisonOperator::NotEqual),
+    "=" => Some(ComparisonOperator::Equal),
+    "<=" => Some(ComparisonOperator::LessOrEqualThan),
+    ">=" => Some(ComparisonOperator::GreaterOrEqualThan),
+    "<" => Some(ComparisonOperator::LessThan),
+    ">" => Some(ComparisonOperator::GreaterThan),
     _ => None,
   }
 }
@@ -844,7 +873,7 @@ mod test {
 
   use crate::parser::*;
   use cuentitos_common::{
-    Block, BlockSettings, Condition, FrequencyModifier, Modifier, Operator, Requirement,
+    Block, BlockSettings, Condition, FrequencyModifier, Modifier, Requirement,
   };
   use pest::iterators::Pair;
   use rand::distributions::Alphanumeric;
@@ -853,6 +882,8 @@ mod test {
   const SPECIAL_CHARACTERS: [&str; 11] = [".", "_", "/", ",", ";", "'", " ", "?", "!", "¿", "¡"];
 
   const COMPARISON_OPERATORS: [&str; 7] = ["=", "!=", "<", ">", "<=", ">=", "!"];
+
+  const MODIFIER_OPERATORS: [&str; 5] = ["+", "-", "*", "/", "="];
 
   const INDENTATIONS: [&str; 1] = ["  "];
 
@@ -1166,19 +1197,19 @@ mod test {
 
     //Modifier
     let variable = make_random_identifier();
-    let added_value = rand::thread_rng().gen::<f32>().to_string();
-    let modifier_string = format!("\n mod {} {}", variable, added_value);
+    let value = rand::thread_rng().gen::<f32>().to_string();
+    let modifier_string = format!("\n set {} {}", variable, value);
 
     let expected_modifier = Modifier {
       variable,
-      added_value,
-      is_override: false,
+      value,
+      operator: ModifierOperator::Set,
     };
 
     block_settings.modifiers.push(expected_modifier);
 
     let token = short_parse(Rule::Command, &modifier_string);
-    add_command_to_block(token, &mut block);
+    add_command_to_block(token, &mut block).unwrap();
 
     //Divert
     let section = make_random_identifier();
@@ -1190,13 +1221,13 @@ mod test {
     });
 
     let token = short_parse(Rule::Command, &divert_string);
-    add_command_to_block(token, &mut block);
+    add_command_to_block(token, &mut block).unwrap();
 
     //Unique
 
     block_settings.unique = true;
     let token = short_parse(Rule::Command, "\n unique");
-    add_command_to_block(token, &mut block);
+    add_command_to_block(token, &mut block).unwrap();
 
     //Frequency
 
@@ -1214,7 +1245,7 @@ mod test {
     block_settings.frequency_modifiers.push(expected_frequency);
 
     let token = short_parse(Rule::Command, &frequency_string);
-    add_command_to_block(token, &mut block);
+    add_command_to_block(token, &mut block).unwrap();
 
     //Requirement
 
@@ -1228,7 +1259,7 @@ mod test {
     block_settings.requirements.push(expected_requirement);
 
     let token = short_parse(Rule::Command, &requirement_string);
-    add_command_to_block(token, &mut block);
+    add_command_to_block(token, &mut block).unwrap();
 
     let expected_block = Block::Text {
       id: text_id,
@@ -1248,6 +1279,23 @@ mod test {
     let value = parse_tag(token).unwrap();
 
     assert_eq!(value, identifier);
+  }
+
+  #[test]
+  fn division_by_zero_throws_error() {
+    let identifier = make_random_identifier();
+    let tag_string = format!("set {} / 0", identifier);
+
+    let token = short_parse(Rule::Modifier, &tag_string);
+    let value = parse_modifier(token).unwrap_err();
+
+    assert_eq!(
+      value,
+      PalabritasError::DivisionByZero(ErrorInfo {
+        line: 1,
+        string: tag_string
+      })
+    );
   }
 
   #[test]
@@ -1302,15 +1350,15 @@ mod test {
 
   #[test]
   fn parse_modifier_correctly() {
-    //Modifier = { "mod" ~ " "+ ~ Identifier ~ " "+ ~ Value}
+    //Modifier = { "set" ~ " "+ ~ ( (Identifier ~ " "+ ~ Value) | (NotOperator? ~ " "* ~ Identifier) ) ~ " "* }
     let variable = make_random_identifier();
-    let added_value = rand::thread_rng().gen::<f32>().to_string();
-    let modifier_string = format!("mod {} {}", variable, added_value);
+    let value = rand::thread_rng().gen::<f32>().to_string();
+    let modifier_string = format!("set {} {}", variable, value);
 
     let expected_value = Modifier {
       variable,
-      added_value,
-      is_override: false,
+      value,
+      operator: ModifierOperator::Set,
     };
 
     let token = short_parse(Rule::Modifier, &modifier_string);
@@ -1382,6 +1430,62 @@ mod test {
   }
 
   #[test]
+  fn parse_comparison_operator_correctly() {
+    //ComparisonOperator = { "!=" | "=" | "<=" | ">=" | "<" | ">" | "!" }
+    let operator_token = short_parse(Rule::ComparisonOperator, "!=");
+    let operator = parse_comparison_operator(operator_token).unwrap();
+    assert_eq!(operator, ComparisonOperator::NotEqual);
+
+    let operator_token = short_parse(Rule::ComparisonOperator, "=");
+    let operator = parse_comparison_operator(operator_token).unwrap();
+    assert_eq!(operator, ComparisonOperator::Equal);
+
+    let operator_token = short_parse(Rule::ComparisonOperator, "<=");
+    let operator = parse_comparison_operator(operator_token).unwrap();
+    assert_eq!(operator, ComparisonOperator::LessOrEqualThan);
+
+    let operator_token = short_parse(Rule::ComparisonOperator, ">=");
+    let operator = parse_comparison_operator(operator_token).unwrap();
+    assert_eq!(operator, ComparisonOperator::GreaterOrEqualThan);
+
+    let operator_token = short_parse(Rule::ComparisonOperator, "<");
+    let operator = parse_comparison_operator(operator_token).unwrap();
+    assert_eq!(operator, ComparisonOperator::LessThan);
+
+    let operator_token = short_parse(Rule::ComparisonOperator, ">");
+    let operator = parse_comparison_operator(operator_token).unwrap();
+    assert_eq!(operator, ComparisonOperator::GreaterThan);
+
+    let operator_token = short_parse(Rule::ComparisonOperator, "!");
+    let operator = parse_comparison_operator(operator_token).unwrap();
+    assert_eq!(operator, ComparisonOperator::NotEqual);
+  }
+
+  #[test]
+  fn parse_modifier_operator_correctly() {
+    //ModifierOperator = {"+" | "-" | "*" | "/" | "="}
+    let operator_token = short_parse(Rule::ModifierOperator, "+");
+    let operator = parse_modifier_operator(operator_token).unwrap();
+    assert_eq!(operator, ModifierOperator::Add);
+
+    let operator_token = short_parse(Rule::ModifierOperator, "-");
+    let operator = parse_modifier_operator(operator_token).unwrap();
+    assert_eq!(operator, ModifierOperator::Substract);
+
+    let operator_token = short_parse(Rule::ModifierOperator, "*");
+    let operator = parse_modifier_operator(operator_token).unwrap();
+    assert_eq!(operator, ModifierOperator::Multiply);
+
+    let operator_token = short_parse(Rule::ModifierOperator, "/");
+    let operator = parse_modifier_operator(operator_token).unwrap();
+    assert_eq!(operator, ModifierOperator::Divide);
+
+    let operator_token = short_parse(Rule::ModifierOperator, "=");
+    let operator = parse_modifier_operator(operator_token).unwrap();
+    assert_eq!(operator, ModifierOperator::Set);
+  }
+
+  #[test]
   fn parse_not_equal_condition_correctly() {
     /*Condition = { Identifier ~ " "* ~ (ComparisonOperator ~ " "*)? ~ Value } */
     let variable = make_random_identifier();
@@ -1390,7 +1494,7 @@ mod test {
 
     let expected_value = Condition {
       variable,
-      operator: Operator::NotEqual,
+      operator: ComparisonOperator::NotEqual,
       value: "true".to_string(),
     };
 
@@ -1402,42 +1506,45 @@ mod test {
   #[test]
   fn parse_operators_correctly() {
     let token = short_parse(Rule::ComparisonOperator, "=");
-    assert_eq!(parse_comparison_operator(token).unwrap(), Operator::Equal);
+    assert_eq!(
+      parse_comparison_operator(token).unwrap(),
+      ComparisonOperator::Equal
+    );
 
     let token = short_parse(Rule::ComparisonOperator, "!=");
     assert_eq!(
       parse_comparison_operator(token).unwrap(),
-      Operator::NotEqual
+      ComparisonOperator::NotEqual
     );
 
     let token = short_parse(Rule::ComparisonOperator, "<");
     assert_eq!(
       parse_comparison_operator(token).unwrap(),
-      Operator::LessThan
+      ComparisonOperator::LessThan
     );
 
     let token = short_parse(Rule::ComparisonOperator, ">");
     assert_eq!(
       parse_comparison_operator(token).unwrap(),
-      Operator::GreaterThan
+      ComparisonOperator::GreaterThan
     );
 
     let token = short_parse(Rule::ComparisonOperator, "<=");
     assert_eq!(
       parse_comparison_operator(token).unwrap(),
-      Operator::LessOrEqualThan
+      ComparisonOperator::LessOrEqualThan
     );
 
     let token = short_parse(Rule::ComparisonOperator, ">=");
     assert_eq!(
       parse_comparison_operator(token).unwrap(),
-      Operator::GreaterOrEqualThan
+      ComparisonOperator::GreaterOrEqualThan
     );
 
     let token = short_parse(Rule::ComparisonOperator, "!");
     assert_eq!(
       parse_comparison_operator(token).unwrap(),
-      Operator::NotEqual
+      ComparisonOperator::NotEqual
     );
   }
 
@@ -1494,6 +1601,14 @@ mod test {
     //comparison_operator = { "!=" | "=" | "<=" | ">=" | "<" | ">" | "!" }
     for operator in COMPARISON_OPERATORS {
       assert_parse_rule(Rule::ComparisonOperator, operator);
+    }
+  }
+
+  #[test]
+  fn parse_modifier_operator_rule() {
+    //ModifierOperator = {"+" | "-" | "*" | "/" | "="}
+    for operator in MODIFIER_OPERATORS {
+      assert_parse_rule(Rule::ModifierOperator, operator);
     }
   }
 
@@ -1569,14 +1684,21 @@ mod test {
 
   #[test]
   fn parse_modifier_rule() {
-    //modifier = { "mod" ~ " "+ ~ identifier ~ " "+ ~ value}
+    //Modifier = { "set" ~ " "+ ~ ( (Identifier ~ " "+ ~ ModifierOperator? ~ " "* ~ Value) | (NotOperator? ~ " "* ~ Identifier) ) ~ " "* }
+
     let identifier = make_random_identifier();
     let value = make_random_identifier();
 
-    assert_parse_rule(
-      Rule::Modifier,
-      &("mod ".to_string() + &identifier + " " + &value),
-    );
+    assert_parse_rule(Rule::Modifier, &format!("set {} {}", &identifier, &value));
+
+    for operator in MODIFIER_OPERATORS {
+      assert_parse_rule(
+        Rule::Modifier,
+        &format!("set {} {} {}", &identifier, operator, &value),
+      );
+    }
+
+    assert_parse_rule(Rule::Modifier, &format!("set !{}", &identifier));
   }
 
   #[test]
@@ -1600,7 +1722,7 @@ mod test {
     assert_parse_rule(Rule::Command, &(frequency));
 
     let modifier =
-      "\nmod ".to_string() + &make_random_identifier() + " " + &make_random_identifier();
+      "\nset ".to_string() + &make_random_identifier() + " " + &make_random_identifier();
     assert_parse_rule(Rule::Command, &(modifier));
 
     let divert = "\n->".to_string() + &make_random_identifier();
@@ -1708,7 +1830,7 @@ mod test {
         requirements: vec![Requirement {
           condition: Condition {
             variable: "test".to_string(),
-            operator: Operator::Equal,
+            operator: ComparisonOperator::Equal,
             value: "true".to_string(),
           },
         }],
@@ -1717,43 +1839,7 @@ mod test {
     };
     assert_eq!(section, expected_value);
   }
-  #[test]
-  fn parse_modifier_with_set_command_in_floats() {
-    let variable = make_random_identifier();
-    let new_value = rand::thread_rng().gen::<f32>().to_string();
-    let modifier_string = format!("mod {} ={}", variable, new_value);
 
-    let expected_value = Modifier {
-      variable,
-      added_value: format!("{}", new_value),
-      is_override: true,
-    };
-
-    let token = short_parse(Rule::Modifier, &modifier_string);
-
-    let modifier = parse_modifier(token).unwrap();
-
-    assert_eq!(modifier, expected_value);
-  }
-
-  #[test]
-  fn parse_modifier_with_set_command_in_integers() {
-    let variable = make_random_identifier();
-    let new_value = rand::thread_rng().gen::<i32>().to_string();
-    let modifier_string = format!("mod {} ={}", variable, new_value);
-
-    let expected_value = Modifier {
-      variable,
-      added_value: format!("{}", new_value),
-      is_override: true,
-    };
-
-    let token = short_parse(Rule::Modifier, &modifier_string);
-
-    let modifier = parse_modifier(token).unwrap();
-
-    assert_eq!(modifier, expected_value);
-  }
   #[test]
   fn parse_database_rule() {
     //File = { SOI ~ (NEWLINE | BlockBlock | Knot )* ~ EOI }

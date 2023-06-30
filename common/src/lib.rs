@@ -7,8 +7,8 @@ pub use block::*;
 mod requirement;
 pub use requirement::*;
 
-mod condition;
-pub use condition::*;
+pub mod condition;
+pub use condition::Condition;
 
 mod variable;
 pub use variable::*;
@@ -16,8 +16,8 @@ pub use variable::*;
 mod frequency;
 pub use frequency::*;
 
-mod modifier;
-pub use modifier::*;
+pub mod modifier;
+pub use modifier::Modifier;
 
 mod config;
 pub use config::*;
