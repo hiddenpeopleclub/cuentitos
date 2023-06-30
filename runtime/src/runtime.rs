@@ -10,6 +10,7 @@ use cuentitos_common::Condition;
 use cuentitos_common::Database;
 use cuentitos_common::Function;
 use cuentitos_common::LanguageId;
+use cuentitos_common::Modifier;
 use cuentitos_common::SectionKey;
 use cuentitos_common::VariableKind;
 use rand::Rng;
@@ -232,6 +233,41 @@ impl Runtime {
     Err("Invalid Variable".to_string())
   }
 
+  pub fn apply_modifier(&mut self, modifier: &Modifier) -> Result<(), String> {
+    match self.get_variable_kind(&modifier.variable) {
+      Some(kind) => match kind {
+        VariableKind::Integer => {
+          let value = &modifier.value.parse::<i32>();
+          match value {
+            Ok(value) => {
+              self.apply_integer_modifier(&modifier.variable, *value, &modifier.operator)
+            }
+            Err(e) => Err(e.to_string()),
+          }
+        }
+        VariableKind::Float => {
+          let value = &modifier.value.parse::<f32>();
+          match value {
+            Ok(value) => self.apply_float_modifier(&modifier.variable, *value, &modifier.operator),
+            Err(e) => Err(e.to_string()),
+          }
+        }
+        VariableKind::Bool => {
+          let value = &modifier.value.parse::<bool>();
+          match value {
+            Ok(value) => self.set_variable(&modifier.variable, *value),
+            Err(e) => Err(e.to_string()),
+          }
+        }
+        _ => self.set_variable(&modifier.variable, modifier.value.clone()),
+      },
+      None => Err(format!(
+        "Can't modify variable {}, because it doesn't exists",
+        modifier.variable
+      )),
+    }
+  }
+
   fn next_block_meets_requirements(&mut self) -> bool {
     if let Some(id) = self.block_stack.last() {
       self.meets_requirements(*id)
@@ -436,45 +472,8 @@ impl Runtime {
     let id = self.block_stack.last().unwrap();
     let block = self.get_block(*id);
     for modifier in block.get_settings().modifiers.clone() {
-      match self.get_variable_kind(&modifier.variable) {
-        Some(kind) => match kind {
-          VariableKind::Integer => {
-            let value = &modifier.value.parse::<i32>();
-            match value {
-              Ok(value) => {
-                self.apply_integer_modifier(&modifier.variable, *value, &modifier.operator)?;
-              }
-              Err(e) => return Err(e.to_string()),
-            }
-          }
-          VariableKind::Float => {
-            let value = &modifier.value.parse::<f32>();
-            match value {
-              Ok(value) => {
-                self.apply_float_modifier(&modifier.variable, *value, &modifier.operator)?;
-              }
-              Err(e) => return Err(e.to_string()),
-            }
-          }
-          VariableKind::Bool => {
-            let value = &modifier.value.parse::<bool>();
-            match value {
-              Ok(value) => {
-                self.set_variable(&modifier.variable, *value)?;
-              }
-              Err(e) => return Err(e.to_string()),
-            }
-          }
-          _ => {
-            self.set_variable(&modifier.variable, modifier.value)?;
-          }
-        },
-        None => {
-          return Err("Can't modify variable {:?} because it doesn't exists.".to_string());
-        }
-      }
+      self.apply_modifier(&modifier)?;
     }
-
     Ok(())
   }
 

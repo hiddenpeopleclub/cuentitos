@@ -16,7 +16,7 @@ use crate::error::{ErrorInfo, PalabritasError};
 
 #[derive(Parser)]
 #[grammar = "palabritas.pest"]
-pub struct PalabritasParser;
+struct PalabritasParser;
 
 pub fn parse_database_from_path<P>(path: P) -> Result<Database, PalabritasError>
 where
@@ -57,7 +57,13 @@ where
   };
 
   match PalabritasParser::parse(Rule::Database, &str) {
-    Ok(mut result) => parse_database(result.next().unwrap(), config),
+    Ok(mut result) => match parse_database(result.next().unwrap()) {
+      Ok(mut database) => {
+        database.config = config;
+        Ok(database)
+      }
+      Err(error) => Err(error),
+    },
     Err(error) => {
       let (line, col) = match error.line_col {
         LineColLocation::Pos(line_col) => line_col,
@@ -74,7 +80,7 @@ where
   }
 }
 
-pub fn parse_database(token: Pair<Rule>, config: Config) -> Result<Database, PalabritasError> {
+pub fn parse_database(token: Pair<Rule>) -> Result<Database, PalabritasError> {
   match_rule(&token, Rule::Database)?;
 
   let mut blocks: Vec<Vec<Block>> = Vec::default();
@@ -120,16 +126,117 @@ pub fn parse_database(token: Pair<Rule>, config: Config) -> Result<Database, Pal
   Ok(Database {
     blocks: ordered_blocks,
     sections,
-    config,
     ..Default::default()
   })
+}
+
+pub fn parse_database_str(input: &str) -> Result<Database, PalabritasError> {
+  let token = parse_str(input, Rule::Database)?;
+  parse_database(token)
+}
+
+pub fn parse_text_str(input: &str) -> Result<Block, PalabritasError> {
+  let token = parse_str(input, Rule::Text)?;
+  parse_text(token)
+}
+
+pub fn parse_named_bucket_str(input: &str) -> Result<Block, PalabritasError> {
+  let token = parse_str(input, Rule::NamedBucket)?;
+  parse_named_bucket(token)
+}
+
+pub fn parse_chance_str(input: &str) -> Result<Chance, PalabritasError> {
+  let token = parse_str(input, Rule::Chance)?;
+  parse_chance(token)
+}
+
+pub fn parse_condition_str(input: &str) -> Result<Condition, PalabritasError> {
+  let token = parse_str(input, Rule::Condition)?;
+  parse_condition(token)
+}
+
+pub fn parse_choice_str(input: &str) -> Result<Block, PalabritasError> {
+  let token = parse_str(input, Rule::Choice)?;
+  parse_choice(token)
+}
+
+pub fn parse_section_str(input: &str) -> Result<Block, PalabritasError> {
+  let token = parse_str(input, Rule::Section)?;
+  parse_section(token, &mut Vec::default(), &mut HashMap::default())
+}
+
+pub fn parse_tag_str(input: &str) -> Result<String, PalabritasError> {
+  let token = parse_str(input, Rule::Tag)?;
+  parse_tag(token)
+}
+
+pub fn parse_function_str(input: &str) -> Result<Function, PalabritasError> {
+  let token = parse_str(input, Rule::Function)?;
+  parse_function(token)
+}
+
+pub fn parse_divert_str(input: &str) -> Result<NextBlock, PalabritasError> {
+  let token = parse_str(input, Rule::Divert)?;
+  parse_divert(token)
+}
+
+pub fn parse_modifier_str(input: &str) -> Result<Modifier, PalabritasError> {
+  let token = parse_str(input, Rule::Modifier)?;
+  parse_modifier(token)
+}
+
+pub fn parse_frequency_str(input: &str) -> Result<FrequencyModifier, PalabritasError> {
+  let token = parse_str(input, Rule::Frequency)?;
+  parse_frequency(token)
+}
+
+pub fn parse_requirement_str(input: &str) -> Result<Requirement, PalabritasError> {
+  let token = parse_str(input, Rule::Requirement)?;
+  parse_requirement(token)
+}
+
+pub fn parse_comparison_operator_str(input: &str) -> Result<ComparisonOperator, PalabritasError> {
+  let token = parse_str(input, Rule::ComparisonOperator)?;
+  parse_comparison_operator(token)
+}
+
+pub fn parse_modifier_operator_str(input: &str) -> Result<ModifierOperator, PalabritasError> {
+  let token = parse_str(input, Rule::ModifierOperator)?;
+  parse_modifier_operator(token)
+}
+
+fn parse_str(input: &str, rule: Rule) -> Result<Pair<'_, Rule>, PalabritasError> {
+  match PalabritasParser::parse(rule, input) {
+    Ok(mut pairs) => match pairs.next() {
+      Some(token) => Ok(token),
+      None => Err(PalabritasError::ParseError {
+        file: input.to_string(),
+        line: 1,
+        col: 1,
+        reason: "Modifier not found".to_string(),
+      }),
+    },
+    Err(error) => {
+      let (line, col) = match error.line_col {
+        LineColLocation::Pos(line_col) => line_col,
+        LineColLocation::Span(start, _) => (start.0, start.1),
+      };
+
+      Err(PalabritasError::ParseError {
+        file: input.to_string(),
+        line,
+        col,
+        reason: error.to_string(),
+      })
+    }
+  }
 }
 
 fn parse_section(
   token: Pair<Rule>,
   blocks: &mut Vec<Vec<Block>>,
   sections: &mut HashMap<SectionKey, BlockId>,
-) -> Result<(), PalabritasError> {
+) -> Result<Block, PalabritasError> {
   match_rule(&token, Rule::Section)?;
   if blocks.is_empty() {
     blocks.push(Vec::default());
@@ -170,9 +277,10 @@ fn parse_section(
     block_id,
   );
 
-  blocks[0][block_id] = Block::Section { id, settings };
+  let section = Block::Section { id, settings };
+  blocks[0][block_id] = section.clone();
 
-  Ok(())
+  Ok(section)
 }
 
 fn parse_subsection(
@@ -192,8 +300,7 @@ fn parse_subsection(
 
   let mut settings = BlockSettings::default();
   let mut id: String = String::default();
-  let mut subsections = Vec::default();
-  //Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
+
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Identifier => {
@@ -210,7 +317,6 @@ fn parse_subsection(
       }
       Rule::Subsection => {
         parse_subsection(inner_token, blocks, section_name, sections)?;
-        subsections.push(blocks[0].len() - 1);
       }
       _ => {}
     }
@@ -240,19 +346,13 @@ fn parse_block(
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Text => {
-        if let Some(text) = parse_text(inner_token) {
-          block = text;
-        }
+        block = parse_text(inner_token)?;
       }
       Rule::NamedBucket => {
-        if let Some(named_bucket) = parse_named_bucket(inner_token) {
-          block = named_bucket;
-        }
+        block = parse_named_bucket(inner_token)?;
       }
       Rule::Choice => {
-        if let Some(choice) = parse_choice(inner_token) {
-          block = choice;
-        }
+        block = parse_choice(inner_token)?;
       }
       Rule::Command => {
         add_command_to_block(inner_token, &mut block)?;
@@ -507,17 +607,15 @@ fn get_blocks_from_new_block(token: Pair<Rule>) -> Vec<Pair<Rule>> {
   blocks
 }
 
-fn parse_named_bucket(token: Pair<Rule>) -> Option<Block> {
-  if token.as_rule() != Rule::NamedBucket {
-    return None;
-  }
+fn parse_named_bucket(token: Pair<Rule>) -> Result<Block, PalabritasError> {
+  match_rule(&token, Rule::NamedBucket)?;
 
   let mut name = None;
   let mut settings = BlockSettings::default();
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Chance => {
-        settings.chance = parse_chance(inner_token);
+        settings.chance = parse_chance(inner_token)?;
       }
       Rule::SnakeCase => {
         name = Some(inner_token.as_str().to_string());
@@ -526,13 +624,11 @@ fn parse_named_bucket(token: Pair<Rule>) -> Option<Block> {
     }
   }
 
-  Some(Block::Bucket { name, settings })
+  Ok(Block::Bucket { name, settings })
 }
 
-fn parse_choice(token: Pair<Rule>) -> Option<Block> {
-  if token.as_rule() != Rule::Choice {
-    return None;
-  }
+fn parse_choice(token: Pair<Rule>) -> Result<Block, PalabritasError> {
+  match_rule(&token, Rule::Choice)?;
 
   let mut text = String::default();
   let mut settings = BlockSettings::default();
@@ -540,7 +636,7 @@ fn parse_choice(token: Pair<Rule>) -> Option<Block> {
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Chance => {
-        settings.chance = parse_chance(inner_token);
+        settings.chance = parse_chance(inner_token)?;
       }
       Rule::String => {
         text = inner_token.as_str().to_string();
@@ -549,20 +645,18 @@ fn parse_choice(token: Pair<Rule>) -> Option<Block> {
     }
   }
 
-  Some(Block::Choice { id: text, settings })
+  Ok(Block::Choice { id: text, settings })
 }
 
-fn parse_text(token: Pair<Rule>) -> Option<Block> {
-  if token.as_rule() != Rule::Text {
-    return None;
-  }
+fn parse_text(token: Pair<Rule>) -> Result<Block, PalabritasError> {
+  match_rule(&token, Rule::Text)?;
 
   let mut text = String::default();
   let mut settings = BlockSettings::default();
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Chance => {
-        settings.chance = parse_chance(inner_token);
+        settings.chance = parse_chance(inner_token)?;
       }
       Rule::String => {
         text = inner_token.as_str().to_string();
@@ -571,7 +665,7 @@ fn parse_text(token: Pair<Rule>) -> Option<Block> {
     }
   }
 
-  Some(Block::Text { id: text, settings })
+  Ok(Block::Text { id: text, settings })
 }
 
 fn add_command_to_settings(
@@ -584,36 +678,30 @@ fn add_command_to_settings(
     match inner_token.as_rule() {
       //Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert | Function | Unique | Tag) }
       Rule::Requirement => {
-        if let Some(requirement) = parse_requirement(inner_token) {
-          settings.requirements.push(requirement);
-        }
+        let requirement = parse_requirement(inner_token)?;
+        settings.requirements.push(requirement);
       }
       Rule::Frequency => {
-        if let Some(frequency) = parse_frequency(inner_token) {
-          settings.frequency_modifiers.push(frequency);
-        }
+        let frequency = parse_frequency(inner_token)?;
+        settings.frequency_modifiers.push(frequency);
       }
       Rule::Modifier => {
         let modifier = parse_modifier(inner_token)?;
         settings.modifiers.push(modifier);
       }
       Rule::Divert => {
-        if let Some(divert) = parse_divert(inner_token) {
-          settings.next = divert;
-        }
+        settings.next = parse_divert(inner_token)?;
       }
       Rule::Unique => {
         settings.unique = true;
       }
       Rule::Tag => {
-        if let Some(tag) = parse_tag(inner_token) {
-          settings.tags.push(tag);
-        }
+        let tag = parse_tag(inner_token)?;
+        settings.tags.push(tag);
       }
       Rule::Function => {
-        if let Some(function) = parse_function(inner_token) {
-          settings.functions.push(function);
-        }
+        let function = parse_function(inner_token)?;
+        settings.functions.push(function);
       }
       _ => {}
     }
@@ -626,10 +714,9 @@ fn add_command_to_block(token: Pair<Rule>, block: &mut Block) -> Result<(), Pala
   add_command_to_settings(token, settings)
 }
 
-fn parse_function(token: Pair<Rule>) -> Option<Function> {
-  if token.as_rule() != Rule::Function {
-    return None;
-  }
+fn parse_function(token: Pair<Rule>) -> Result<Function, PalabritasError> {
+  match_rule(&token, Rule::Function)?;
+
   let mut name = String::default();
   let mut parameters = Vec::default();
   for inner_token in token.into_inner() {
@@ -640,24 +727,22 @@ fn parse_function(token: Pair<Rule>) -> Option<Function> {
       parameters.push(inner_token.as_str().to_string());
     }
   }
-  Some(Function { name, parameters })
+  Ok(Function { name, parameters })
 }
 
-fn parse_tag(token: Pair<Rule>) -> Option<String> {
-  if token.as_rule() != Rule::Tag {
-    return None;
-  }
+fn parse_tag(token: Pair<Rule>) -> Result<String, PalabritasError> {
+  match_rule(&token, Rule::Tag)?;
+
+  let mut name = String::default();
   for inner_token in token.into_inner() {
     if inner_token.as_rule() == Rule::Identifier {
-      return Some(inner_token.as_str().to_string());
+      name = inner_token.as_str().to_string();
     }
   }
-  None
+  Ok(name)
 }
-fn parse_divert(token: Pair<Rule>) -> Option<NextBlock> {
-  if token.as_rule() != Rule::Divert {
-    return None;
-  }
+fn parse_divert(token: Pair<Rule>) -> Result<NextBlock, PalabritasError> {
+  match_rule(&token, Rule::Divert)?;
   //Divert = { "->"  ~ " "* ~ Identifier ~ ("." ~ Identifier)? }
 
   let mut section: Option<String> = None;
@@ -674,14 +759,17 @@ fn parse_divert(token: Pair<Rule>) -> Option<NextBlock> {
   }
 
   if section.is_some() && subsection.is_none() && section.clone().unwrap() == "END" {
-    return Some(NextBlock::EndOfFile);
+    return Ok(NextBlock::EndOfFile);
   }
-  section.map(|section| {
-    NextBlock::Section(SectionKey {
+
+  if let Some(section) = section {
+    Ok(NextBlock::Section(SectionKey {
       section,
       subsection,
-    })
-  })
+    }))
+  } else {
+    Ok(NextBlock::None)
+  }
 }
 
 fn parse_modifier(token: Pair<Rule>) -> Result<Modifier, PalabritasError> {
@@ -701,9 +789,7 @@ fn parse_modifier(token: Pair<Rule>) -> Result<Modifier, PalabritasError> {
       }
 
       Rule::ModifierOperator => {
-        if let Some(operator) = parse_modifier_operator(inner_token) {
-          modifier.operator = operator;
-        }
+        modifier.operator = parse_modifier_operator(inner_token)?;
       }
 
       Rule::NotOperator => {
@@ -721,33 +807,27 @@ fn parse_modifier(token: Pair<Rule>) -> Result<Modifier, PalabritasError> {
   }
 }
 
-fn parse_modifier_operator(token: Pair<Rule>) -> Option<ModifierOperator> {
+fn parse_modifier_operator(token: Pair<Rule>) -> Result<ModifierOperator, PalabritasError> {
   //ModifierOperator = {"+" | "-" | "*" | "/" | "="}
-  if token.as_rule() != Rule::ModifierOperator {
-    return None;
-  }
+  match_rule(&token, Rule::ModifierOperator)?;
 
   match token.as_str() {
-    "+" => Some(ModifierOperator::Add),
-    "-" => Some(ModifierOperator::Substract),
-    "*" => Some(ModifierOperator::Multiply),
-    "/" => Some(ModifierOperator::Divide),
-    "=" => Some(ModifierOperator::Set),
-    _ => None,
+    "+" => Ok(ModifierOperator::Add),
+    "-" => Ok(ModifierOperator::Substract),
+    "*" => Ok(ModifierOperator::Multiply),
+    "/" => Ok(ModifierOperator::Divide),
+    "=" => Ok(ModifierOperator::Set),
+    _ => Ok(ModifierOperator::default()),
   }
 }
-fn parse_frequency(token: Pair<Rule>) -> Option<FrequencyModifier> {
-  if token.as_rule() != Rule::Frequency {
-    return None;
-  }
+fn parse_frequency(token: Pair<Rule>) -> Result<FrequencyModifier, PalabritasError> {
+  match_rule(&token, Rule::Frequency)?;
 
   let mut frequency = FrequencyModifier::default();
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Condition => {
-        if let Some(condition) = parse_condition(inner_token) {
-          frequency.condition = condition;
-        }
+        frequency.condition = parse_condition(inner_token)?;
       }
 
       Rule::Float | Rule::Integer => {
@@ -758,28 +838,24 @@ fn parse_frequency(token: Pair<Rule>) -> Option<FrequencyModifier> {
     }
   }
 
-  Some(frequency)
+  Ok(frequency)
 }
 
-fn parse_requirement(token: Pair<Rule>) -> Option<Requirement> {
-  if token.as_rule() != Rule::Requirement {
-    return None;
-  }
+fn parse_requirement(token: Pair<Rule>) -> Result<Requirement, PalabritasError> {
+  match_rule(&token, Rule::Requirement)?;
 
+  let mut condition = Condition::default();
   for inner_token in token.into_inner() {
     if inner_token.as_rule() == Rule::Condition {
-      if let Some(condition) = parse_condition(inner_token) {
-        return Some(Requirement { condition });
-      }
+      condition = parse_condition(inner_token)?;
     }
   }
-  None
+
+  Ok(Requirement { condition })
 }
 
-fn parse_condition(token: Pair<Rule>) -> Option<Condition> {
-  if token.as_rule() != Rule::Condition {
-    return None;
-  }
+fn parse_condition(token: Pair<Rule>) -> Result<Condition, PalabritasError> {
+  match_rule(&token, Rule::Condition)?;
   //Condition = { ( Identifier ~ " "* ~ ( ComparisonOperator ~ " "* )? ~ Value? ) | ( NotEqualOperator? ~ " "* ~ Identifier ~ " "*) }
 
   let mut condition = Condition::default();
@@ -790,9 +866,7 @@ fn parse_condition(token: Pair<Rule>) -> Option<Condition> {
         condition.variable = inner_token.as_str().to_string();
       }
       Rule::ComparisonOperator => {
-        if let Some(operator) = parse_comparison_operator(inner_token) {
-          condition.operator = operator;
-        }
+        condition.operator = parse_comparison_operator(inner_token)?;
       }
       Rule::NotOperator => {
         condition.operator = ComparisonOperator::NotEqual;
@@ -803,52 +877,48 @@ fn parse_condition(token: Pair<Rule>) -> Option<Condition> {
       _ => {}
     }
   }
-  Some(condition)
+  Ok(condition)
 }
 
-fn parse_comparison_operator(token: Pair<Rule>) -> Option<ComparisonOperator> {
-  if token.as_rule() != Rule::ComparisonOperator {
-    return None;
-  }
+fn parse_comparison_operator(token: Pair<Rule>) -> Result<ComparisonOperator, PalabritasError> {
+  match_rule(&token, Rule::ComparisonOperator)?;
 
   match token.as_str() {
-    "!=" => Some(ComparisonOperator::NotEqual),
-    "!" => Some(ComparisonOperator::NotEqual),
-    "=" => Some(ComparisonOperator::Equal),
-    "<=" => Some(ComparisonOperator::LessOrEqualThan),
-    ">=" => Some(ComparisonOperator::GreaterOrEqualThan),
-    "<" => Some(ComparisonOperator::LessThan),
-    ">" => Some(ComparisonOperator::GreaterThan),
-    _ => None,
+    "!=" => Ok(ComparisonOperator::NotEqual),
+    "!" => Ok(ComparisonOperator::NotEqual),
+    "=" => Ok(ComparisonOperator::Equal),
+    "<=" => Ok(ComparisonOperator::LessOrEqualThan),
+    ">=" => Ok(ComparisonOperator::GreaterOrEqualThan),
+    "<" => Ok(ComparisonOperator::LessThan),
+    ">" => Ok(ComparisonOperator::GreaterThan),
+    _ => Ok(ComparisonOperator::default()),
   }
 }
 
-fn parse_chance(token: Pair<Rule>) -> Chance {
-  if token.as_rule() != Rule::Chance {
-    return Chance::None;
-  }
+fn parse_chance(token: Pair<Rule>) -> Result<Chance, PalabritasError> {
+  match_rule(&token, Rule::Chance)?;
 
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Float => {
         let value = inner_token.as_str().parse::<f32>().unwrap();
-        return Chance::Probability(value);
+        return Ok(Chance::Probability(value));
       }
       Rule::Percentage => {
         if let Some(integer) = inner_token.into_inner().next() {
           let value = integer.as_str().parse::<u64>().unwrap();
-          return Chance::Probability(value as f32 / 100.);
+          return Ok(Chance::Probability(value as f32 / 100.));
         }
       }
       Rule::Integer => {
         let value = inner_token.as_str().parse::<u32>().unwrap();
-        return Chance::Frequency(value);
+        return Ok(Chance::Frequency(value));
       }
       _ => {}
     }
   }
 
-  Chance::None
+  Ok(Chance::None)
 }
 
 fn match_rule(token: &Pair<Rule>, expected_rule: Rule) -> Result<(), PalabritasError> {
@@ -875,7 +945,7 @@ mod test {
   use cuentitos_common::{
     Block, BlockSettings, Condition, FrequencyModifier, Modifier, Requirement,
   };
-  use pest::iterators::Pair;
+
   use rand::distributions::Alphanumeric;
   use rand::{self, Rng};
 
@@ -898,8 +968,7 @@ mod test {
   #[test]
   fn parse_database_correctly() {
     let unparsed_file = include_str!("../../examples/story-example.cuentitos");
-    let token = short_parse(Rule::Database, &unparsed_file);
-    parse_database(token, Config::default()).unwrap();
+    parse_database_str(unparsed_file).unwrap();
     //TODO: compare with fixture
   }
 
@@ -919,9 +988,8 @@ mod test {
       "[{}]\n  ({}){}\n  ({}){}",
       snake_case, frequency_1, child_1, frequency_2, child_2
     );
-    let token = short_parse(Rule::Block, &named_bucket_string);
-    let mut blocks = Vec::default();
-    let named_bucket = parse_block(token, &mut blocks, 0).unwrap_err();
+
+    let named_bucket = parse_block_str(&named_bucket_string).unwrap_err();
 
     assert_eq!(
       named_bucket,
@@ -943,9 +1011,8 @@ mod test {
       "[{}]\n  ({}){}\n  ({}){}",
       snake_case, frequency, child_1, chance, child_2
     );
-    let token = short_parse(Rule::Block, &named_bucket_string);
-    let mut blocks = Vec::default();
-    let named_bucket = parse_block(token, &mut blocks, 0).unwrap_err();
+
+    let named_bucket = parse_block_str(&named_bucket_string).unwrap_err();
 
     assert_eq!(
       named_bucket,
@@ -966,9 +1033,8 @@ mod test {
       "[{}]\n  ({}){}\n  {}",
       snake_case, frequency, child_1, child_2
     );
-    let token = short_parse(Rule::Block, &named_bucket_string);
-    let mut blocks = Vec::default();
-    let named_bucket = parse_block(token, &mut blocks, 0).unwrap_err();
+
+    let named_bucket = parse_block_str(&named_bucket_string).unwrap_err();
 
     assert_eq!(
       named_bucket,
@@ -995,11 +1061,10 @@ mod test {
       "[{} {}]\n  ({}){}\n  ({}){}",
       chance_string, snake_case, frequency_1, child_1, frequency_2, child_2
     );
-    let token = short_parse(Rule::NamedBucket, &named_bucket_string);
-    let named_bucket = parse_named_bucket(token).unwrap();
 
-    let chance_token = short_parse(Rule::Chance, &chance_string);
-    let chance = parse_chance(chance_token);
+    let named_bucket = parse_named_bucket_str(&named_bucket_string).unwrap();
+
+    let chance = parse_chance_str(&chance_string).unwrap();
 
     let expected_value = Block::Bucket {
       name: Some(snake_case.clone()),
@@ -1010,9 +1075,7 @@ mod test {
     };
     assert_eq!(named_bucket, expected_value);
 
-    let mut blocks = Vec::default();
-    let token = short_parse(Rule::Block, &named_bucket_string);
-    parse_block(token, &mut blocks, 0).unwrap();
+    let blocks = parse_block_str(&named_bucket_string).unwrap();
 
     let expected_value = Block::Bucket {
       name: Some(snake_case),
@@ -1040,11 +1103,7 @@ mod test {
       parent, probabiliy_1, child_1, probabiliy_2, child_2
     );
 
-    let token = short_parse(Rule::Block, &block_string);
-
-    let mut blocks = Vec::default();
-
-    parse_block(token, &mut blocks, 0).unwrap();
+    let blocks = parse_block_str(&block_string).unwrap();
 
     let expected_text = Block::Text {
       id: parent,
@@ -1072,15 +1131,11 @@ mod test {
 
     let float = rand::thread_rng().gen_range(i8::MIN as f32..i8::MAX as f32);
     let chance_string = format!("({})", float);
+    let chance = parse_chance_str(&chance_string).unwrap();
 
     let string = make_random_string();
-
     let choice_string = format!("*{} {}", chance_string, string);
-    let token = short_parse(Rule::Choice, &choice_string);
-    let choice = parse_choice(token).unwrap();
-
-    let chance_token = short_parse(Rule::Chance, &chance_string);
-    let chance = parse_chance(chance_token);
+    let choice = parse_choice_str(&choice_string).unwrap();
 
     let expected_settings = BlockSettings {
       chance,
@@ -1100,12 +1155,7 @@ mod test {
     let identifier = make_random_snake_case();
 
     let section_string = format!("#{}\n", identifier);
-    let token = short_parse(Rule::Section, &section_string);
-    let mut blocks = Vec::default();
-    let mut sections = HashMap::default();
-    parse_section(token, &mut blocks, &mut sections).unwrap();
-
-    let section = blocks[0][0].clone();
+    let section = parse_section_str(&section_string).unwrap();
 
     let expected_value = Block::Section {
       id: identifier,
@@ -1127,7 +1177,7 @@ mod test {
       section_identifier, subsection_identifier_1, subsection_identifier_2
     );
 
-    let token = short_parse(Rule::Section, &section_string);
+    let token = parse_str(&section_string, Rule::Section).unwrap();
     let mut blocks = Vec::default();
     let mut sections = HashMap::default();
     parse_section(token, &mut blocks, &mut sections).unwrap();
@@ -1166,11 +1216,8 @@ mod test {
     let string = make_random_string();
 
     let text_string = format!("{} {}", chance_string, string);
-    let token = short_parse(Rule::Text, &text_string);
-    let text = parse_text(token).unwrap();
-
-    let chance_token = short_parse(Rule::Chance, &chance_string);
-    let chance = parse_chance(chance_token);
+    let text = parse_text_str(&text_string).unwrap();
+    let chance = parse_chance_str(&chance_string).unwrap();
 
     let expected_settings = BlockSettings {
       chance,
@@ -1208,7 +1255,7 @@ mod test {
 
     block_settings.modifiers.push(expected_modifier);
 
-    let token = short_parse(Rule::Command, &modifier_string);
+    let token = parse_str(&modifier_string, Rule::Command).unwrap();
     add_command_to_block(token, &mut block).unwrap();
 
     //Divert
@@ -1220,20 +1267,19 @@ mod test {
       subsection: None,
     });
 
-    let token = short_parse(Rule::Command, &divert_string);
+    let token = parse_str(&divert_string, Rule::Command).unwrap();
     add_command_to_block(token, &mut block).unwrap();
 
     //Unique
 
     block_settings.unique = true;
-    let token = short_parse(Rule::Command, "\n unique");
+    let token = parse_str("\n unique", Rule::Command).unwrap();
     add_command_to_block(token, &mut block).unwrap();
 
     //Frequency
 
     let condition_string = make_random_condition();
-    let condition_token = short_parse(Rule::Condition, &condition_string);
-    let condition = parse_condition(condition_token).unwrap();
+    let condition = parse_condition_str(&condition_string).unwrap();
 
     let change_value: i32 = rand::thread_rng().gen();
     let frequency_string = format!("\n freq {} {}", condition_string, change_value);
@@ -1244,21 +1290,20 @@ mod test {
 
     block_settings.frequency_modifiers.push(expected_frequency);
 
-    let token = short_parse(Rule::Command, &frequency_string);
+    let token = parse_str(&frequency_string, Rule::Command).unwrap();
     add_command_to_block(token, &mut block).unwrap();
 
     //Requirement
 
     let condition_string = make_random_condition();
-    let condition_token = short_parse(Rule::Condition, &condition_string);
-    let condition = parse_condition(condition_token).unwrap();
+    let condition = parse_condition_str(&condition_string).unwrap();
 
     let requirement_string = format!("\n req {}", condition_string);
     let expected_requirement = Requirement { condition };
 
     block_settings.requirements.push(expected_requirement);
 
-    let token = short_parse(Rule::Command, &requirement_string);
+    let token = parse_str(&requirement_string, Rule::Command).unwrap();
     add_command_to_block(token, &mut block).unwrap();
 
     let expected_block = Block::Text {
@@ -1272,22 +1317,18 @@ mod test {
   #[test]
   fn parse_tag_correctly() {
     //Tag = {"tag" ~ " "+ ~ Identifier}
-    let identifier = make_random_identifier();
-    let tag_string = format!("tag {}", identifier);
+    let tag_name = make_random_identifier();
+    let tag_string = format!("tag {}", tag_name);
+    let tag = parse_tag_str(&tag_string).unwrap();
 
-    let token = short_parse(Rule::Tag, &tag_string);
-    let value = parse_tag(token).unwrap();
-
-    assert_eq!(value, identifier);
+    assert_eq!(tag, tag_name);
   }
 
   #[test]
   fn division_by_zero_throws_error() {
     let identifier = make_random_identifier();
     let tag_string = format!("set {} / 0", identifier);
-
-    let token = short_parse(Rule::Modifier, &tag_string);
-    let value = parse_modifier(token).unwrap_err();
+    let value = parse_modifier_str(&tag_string).unwrap_err();
 
     assert_eq!(
       value,
@@ -1305,10 +1346,7 @@ mod test {
     let parameter_1 = make_random_identifier();
     let parameter_2 = make_random_identifier();
     let function_string = format!("`{} {} {}`", name, parameter_1, parameter_2);
-
-    let token = short_parse(Rule::Function, &function_string);
-    let value = parse_function(token).unwrap();
-
+    let value = parse_function_str(&function_string).unwrap();
     let expected_value = Function {
       name,
       parameters: vec![parameter_1, parameter_2],
@@ -1322,28 +1360,20 @@ mod test {
     //Divert = { "->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)? }
     let section = make_random_identifier();
     let divert_string = format!("-> {}", section);
-
     let expected_value = NextBlock::Section(SectionKey {
       section: section.clone(),
       subsection: None,
     });
-
-    let token = short_parse(Rule::Divert, &divert_string);
-    let divert = parse_divert(token).unwrap();
-
+    let divert = parse_divert_str(&divert_string).unwrap();
     assert_eq!(divert, expected_value);
 
     let subsection = make_random_identifier();
-
     let divert_string = format!("-> {}/{}", section, subsection);
-
     let expected_value = NextBlock::Section(SectionKey {
       section,
       subsection: Some(subsection),
     });
-
-    let token = short_parse(Rule::Divert, &divert_string);
-    let divert = parse_divert(token).unwrap();
+    let divert = parse_divert_str(&divert_string).unwrap();
 
     assert_eq!(divert, expected_value);
   }
@@ -1354,15 +1384,12 @@ mod test {
     let variable = make_random_identifier();
     let value = rand::thread_rng().gen::<f32>().to_string();
     let modifier_string = format!("set {} {}", variable, value);
-
     let expected_value = Modifier {
       variable,
       value,
       operator: ModifierOperator::Set,
     };
-
-    let token = short_parse(Rule::Modifier, &modifier_string);
-    let modifier = parse_modifier(token).unwrap();
+    let modifier = parse_modifier_str(&modifier_string).unwrap();
 
     assert_eq!(modifier, expected_value);
   }
@@ -1371,18 +1398,14 @@ mod test {
   fn parse_frequency_correctly() {
     //Frequency = { "freq" ~ " "+ ~ Condition ~ " "+ ~ ( Float | Integer ) }
     let condition_string = make_random_condition();
-    let condition_token = short_parse(Rule::Condition, &condition_string);
-    let condition = parse_condition(condition_token).unwrap();
-
+    let condition = parse_condition_str(&condition_string).unwrap();
     let change_value: i32 = rand::thread_rng().gen();
     let frequency_string = format!("freq {} {}", condition_string, change_value);
     let expected_value = FrequencyModifier {
       condition,
       value: change_value,
     };
-
-    let token = short_parse(Rule::Frequency, &frequency_string);
-    let frequency = parse_frequency(token).unwrap();
+    let frequency = parse_frequency_str(&frequency_string).unwrap();
 
     assert_eq!(frequency, expected_value);
   }
@@ -1391,14 +1414,10 @@ mod test {
   fn parse_requirement_correctly() {
     //Requirement = { "req" ~ " "+ ~ Condition }
     let condition_string = make_random_condition();
-    let condition_token = short_parse(Rule::Condition, &condition_string);
-    let condition = parse_condition(condition_token).unwrap();
-
+    let condition = parse_condition_str(&condition_string).unwrap();
     let requirement_string = format!("req {}", condition_string);
     let expected_value = Requirement { condition };
-
-    let token = short_parse(Rule::Requirement, &requirement_string);
-    let requirement = parse_requirement(token).unwrap();
+    let requirement = parse_requirement_str(&requirement_string).unwrap();
 
     assert_eq!(requirement, expected_value);
   }
@@ -1410,8 +1429,7 @@ mod test {
 
     let operator_string =
       COMPARISON_OPERATORS[rand::thread_rng().gen_range(0..COMPARISON_OPERATORS.len())];
-    let operator_token = short_parse(Rule::ComparisonOperator, operator_string);
-    let operator = parse_comparison_operator(operator_token).unwrap();
+    let operator = parse_comparison_operator_str(&operator_string).unwrap();
 
     let value: f32 = rand::thread_rng().gen();
 
@@ -1423,65 +1441,51 @@ mod test {
       value: value.to_string(),
     };
 
-    let token = short_parse(Rule::Condition, &condition_string);
-    let condition = parse_condition(token).unwrap();
-
+    let condition = parse_condition_str(&condition_string).unwrap();
     assert_eq!(condition, expected_value);
   }
 
   #[test]
   fn parse_comparison_operator_correctly() {
     //ComparisonOperator = { "!=" | "=" | "<=" | ">=" | "<" | ">" | "!" }
-    let operator_token = short_parse(Rule::ComparisonOperator, "!=");
-    let operator = parse_comparison_operator(operator_token).unwrap();
+    let operator = parse_comparison_operator_str("!=").unwrap();
     assert_eq!(operator, ComparisonOperator::NotEqual);
 
-    let operator_token = short_parse(Rule::ComparisonOperator, "=");
-    let operator = parse_comparison_operator(operator_token).unwrap();
+    let operator = parse_comparison_operator_str("=").unwrap();
     assert_eq!(operator, ComparisonOperator::Equal);
 
-    let operator_token = short_parse(Rule::ComparisonOperator, "<=");
-    let operator = parse_comparison_operator(operator_token).unwrap();
+    let operator = parse_comparison_operator_str("<=").unwrap();
     assert_eq!(operator, ComparisonOperator::LessOrEqualThan);
 
-    let operator_token = short_parse(Rule::ComparisonOperator, ">=");
-    let operator = parse_comparison_operator(operator_token).unwrap();
+    let operator = parse_comparison_operator_str(">=").unwrap();
     assert_eq!(operator, ComparisonOperator::GreaterOrEqualThan);
 
-    let operator_token = short_parse(Rule::ComparisonOperator, "<");
-    let operator = parse_comparison_operator(operator_token).unwrap();
+    let operator = parse_comparison_operator_str("<").unwrap();
     assert_eq!(operator, ComparisonOperator::LessThan);
 
-    let operator_token = short_parse(Rule::ComparisonOperator, ">");
-    let operator = parse_comparison_operator(operator_token).unwrap();
+    let operator = parse_comparison_operator_str(">").unwrap();
     assert_eq!(operator, ComparisonOperator::GreaterThan);
 
-    let operator_token = short_parse(Rule::ComparisonOperator, "!");
-    let operator = parse_comparison_operator(operator_token).unwrap();
+    let operator = parse_comparison_operator_str("!").unwrap();
     assert_eq!(operator, ComparisonOperator::NotEqual);
   }
 
   #[test]
   fn parse_modifier_operator_correctly() {
     //ModifierOperator = {"+" | "-" | "*" | "/" | "="}
-    let operator_token = short_parse(Rule::ModifierOperator, "+");
-    let operator = parse_modifier_operator(operator_token).unwrap();
+    let operator = parse_modifier_operator_str("+").unwrap();
     assert_eq!(operator, ModifierOperator::Add);
 
-    let operator_token = short_parse(Rule::ModifierOperator, "-");
-    let operator = parse_modifier_operator(operator_token).unwrap();
+    let operator = parse_modifier_operator_str("-").unwrap();
     assert_eq!(operator, ModifierOperator::Substract);
 
-    let operator_token = short_parse(Rule::ModifierOperator, "*");
-    let operator = parse_modifier_operator(operator_token).unwrap();
+    let operator = parse_modifier_operator_str("*").unwrap();
     assert_eq!(operator, ModifierOperator::Multiply);
 
-    let operator_token = short_parse(Rule::ModifierOperator, "/");
-    let operator = parse_modifier_operator(operator_token).unwrap();
+    let operator = parse_modifier_operator_str("/").unwrap();
     assert_eq!(operator, ModifierOperator::Divide);
 
-    let operator_token = short_parse(Rule::ModifierOperator, "=");
-    let operator = parse_modifier_operator(operator_token).unwrap();
+    let operator = parse_modifier_operator_str("=").unwrap();
     assert_eq!(operator, ModifierOperator::Set);
   }
 
@@ -1489,63 +1493,15 @@ mod test {
   fn parse_not_equal_condition_correctly() {
     /*Condition = { Identifier ~ " "* ~ (ComparisonOperator ~ " "*)? ~ Value } */
     let variable = make_random_identifier();
-
     let condition_string = format!("!{}", variable);
-
     let expected_value = Condition {
       variable,
       operator: ComparisonOperator::NotEqual,
       value: "true".to_string(),
     };
-
-    let token = short_parse(Rule::Condition, &condition_string);
-    let condition = parse_condition(token).unwrap();
+    let condition = parse_condition_str(&condition_string).unwrap();
 
     assert_eq!(condition, expected_value);
-  }
-  #[test]
-  fn parse_operators_correctly() {
-    let token = short_parse(Rule::ComparisonOperator, "=");
-    assert_eq!(
-      parse_comparison_operator(token).unwrap(),
-      ComparisonOperator::Equal
-    );
-
-    let token = short_parse(Rule::ComparisonOperator, "!=");
-    assert_eq!(
-      parse_comparison_operator(token).unwrap(),
-      ComparisonOperator::NotEqual
-    );
-
-    let token = short_parse(Rule::ComparisonOperator, "<");
-    assert_eq!(
-      parse_comparison_operator(token).unwrap(),
-      ComparisonOperator::LessThan
-    );
-
-    let token = short_parse(Rule::ComparisonOperator, ">");
-    assert_eq!(
-      parse_comparison_operator(token).unwrap(),
-      ComparisonOperator::GreaterThan
-    );
-
-    let token = short_parse(Rule::ComparisonOperator, "<=");
-    assert_eq!(
-      parse_comparison_operator(token).unwrap(),
-      ComparisonOperator::LessOrEqualThan
-    );
-
-    let token = short_parse(Rule::ComparisonOperator, ">=");
-    assert_eq!(
-      parse_comparison_operator(token).unwrap(),
-      ComparisonOperator::GreaterOrEqualThan
-    );
-
-    let token = short_parse(Rule::ComparisonOperator, "!");
-    assert_eq!(
-      parse_comparison_operator(token).unwrap(),
-      ComparisonOperator::NotEqual
-    );
   }
 
   #[test]
@@ -1817,12 +1773,7 @@ mod test {
     let identifier = make_random_snake_case();
 
     let section_string = format!("# {}\n  req test\n", identifier);
-    let token = short_parse(Rule::Section, &section_string);
-    let mut blocks = Vec::default();
-    let mut sections = HashMap::default();
-    parse_section(token, &mut blocks, &mut sections).unwrap();
-
-    let section = blocks[0][0].clone();
+    let section = parse_section_str(&section_string).unwrap();
 
     let expected_value = Block::Section {
       id: identifier,
@@ -1995,10 +1946,10 @@ mod test {
     *string = final_string;
   }
 
-  fn short_parse(rule: Rule, input: &str) -> Pair<Rule> {
-    PalabritasParser::parse(rule, input)
-      .expect("unsuccessful parse")
-      .next()
-      .unwrap()
+  fn parse_block_str(input: &str) -> Result<Vec<Vec<Block>>, PalabritasError> {
+    let token = parse_str(input, Rule::Block)?;
+    let mut blocks = Vec::default();
+    parse_block(token, &mut blocks, 0)?;
+    Ok(blocks)
   }
 }

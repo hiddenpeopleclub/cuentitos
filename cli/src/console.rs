@@ -1,4 +1,5 @@
 use cuentitos_runtime::*;
+use palabritas::parse_modifier_str;
 use std::fs;
 use std::fs::File;
 use std::io::Read;
@@ -65,13 +66,15 @@ impl Console {
         "q" => break,
         "variables" => print_variables(&runtime),
         str => {
-          if str.starts_with("set ") {
-            let substr: String = str.chars().skip(4).collect();
-            let mut splitted = substr.split(' ');
-            if let Some(variable) = splitted.next() {
-              if let Some(value) = splitted.next() {
-                set_variable_value(variable, value, &mut runtime);
-              }
+          if str.starts_with("set") {
+            match parse_modifier_str(str) {
+              Ok(modifier) => match runtime.apply_modifier(&modifier) {
+                Ok(_) => {
+                  print_variable(&runtime, &modifier.variable);
+                }
+                Err(error) => println!("{}", error),
+              },
+              Err(error) => println!("{}", error),
             }
           } else if str.starts_with("->") {
             let substr: String = str.chars().skip(2).collect();
@@ -108,45 +111,6 @@ impl Console {
   }
 }
 
-fn set_variable_value(variable: &str, value: &str, runtime: &mut Runtime) {
-  for (variable_name, kind) in runtime.database.config.variables.clone() {
-    if variable_name == variable {
-      match kind {
-        VariableKind::Integer => {
-          let int: i32 = value.parse().unwrap();
-          runtime.set_variable(variable, int).unwrap();
-          let result: i32 = runtime.get_variable(variable).unwrap();
-          println!("{} = {}", variable, result);
-        }
-        VariableKind::Float => {
-          let float: f32 = value.parse().unwrap();
-          runtime.set_variable(variable, float).unwrap();
-          let result: f32 = runtime.get_variable(variable).unwrap();
-          println!("{} = {}", variable, result);
-        }
-        VariableKind::Bool => {
-          let bool: bool = value.parse().unwrap();
-          runtime.set_variable(variable, bool).unwrap();
-          let result: bool = runtime.get_variable(variable).unwrap();
-          println!("{} = {}", variable, result);
-        }
-        VariableKind::String => {
-          runtime.set_variable(variable, value.to_string()).unwrap();
-          let result: String = runtime.get_variable(variable).unwrap();
-          println!("{} = {}", variable, result);
-        }
-        VariableKind::Enum(_) => match runtime.set_variable(variable, value.to_string()) {
-          Ok(_) => {
-            let result: String = runtime.get_variable(variable).unwrap();
-            println!("{} = {}", variable, result);
-          }
-          Err(err) => println!("{}", err),
-        },
-      }
-    }
-  }
-}
-
 fn print_variables(runtime: &Runtime) {
   for (variable, kind) in &runtime.database.config.variables {
     match kind {
@@ -168,6 +132,33 @@ fn print_variables(runtime: &Runtime) {
       }
     }
   }
+}
+
+fn print_variable(runtime: &Runtime, variable: &String) {
+  for (runtime_variable, kind) in &runtime.database.config.variables {
+    if runtime_variable == variable {
+      match kind {
+        VariableKind::Integer => {
+          let int: i32 = runtime.get_variable(variable).unwrap();
+          println!("{}: {}", variable, int);
+        }
+        VariableKind::Float => {
+          let float: f32 = runtime.get_variable(variable).unwrap();
+          println!("{}: {}", variable, float);
+        }
+        VariableKind::Bool => {
+          let bool: bool = runtime.get_variable(variable).unwrap();
+          println!("{}: {}", variable, bool);
+        }
+        _ => {
+          let string: String = runtime.get_variable(variable).unwrap();
+          println!("{}: {}", variable, string);
+        }
+      }
+      return;
+    }
+  }
+  println!("Variable {} doesn't exist", variable)
 }
 fn print_output_text(output_text: Block) {
   println!("{}", output_text.text);
