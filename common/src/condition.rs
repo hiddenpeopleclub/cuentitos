@@ -3,7 +3,7 @@ use crate::VariableId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub enum Operator {
+pub enum ComparisonOperator {
   #[default]
   Equal,
   NotEqual,
@@ -16,7 +16,7 @@ pub enum Operator {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Condition {
   pub variable: VariableId,
-  pub operator: Operator,
+  pub operator: ComparisonOperator,
   pub value: String,
 }
 
