@@ -6,7 +6,7 @@ use cuentitos_common::condition::ComparisonOperator;
 use cuentitos_common::modifier::ModifierOperator;
 use cuentitos_common::{
   Block, BlockId, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Function,
-  Modifier, NextBlock, Requirement, SectionKey,
+  I18n, Modifier, NextBlock, Requirement, SectionKey,
 };
 use pest::{iterators::Pair, Parser};
 
@@ -57,11 +57,8 @@ where
   };
 
   match PalabritasParser::parse(Rule::Database, &str) {
-    Ok(mut result) => match parse_database(result.next().unwrap()) {
-      Ok(mut database) => {
-        database.config = config;
-        Ok(database)
-      }
+    Ok(mut result) => match parse_database(result.next().unwrap(), config) {
+      Ok(database) => Ok(database),
       Err(error) => Err(error),
     },
     Err(error) => {
@@ -80,18 +77,20 @@ where
   }
 }
 
-pub fn parse_database(token: Pair<Rule>) -> Result<Database, PalabritasError> {
+pub fn parse_database(token: Pair<Rule>, config: Config) -> Result<Database, PalabritasError> {
   match_rule(&token, Rule::Database)?;
 
   let mut blocks: Vec<Vec<Block>> = Vec::default();
+  let mut i18n = I18n::from_config(&config);
+
   let mut sections = HashMap::default(); //  pub sections: HashMap<SectionId, BlockId>
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Block => {
-        parse_block(inner_token, &mut blocks, 0)?;
+        parse_block(inner_token, &mut blocks, 0, &mut i18n)?;
       }
       Rule::Section => {
-        parse_section(inner_token, &mut blocks, &mut sections)?;
+        parse_section(inner_token, &mut blocks, &mut sections, &mut i18n)?;
       }
       _ => {}
     }
@@ -126,13 +125,14 @@ pub fn parse_database(token: Pair<Rule>) -> Result<Database, PalabritasError> {
   Ok(Database {
     blocks: ordered_blocks,
     sections,
+    i18n,
     ..Default::default()
   })
 }
 
 pub fn parse_database_str(input: &str) -> Result<Database, PalabritasError> {
   let token = parse_str(input, Rule::Database)?;
-  parse_database(token)
+  parse_database(token, Config::default())
 }
 
 pub fn parse_text_str(input: &str) -> Result<Block, PalabritasError> {
@@ -162,7 +162,12 @@ pub fn parse_choice_str(input: &str) -> Result<Block, PalabritasError> {
 
 pub fn parse_section_str(input: &str) -> Result<Block, PalabritasError> {
   let token = parse_str(input, Rule::Section)?;
-  parse_section(token, &mut Vec::default(), &mut HashMap::default())
+  parse_section(
+    token,
+    &mut Vec::default(),
+    &mut HashMap::default(),
+    &mut I18n::default(),
+  )
 }
 
 pub fn parse_tag_str(input: &str) -> Result<String, PalabritasError> {
@@ -236,6 +241,7 @@ fn parse_section(
   token: Pair<Rule>,
   blocks: &mut Vec<Vec<Block>>,
   sections: &mut HashMap<SectionKey, BlockId>,
+  i18n: &mut I18n,
 ) -> Result<Block, PalabritasError> {
   match_rule(&token, Rule::Section)?;
   if blocks.is_empty() {
@@ -258,12 +264,12 @@ fn parse_section(
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
-          parse_block(inner_blocks_token, blocks, 1)?;
+          parse_block(inner_blocks_token, blocks, 1, i18n)?;
           settings.children.push(blocks[1].len() - 1);
         }
       }
       Rule::Subsection => {
-        parse_subsection(inner_token, blocks, &id, sections)?;
+        parse_subsection(inner_token, blocks, &id, sections, i18n)?;
       }
       _ => {}
     }
@@ -288,6 +294,7 @@ fn parse_subsection(
   blocks: &mut Vec<Vec<Block>>,
   section_name: &str,
   sections: &mut HashMap<SectionKey, BlockId>,
+  i18n: &mut I18n,
 ) -> Result<(), PalabritasError> {
   match_rule(&token, Rule::Subsection)?;
 
@@ -311,12 +318,12 @@ fn parse_subsection(
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
-          parse_block(inner_blocks_token, blocks, 1)?;
+          parse_block(inner_blocks_token, blocks, 1, i18n)?;
           settings.children.push(blocks[1].len() - 1);
         }
       }
       Rule::Subsection => {
-        parse_subsection(inner_token, blocks, section_name, sections)?;
+        parse_subsection(inner_token, blocks, section_name, sections, i18n)?;
       }
       _ => {}
     }
@@ -337,6 +344,7 @@ fn parse_block(
   token: Pair<Rule>,
   blocks: &mut Vec<Vec<Block>>,
   child_order: usize,
+  i18n: &mut I18n,
 ) -> Result<(), PalabritasError> {
   match_rule(&token, Rule::Block)?;
 
@@ -360,7 +368,7 @@ fn parse_block(
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
           let settings = block.get_settings_mut();
-          parse_block(inner_blocks_token, blocks, child_order + 1)?;
+          parse_block(inner_blocks_token, blocks, child_order + 1, i18n)?;
           settings.children.push(blocks[child_order + 1].len() - 1);
         }
       }
@@ -370,6 +378,29 @@ fn parse_block(
 
   while child_order >= blocks.len() {
     blocks.push(Vec::default());
+  }
+
+  if let Some(i18n_id) = block.get_i18n_id() {
+    if let Some(db) = i18n.strings.get_mut(&i18n.default_locale) {
+      let new_id = current_line.to_string();
+      db.insert(new_id.clone(), i18n_id);
+
+      match block {
+        Block::Text { id: _, settings } => {
+          block = Block::Text {
+            id: new_id,
+            settings,
+          };
+        }
+        Block::Choice { id: _, settings } => {
+          block = Block::Choice {
+            id: new_id,
+            settings,
+          };
+        }
+        _ => {}
+      }
+    }
   }
 
   blocks[child_order].push(block);
@@ -1180,7 +1211,7 @@ mod test {
     let token = parse_str(&section_string, Rule::Section).unwrap();
     let mut blocks = Vec::default();
     let mut sections = HashMap::default();
-    parse_section(token, &mut blocks, &mut sections).unwrap();
+    parse_section(token, &mut blocks, &mut sections, &mut I18n::default()).unwrap();
 
     let section = blocks[0][0].clone();
 
@@ -1949,7 +1980,7 @@ mod test {
   fn parse_block_str(input: &str) -> Result<Vec<Vec<Block>>, PalabritasError> {
     let token = parse_str(input, Rule::Block)?;
     let mut blocks = Vec::default();
-    parse_block(token, &mut blocks, 0)?;
+    parse_block(token, &mut blocks, 0, &mut I18n::default())?;
     Ok(blocks)
   }
 }

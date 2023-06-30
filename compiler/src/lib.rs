@@ -23,15 +23,10 @@ where
     }
   };
 
-  let i18n = match I18n::process(&db, source_path, &destination_path) {
-    Ok(i18n) => i18n,
-    Err(e) => {
-      println!("{}", e);
-      return;
-    }
-  };
-
-  db.i18n = i18n;
+  if let Err(error) = I18n::process(&mut db, source_path, &destination_path) {
+    println!("{}", error);
+    return;
+  }
 
   let mut buf: Vec<u8> = Vec::new();
   let mut serializer = Serializer::new(&mut buf);
