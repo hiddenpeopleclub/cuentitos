@@ -56,7 +56,7 @@ pub struct ErrorInfo {
 
 impl Display for ErrorInfo {
   fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-    write!(f, "{}:{}\n  {}", self.line, self.col, self.string)
+    write!(f, "{}:{}  {}", self.line, self.col, self.string)
   }
 }
 impl Error for PalabritasError {}

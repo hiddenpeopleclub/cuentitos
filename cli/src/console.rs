@@ -51,17 +51,20 @@ impl Console {
 
       match input.as_str() {
         "" => {
-          if let Some(output_text) = runtime.next_block() {
-            print_output_text(output_text);
-          } else if let Some(output_text) = runtime.current_block() {
-            print_output_text(output_text);
-          }
+          print_output_text(runtime.next_block(), &runtime);
         }
         "sections" => {
           println!("Sections:");
           for section in runtime.database.sections.keys() {
             println!("{:?}", section);
           }
+        }
+        "?" => {
+          if let Some(current_id) = runtime.block_stack.last() {
+            println!("Current Text Id: {}", current_id);
+          }
+          println!("Variables: ");
+          print_variables(&runtime)
         }
         "q" => break,
         "variables" => print_variables(&runtime),
@@ -79,19 +82,21 @@ impl Console {
           } else if str.starts_with("->") {
             let substr: String = str.chars().skip(2).collect();
             let mut splitted = substr.split('/');
-            if let Some(section) = splitted.next() {
-              let jump_ok;
-              if let Some(subsection) = splitted.next() {
-                jump_ok =
-                  runtime.jump_to_section(section.to_string(), Some(subsection.to_string()));
-              } else {
-                jump_ok = runtime.jump_to_section(section.to_string(), None);
-              }
-
-              if jump_ok {
-                if let Some(output_text) = runtime.current_block() {
-                  print_output_text(output_text);
-                }
+            if let Some(section_str) = splitted.next() {
+              let subsection = splitted.next();
+              let section = match subsection {
+                Some(subsection) => Section {
+                  section: section_str.to_string(),
+                  subsection: Some(subsection.to_string()),
+                },
+                None => Section {
+                  section: section_str.to_string(),
+                  subsection: None,
+                },
+              };
+              match runtime.jump_to_section(section) {
+                Ok(_) => print_output_text(runtime.current_block(), &runtime),
+                Err(err) => println!("{}", err),
               }
             }
           } else if let Ok(choice) = str.parse::<usize>() {
@@ -99,9 +104,7 @@ impl Console {
               println!("invalid option");
               continue;
             }
-            if let Some(output_text) = runtime.pick_choice(choice - 1) {
-              print_output_text(output_text);
-            }
+            print_output_text(runtime.pick_choice(choice - 1), &runtime);
           } else {
             println!("Unkown command: {}", str);
           }
@@ -116,19 +119,19 @@ fn print_variables(runtime: &Runtime) {
     match kind {
       VariableKind::Integer => {
         let int: i32 = runtime.get_variable(variable).unwrap();
-        println!("{}: {}", variable, int);
+        println!("  - {}: {}", variable, int);
       }
       VariableKind::Float => {
         let float: f32 = runtime.get_variable(variable).unwrap();
-        println!("{}: {}", variable, float);
+        println!("  - {}: {}", variable, float);
       }
       VariableKind::Bool => {
         let bool: bool = runtime.get_variable(variable).unwrap();
-        println!("{}: {}", variable, bool);
+        println!("  - {}: {}", variable, bool);
       }
       _ => {
         let string: String = runtime.get_variable(variable).unwrap();
-        println!("{}: {}", variable, string);
+        println!("  - {}: {}", variable, string);
       }
     }
   }
@@ -160,9 +163,38 @@ fn print_variable(runtime: &Runtime, variable: &String) {
   }
   println!("Variable {} doesn't exist", variable)
 }
-fn print_output_text(output_text: Block) {
-  println!("{}", output_text.text);
-  for i in 0..output_text.choices.len() {
-    println!("  ({}){}", i + 1, output_text.choices[i]);
+fn print_output_text(output_text: Result<Block, RuntimeError>, runtime: &Runtime) {
+  match output_text {
+    Ok(output_text) => {
+      println!("{}", output_text.text);
+      print_choices(output_text.choices);
+    }
+    Err(err) => match err {
+      RuntimeError::WaitingForChoice(choices) => {
+        println!("Make a choice:\n");
+        print_choices(choices);
+      }
+      RuntimeError::InvalidChoice {
+        total_choices,
+        choice_picked,
+      } => {
+        println!(
+          "Can't pick {}, because there's only {} options",
+          choice_picked + 1,
+          total_choices
+        );
+        println!("Make a choice:\n");
+        print_choices(runtime.get_choices_strings());
+      }
+      _ => {
+        println!("{}", err)
+      }
+    },
+  }
+}
+
+fn print_choices(choices: Vec<String>) {
+  for (i, choice) in choices.iter().enumerate() {
+    println!("  ({}){}", i + 1, choice);
   }
 }
