@@ -116,10 +116,10 @@ impl Display for PalabritasError {
         write!(f, "Can't divide by zero: {:?}", path)
       }
       PalabritasError::VariableDoesntExist { info, variable } => {
-        write!(f, "Variable {} doesn't exist.\n{}", variable, info)
+        write!(f, "Variable '{}' doesn't exist.\n{}", variable, info)
       }
       PalabritasError::SectionDoesntExist { info, section } => {
-        write!(f, "Section {} doesn't exist.\n{}", section, info)
+        write!(f, "Section '{}' doesn't exist.\n{}", section, info)
       }
       PalabritasError::InvalidVariableValue {
         info,
@@ -129,8 +129,8 @@ impl Display for PalabritasError {
       } => {
         write!(
           f,
-          "Invalid value for variable {}. Expected {}, but found {}\n{}",
-          variable, value, variable_type, info
+          "Invalid value for variable '{}'. Expected {}, but found '{}'\n{}",
+          variable, variable_type, value, info
         )
       }
       PalabritasError::InvalidVariableOperator {
@@ -141,7 +141,7 @@ impl Display for PalabritasError {
       } => {
         write!(
           f,
-          "Invalid operator for variable {}. Operator {} can't be applied to {}\n{}",
+          "Invalid operator for variable '{}'. Operator '{}' can't be applied to {}\n{}",
           variable, operator, variable_type, info
         )
       }
