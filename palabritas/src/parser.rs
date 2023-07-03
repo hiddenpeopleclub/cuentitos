@@ -57,7 +57,7 @@ where
   };
 
   match PalabritasParser::parse(Rule::Database, &str) {
-    Ok(mut result) => match parse_database(result.next().unwrap(), config) {
+    Ok(mut result) => match parse_database(result.next().unwrap(), &config) {
       Ok(database) => Ok(database),
       Err(error) => Err(error),
     },
@@ -77,20 +77,20 @@ where
   }
 }
 
-pub fn parse_database(token: Pair<Rule>, config: Config) -> Result<Database, PalabritasError> {
+pub fn parse_database(token: Pair<Rule>, config: &Config) -> Result<Database, PalabritasError> {
   match_rule(&token, Rule::Database)?;
 
   let mut blocks: Vec<Vec<Block>> = Vec::default();
-  let mut i18n = I18n::from_config(&config);
+  let mut i18n = I18n::from_config(config);
 
   let mut sections = HashMap::default(); //  pub sections: HashMap<SectionId, BlockId>
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Block => {
-        parse_block(inner_token, &mut blocks, 0, &mut i18n, &config)?;
+        parse_block(inner_token, &mut blocks, 0, &mut i18n, config)?;
       }
       Rule::Section => {
-        parse_section(inner_token, &mut blocks, &mut sections, &mut i18n, &config)?;
+        parse_section(inner_token, &mut blocks, &mut sections, &mut i18n, config)?;
       }
       _ => {}
     }
@@ -130,9 +130,9 @@ pub fn parse_database(token: Pair<Rule>, config: Config) -> Result<Database, Pal
   })
 }
 
-pub fn parse_database_str(input: &str) -> Result<Database, PalabritasError> {
+pub fn parse_database_str(input: &str, config: &Config) -> Result<Database, PalabritasError> {
   let token = parse_str(input, Rule::Database)?;
-  parse_database(token, Config::default())
+  parse_database(token, config)
 }
 
 pub fn parse_text_str(input: &str) -> Result<Block, PalabritasError> {
@@ -150,9 +150,9 @@ pub fn parse_chance_str(input: &str) -> Result<Chance, PalabritasError> {
   parse_chance(token)
 }
 
-pub fn parse_condition_str(input: &str) -> Result<Condition, PalabritasError> {
+pub fn parse_condition_str(input: &str, config: &Config) -> Result<Condition, PalabritasError> {
   let token = parse_str(input, Rule::Condition)?;
-  parse_condition(token, &Config::default())
+  parse_condition(token, config)
 }
 
 pub fn parse_choice_str(input: &str) -> Result<Block, PalabritasError> {
@@ -160,14 +160,14 @@ pub fn parse_choice_str(input: &str) -> Result<Block, PalabritasError> {
   parse_choice(token)
 }
 
-pub fn parse_section_str(input: &str) -> Result<Block, PalabritasError> {
+pub fn parse_section_str(input: &str, config: &Config) -> Result<Block, PalabritasError> {
   let token = parse_str(input, Rule::Section)?;
   parse_section(
     token,
     &mut Vec::default(),
     &mut HashMap::default(),
     &mut I18n::default(),
-    &Config::default(),
+    config,
   )
 }
 
@@ -186,19 +186,22 @@ pub fn parse_divert_str(input: &str) -> Result<NextBlock, PalabritasError> {
   parse_divert(token)
 }
 
-pub fn parse_modifier_str(input: &str) -> Result<Modifier, PalabritasError> {
+pub fn parse_modifier_str(input: &str, config: &Config) -> Result<Modifier, PalabritasError> {
   let token = parse_str(input, Rule::Modifier)?;
-  parse_modifier(token, &Config::default())
+  parse_modifier(token, config)
 }
 
-pub fn parse_frequency_str(input: &str) -> Result<FrequencyModifier, PalabritasError> {
+pub fn parse_frequency_str(
+  input: &str,
+  config: &Config,
+) -> Result<FrequencyModifier, PalabritasError> {
   let token = parse_str(input, Rule::Frequency)?;
-  parse_frequency(token, &Config::default())
+  parse_frequency(token, config)
 }
 
-pub fn parse_requirement_str(input: &str) -> Result<Requirement, PalabritasError> {
+pub fn parse_requirement_str(input: &str, config: &Config) -> Result<Requirement, PalabritasError> {
   let token = parse_str(input, Rule::Requirement)?;
-  parse_requirement(token, &Config::default())
+  parse_requirement(token, config)
 }
 
 pub fn parse_comparison_operator_str(input: &str) -> Result<ComparisonOperator, PalabritasError> {
@@ -1063,6 +1066,7 @@ fn match_rule(token: &Pair<Rule>, expected_rule: Rule) -> Result<(), PalabritasE
 #[cfg(test)]
 mod test {
 
+  use std::str::FromStr;
   use std::vec;
 
   use crate::parser::*;
@@ -1092,7 +1096,9 @@ mod test {
   #[test]
   fn parse_database_correctly() {
     let unparsed_file = include_str!("../../examples/story-example.cuentitos");
-    parse_database_str(unparsed_file).unwrap();
+    let unparsed_config = include_str!("../../examples/cuentitos.toml");
+    let config = Config::from_str(unparsed_config).unwrap();
+    parse_database_str(unparsed_file, &config).unwrap();
     //TODO: compare with fixture
   }
 
@@ -1279,7 +1285,7 @@ mod test {
     let identifier = make_random_snake_case();
 
     let section_string = format!("#{}\n", identifier);
-    let section = parse_section_str(&section_string).unwrap();
+    let section = parse_section_str(&section_string, &Config::default()).unwrap();
 
     let expected_value = Block::Section {
       id: identifier,
@@ -1417,8 +1423,11 @@ mod test {
 
     //Frequency
 
-    let condition_string = make_random_condition();
-    let condition = parse_condition_str(&condition_string).unwrap();
+    let variable = make_random_identifier();
+    let condition_string = variable.clone() + " " + &make_random_identifier();
+    config.variables.insert(variable, VariableKind::String);
+
+    let condition = parse_condition_str(&condition_string, &config).unwrap();
     let change_value: i32 = rand::thread_rng().gen();
 
     config
@@ -1438,8 +1447,11 @@ mod test {
 
     //Requirement
 
-    let condition_string = make_random_condition();
-    let condition = parse_condition_str(&condition_string).unwrap();
+    let variable = make_random_identifier();
+    let condition_string = variable.clone() + " " + &make_random_identifier();
+    config.variables.insert(variable, VariableKind::String);
+
+    let condition = parse_condition_str(&condition_string, &config).unwrap();
 
     config
       .variables
@@ -1475,7 +1487,28 @@ mod test {
   fn division_by_zero_throws_error() {
     let identifier = make_random_identifier();
     let tag_string = format!("set {} / 0", identifier);
-    let value = parse_modifier_str(&tag_string).unwrap_err();
+    let mut variables = HashMap::default();
+    variables.insert(identifier, VariableKind::Integer);
+
+    let mut config = Config {
+      variables,
+      ..Default::default()
+    };
+    let value: PalabritasError = parse_modifier_str(&tag_string, &config).unwrap_err();
+
+    assert_eq!(
+      value,
+      PalabritasError::DivisionByZero(ErrorInfo {
+        line: 1,
+        string: tag_string
+      })
+    );
+
+    let identifier = make_random_identifier();
+    let tag_string = format!("set {} / 0", identifier);
+    config.variables.insert(identifier, VariableKind::Float);
+
+    let value: PalabritasError = parse_modifier_str(&tag_string, &config).unwrap_err();
 
     assert_eq!(
       value,
@@ -1531,12 +1564,22 @@ mod test {
     let variable = make_random_identifier();
     let value = rand::thread_rng().gen::<f32>().to_string();
     let modifier_string = format!("set {} {}", variable, value);
+
+    let mut variables = HashMap::default();
+    variables.insert(variable.clone(), VariableKind::Float);
+
+    let config = Config {
+      variables,
+      ..Default::default()
+    };
+
     let expected_value = Modifier {
       variable,
       value,
       operator: ModifierOperator::Set,
     };
-    let modifier = parse_modifier_str(&modifier_string).unwrap();
+
+    let modifier = parse_modifier_str(&modifier_string, &config).unwrap();
 
     assert_eq!(modifier, expected_value);
   }
@@ -1544,15 +1587,24 @@ mod test {
   #[test]
   fn parse_frequency_correctly() {
     //Frequency = { "freq" ~ " "+ ~ Condition ~ " "+ ~ ( Float | Integer ) }
-    let condition_string = make_random_condition();
-    let condition = parse_condition_str(&condition_string).unwrap();
+    let variable = make_random_identifier();
+    let condition_string = variable.clone() + " " + &make_random_identifier();
+    let mut variables = HashMap::default();
+    variables.insert(variable, VariableKind::String);
+    let config = Config {
+      variables,
+      ..Default::default()
+    };
+
+    let condition = parse_condition_str(&condition_string, &config).unwrap();
     let change_value: i32 = rand::thread_rng().gen();
     let frequency_string = format!("freq {} {}", condition_string, change_value);
+
     let expected_value = FrequencyModifier {
       condition,
       value: change_value,
     };
-    let frequency = parse_frequency_str(&frequency_string).unwrap();
+    let frequency = parse_frequency_str(&frequency_string, &config).unwrap();
 
     assert_eq!(frequency, expected_value);
   }
@@ -1560,11 +1612,19 @@ mod test {
   #[test]
   fn parse_requirement_correctly() {
     //Requirement = { "req" ~ " "+ ~ Condition }
-    let condition_string = make_random_condition();
-    let condition = parse_condition_str(&condition_string).unwrap();
+    let variable = make_random_identifier();
+    let condition_string = variable.clone() + " " + &make_random_identifier();
+    let mut variables = HashMap::default();
+    variables.insert(variable, VariableKind::String);
+    let config = Config {
+      variables,
+      ..Default::default()
+    };
+
+    let condition = parse_condition_str(&condition_string, &config).unwrap();
     let requirement_string = format!("req {}", condition_string);
     let expected_value = Requirement { condition };
-    let requirement = parse_requirement_str(&requirement_string).unwrap();
+    let requirement = parse_requirement_str(&requirement_string, &config).unwrap();
 
     assert_eq!(requirement, expected_value);
   }
@@ -1582,13 +1642,20 @@ mod test {
 
     let condition_string = format!("{} {} {}", variable, operator_string, value);
 
+    let mut variables = HashMap::default();
+    variables.insert(variable.clone(), VariableKind::Float);
+    let config = Config {
+      variables,
+      ..Default::default()
+    };
+
     let expected_value = Condition {
       variable,
       operator: operator,
       value: value.to_string(),
     };
 
-    let condition = parse_condition_str(&condition_string).unwrap();
+    let condition = parse_condition_str(&condition_string, &config).unwrap();
     assert_eq!(condition, expected_value);
   }
 
@@ -1641,13 +1708,21 @@ mod test {
     /*Condition = { Identifier ~ " "* ~ (ComparisonOperator ~ " "*)? ~ Value } */
     let variable = make_random_identifier();
     let condition_string = format!("!{}", variable);
+
+    let mut variables = HashMap::default();
+    variables.insert(variable.clone(), VariableKind::Bool);
+    let config = Config {
+      variables,
+      ..Default::default()
+    };
+
     let expected_value = Condition {
       variable,
       operator: ComparisonOperator::NotEqual,
       value: "true".to_string(),
     };
-    let condition = parse_condition_str(&condition_string).unwrap();
 
+    let condition = parse_condition_str(&condition_string, &config).unwrap();
     assert_eq!(condition, expected_value);
   }
 
@@ -1763,13 +1838,14 @@ mod test {
   #[test]
   fn parse_requirement_rule() {
     //requirement = { "req" ~ " "+ ~ condition }
-    let condition = make_random_condition();
+    let variable = make_random_identifier();
+    let condition = variable + " " + &make_random_identifier();
     assert_parse_rule(Rule::Requirement, &("req ".to_string() + &condition));
   }
   #[test]
   fn parse_frequency_rule() {
     //frequency = { "freq" ~ " "+ ~ condition ~ " "+ ~ ( float | integer ) }
-    let condition = make_random_condition();
+    let condition = make_random_condition_str();
     let integer = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string();
     let float = rand::thread_rng()
       .gen_range(i8::MIN as f32..i8::MAX as f32)
@@ -1807,21 +1883,24 @@ mod test {
   #[test]
   fn parse_divert_rule() {
     //divert = { "->"  ~ " "* ~ identifier ~ ("." ~ identifier)? }
-    let knot = make_random_identifier();
-    let stitch = make_random_identifier();
+    let section = make_random_identifier();
+    let subsection = make_random_identifier();
 
-    assert_parse_rule(Rule::Divert, &("->".to_string() + &knot));
-    assert_parse_rule(Rule::Divert, &("->".to_string() + &knot + "/" + &stitch));
+    assert_parse_rule(Rule::Divert, &("->".to_string() + &section));
+    assert_parse_rule(
+      Rule::Divert,
+      &("->".to_string() + &section + "/" + &subsection),
+    );
   }
 
   #[test]
   fn parse_command_rule() {
     //Command = {NEWLINE ~ Indentation* ~ (Requirement | Frequency | Modifier | Divert) }
-    let requirement = "\nreq ".to_string() + &(make_random_condition());
+    let requirement = "\nreq ".to_string() + &(make_random_condition_str());
     assert_parse_rule(Rule::Command, &(requirement));
 
     let integer = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string();
-    let frequency = "\nfreq ".to_string() + &make_random_condition() + " " + &integer;
+    let frequency = "\nfreq ".to_string() + &make_random_condition_str() + " " + &integer;
     assert_parse_rule(Rule::Command, &(frequency));
 
     let modifier =
@@ -1919,8 +1998,11 @@ mod test {
   fn parse_section_commands_correctly() {
     let identifier = make_random_snake_case();
 
-    let section_string = format!("# {}\n  req test\n", identifier);
-    let section = parse_section_str(&section_string).unwrap();
+    let mut config = Config::default();
+    config
+      .variables
+      .insert("test".to_string(), VariableKind::Bool);
+    let section = parse_section_str(&format!("# {}\n  req test\n", identifier), &config).unwrap();
 
     let expected_value = Block::Section {
       id: identifier,
@@ -1978,10 +2060,6 @@ mod test {
       .unwrap();
     assert_eq!(pair.as_rule(), rule);
     assert_eq!(pair.as_str(), input);
-  }
-
-  fn make_random_condition() -> String {
-    make_random_identifier() + " " + &make_random_identifier()
   }
 
   fn make_random_snake_case() -> String {
@@ -2104,5 +2182,8 @@ mod test {
       &Config::default(),
     )?;
     Ok(blocks)
+  }
+  fn make_random_condition_str() -> String {
+    make_random_identifier() + " " + &make_random_identifier()
   }
 }

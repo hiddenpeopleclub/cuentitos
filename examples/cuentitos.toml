@@ -7,3 +7,6 @@ time = "float"
 
 [variables.time_of_day]
 enum = ["day", "night"]
+
+[variables.item]
+enum = ["tea"]

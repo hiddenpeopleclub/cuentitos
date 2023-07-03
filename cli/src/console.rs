@@ -67,7 +67,7 @@ impl Console {
         "variables" => print_variables(&runtime),
         str => {
           if str.starts_with("set") {
-            match parse_modifier_str(str) {
+            match parse_modifier_str(str, &runtime.database.config) {
               Ok(modifier) => match runtime.apply_modifier(&modifier) {
                 Ok(_) => {
                   print_variable(&runtime, &modifier.variable);
