@@ -1031,7 +1031,7 @@ fn check_variable_value_matches_type(
             info: error_info.clone(),
             variable: variable.to_string(),
             value: value.to_string(),
-            variable_type: format!("{:?}", kind),
+            variable_type: format!("{}", kind),
           })
         }
       }
@@ -1043,7 +1043,7 @@ fn check_variable_value_matches_type(
             info: error_info.clone(),
             variable: variable.to_string(),
             value: value.to_string(),
-            variable_type: format!("{:?}", kind),
+            variable_type: format!("{}", kind),
           })
         }
       }
@@ -1055,7 +1055,7 @@ fn check_variable_value_matches_type(
             info: error_info.clone(),
             variable: variable.to_string(),
             value: value.to_string(),
-            variable_type: format!("{:?}", kind),
+            variable_type: format!("{}", kind),
           })
         }
       }
@@ -1084,8 +1084,8 @@ fn check_variable_modifier_operator_matches_type(
         _ => Err(PalabritasError::InvalidVariableOperator {
           info: error_info.clone(),
           variable: variable.to_string(),
-          operator: format!("{:?}", operator),
-          variable_type: format!("{:?}", kind),
+          operator: format!("{}", operator),
+          variable_type: format!("{}", kind),
         }),
       },
     }
@@ -1113,8 +1113,8 @@ fn check_variable_comparison_operator_matches_type(
         _ => Err(PalabritasError::InvalidVariableOperator {
           info: error_info.clone(),
           variable: variable.to_string(),
-          operator: format!("{:?}", operator),
-          variable_type: format!("{:?}", kind),
+          operator: format!("{}", operator),
+          variable_type: format!("{}", kind),
         }),
       },
     }
@@ -1728,6 +1728,219 @@ mod test {
     );
   }
 
+  #[test]
+  fn diverts_to_non_existent_sections_throws_error() {
+    let error = parse_database_str("Text\n  ->Section", &Config::default()).unwrap_err();
+    assert_eq!(
+      error,
+      PalabritasError::SectionDoesntExist {
+        info: ErrorInfo {
+          line: 2,
+          string: "->Section".to_string()
+        },
+        section: SectionKey {
+          section: "Section".to_string(),
+          subsection: None
+        }
+      }
+    );
+  }
+
+  #[test]
+  fn requirement_with_non_existent_variable_throws_error() {
+    //Requirement = { "req" ~ " "+ ~ Condition ~ " "* }
+
+    let error = parse_database_str("Text\n  req variable = value", &Config::default()).unwrap_err();
+    assert_eq!(
+      error,
+      PalabritasError::VariableDoesntExist {
+        info: ErrorInfo {
+          line: 2,
+          string: "variable = value".to_string()
+        },
+        variable: "variable".to_string()
+      }
+    );
+  }
+
+  #[test]
+  fn frequency_with_non_existent_variable_throws_error() {
+    //Frequency = { "freq" ~ " "+ ~ Condition ~ " "+ ~ ( Float | Integer ) ~ " "* }
+
+    let error =
+      parse_database_str("Text\n  freq variable = value 10", &Config::default()).unwrap_err();
+    assert_eq!(
+      error,
+      PalabritasError::VariableDoesntExist {
+        info: ErrorInfo {
+          line: 2,
+          string: "variable = value".to_string()
+        },
+        variable: "variable".to_string()
+      }
+    );
+  }
+
+  #[test]
+  fn modifier_with_non_existent_variable_throws_error() {
+    //Modifier = { "set" ~ " "+ ~ ( (Identifier ~ " "+ ~ ModifierOperator? ~ " "* ~ Value) | (NotOperator? ~ " "* ~ Identifier) ) ~ " "* }
+
+    let error = parse_database_str("Text\n  set variable value", &Config::default()).unwrap_err();
+    assert_eq!(
+      error,
+      PalabritasError::VariableDoesntExist {
+        info: ErrorInfo {
+          line: 2,
+          string: "set variable value".to_string()
+        },
+        variable: "variable".to_string()
+      }
+    );
+  }
+
+  #[test]
+  fn requirement_with_invalid_variable_value_throws_error() {
+    //Requirement = { "req" ~ " "+ ~ Condition ~ " "* }
+
+    let mut config = Config::default();
+    config
+      .variables
+      .insert("variable".to_string(), VariableKind::Integer);
+    let error = parse_database_str("Text\n  req variable = value", &config).unwrap_err();
+    assert_eq!(
+      error,
+      PalabritasError::InvalidVariableValue {
+        info: ErrorInfo {
+          line: 2,
+          string: "variable = value".to_string()
+        },
+        variable: "variable".to_string(),
+        value: "value".to_string(),
+        variable_type: "Integer".to_string()
+      }
+    );
+  }
+
+  #[test]
+  fn frequency_with_invalid_variable_value_throws_error() {
+    //Frequency = { "freq" ~ " "+ ~ Condition ~ " "+ ~ ( Float | Integer ) ~ " "* }
+    let mut config = Config::default();
+    config
+      .variables
+      .insert("variable".to_string(), VariableKind::Integer);
+    let error =
+      parse_database_str("Text\n  freq variable = value 10", &config).unwrap_err();
+    assert_eq!(
+      error,
+      PalabritasError::InvalidVariableValue {
+        info: ErrorInfo {
+          line: 2,
+          string: "variable = value".to_string()
+        },
+        variable: "variable".to_string(),
+        value: "value".to_string(),
+        variable_type: "Integer".to_string()
+      }
+    );
+  }
+
+  #[test]
+  fn modifier_with_invalid_variable_value_throws_error() {
+    //Modifier = { "set" ~ " "+ ~ ( (Identifier ~ " "+ ~ ModifierOperator? ~ " "* ~ Value) | (NotOperator? ~ " "* ~ Identifier) ) ~ " "* }
+    let mut config = Config::default();
+    config
+      .variables
+      .insert("variable".to_string(), VariableKind::Integer);
+    let error = parse_database_str("Text\n  set variable value", &config).unwrap_err();
+    assert_eq!(
+      error,
+      PalabritasError::InvalidVariableValue {
+        info: ErrorInfo {
+          line: 2,
+          string: "set variable value".to_string()
+        },
+        variable: "variable".to_string(),
+        value: "value".to_string(),
+        variable_type: "Integer".to_string()
+      }
+    );
+  }
+
+  #[test]
+  fn requirement_with_invalid_operator_throws_error() {
+    //Requirement = { "req" ~ " "+ ~ Condition ~ " "* }
+
+    let mut config = Config::default();
+    config
+      .variables
+      .insert("variable".to_string(), VariableKind::String);
+    let error = parse_database_str("Text\n  req variable > value", &config).unwrap_err();
+    assert_eq!(
+      error,
+      PalabritasError::InvalidVariableOperator {
+        info: ErrorInfo {
+          line: 2,
+          string: "variable > value".to_string()
+        },
+        variable: "variable".to_string(),
+        operator: ">".to_string(),
+        variable_type: "String".to_string()
+      }
+    );
+  }
+
+  #[test]
+  fn frequency_with_invalid_operator_throws_error() {
+    //Frequency = { "freq" ~ " "+ ~ Condition ~ " "+ ~ ( Float | Integer ) ~ " "* }
+    let mut config = Config::default();
+    config
+      .variables
+      .insert("variable".to_string(), VariableKind::String);
+    let error =
+      parse_database_str("Text\n  freq variable > value 10", &config).unwrap_err();
+      assert_eq!(
+        error,
+        PalabritasError::InvalidVariableOperator {
+          info: ErrorInfo {
+            line: 2,
+            string: "variable > value".to_string()
+          },
+          variable: "variable".to_string(),
+          operator: ">".to_string(),
+          variable_type: "String".to_string()
+        }
+      );
+  }
+
+  #[test]
+  fn modifier_with_invalid_operator_throws_error() {
+    //Modifier = { "set" ~ " "+ ~ ( (Identifier ~ " "+ ~ ModifierOperator? ~ " "* ~ Value) | (NotOperator? ~ " "* ~ Identifier) ) ~ " "* }
+    let mut config = Config::default();
+    config
+      .variables
+      .insert("variable".to_string(), VariableKind::String);
+    let error = parse_database_str("Text\n  set variable +1", &config).unwrap_err();
+    assert_eq!(
+      error,
+      PalabritasError::InvalidVariableOperator {
+        info: ErrorInfo {
+          line: 2,
+          string: "set variable +1".to_string()
+        },
+        variable: "variable".to_string(),
+        operator: "+".to_string(),
+        variable_type: "String".to_string()
+      }
+    );
+  }
+  
+  /*
+  InvalidVariableOperator {
+    info: ErrorInfo,
+    variable: String,
+    operator: String,
+    variable_type: String,
+  }, */
   #[test]
   fn parse_function_correctly() {
     //Function = {"`" ~ " "* ~ Identifier ~ (" " ~ Value)* ~ " "* ~ "`"}
