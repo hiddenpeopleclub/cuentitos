@@ -1,5 +1,7 @@
 use std::{error::Error, fmt::Display, path::PathBuf};
 
+use cuentitos_common::SectionKey;
+
 use crate::parser::Rule;
 #[derive(Debug, PartialEq, Eq)]
 pub enum PalabritasError {
@@ -25,6 +27,10 @@ pub enum PalabritasError {
     rule_found: Rule,
   },
   DivisionByZero(ErrorInfo),
+  SectionDoesntExist {
+    info: ErrorInfo,
+    section: SectionKey,
+  },
   VariableDoesntExist {
     info: ErrorInfo,
     variable: String,
@@ -33,6 +39,12 @@ pub enum PalabritasError {
     info: ErrorInfo,
     variable: String,
     value: String,
+    variable_type: String,
+  },
+  InvalidVariableOperator {
+    info: ErrorInfo,
+    variable: String,
+    operator: String,
     variable_type: String,
   },
 }
@@ -106,6 +118,9 @@ impl Display for PalabritasError {
       PalabritasError::VariableDoesntExist { info, variable } => {
         write!(f, "Variable {} doesn't exist.\n{}", variable, info)
       }
+      PalabritasError::SectionDoesntExist { info, section } => {
+        write!(f, "Section {} doesn't exist.\n{}", section, info)
+      }
       PalabritasError::InvalidVariableValue {
         info,
         variable,
@@ -116,6 +131,18 @@ impl Display for PalabritasError {
           f,
           "Invalid value for variable {}. Expected {}, but found {}\n{}",
           variable, value, variable_type, info
+        )
+      }
+      PalabritasError::InvalidVariableOperator {
+        info,
+        variable,
+        operator,
+        variable_type,
+      } => {
+        write!(
+          f,
+          "Invalid operator for variable {}. Operator {} can't be applied to {}\n{}",
+          variable, operator, variable_type, info
         )
       }
     }
