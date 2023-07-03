@@ -36,6 +36,7 @@ pub enum RuntimeError {
   ParseFloatError(ParseFloatError),
   ParseBoolError(ParseBoolError),
   UnknownParsingError,
+  FrequencyModifierWithProbability,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -127,6 +128,9 @@ impl Display for RuntimeError {
       }
       RuntimeError::EmptyStack => {
         write!(f, "The story has not been started.")
+      }
+      RuntimeError::FrequencyModifierWithProbability => {
+        write!(f, "Can't apply a frequency modifier to a probability.")
       }
     }
   }

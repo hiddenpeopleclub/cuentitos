@@ -78,7 +78,7 @@ impl Runtime {
     self.rng = Some(Pcg32::seed_from_u64(seed));
   }
 
-  pub fn jump_to_section(&mut self, section: Section) -> Result<(), RuntimeError> {
+  pub fn jump_to_section(&mut self, section: &Section) -> Result<(), RuntimeError> {
     let current_section = self.game_state.current_section.clone();
     if section.subsection.is_none() {
       if let Some(current_section) = current_section {
@@ -93,13 +93,13 @@ impl Runtime {
       }
     }
 
-    if let Some(block_id) = self.database.sections.get(&section) {
+    if let Some(block_id) = self.database.sections.get(section) {
       self.block_stack.clear();
-      self.game_state.current_section = Some(section.section);
+      self.game_state.current_section = Some(section.section.clone());
       self.game_state.current_subsection = None;
       self.push_stack(*block_id)
     } else {
-      Err(RuntimeError::SectionDoesntExist(section))
+      Err(RuntimeError::SectionDoesntExist(section.clone()))
     }
   }
 
@@ -110,7 +110,7 @@ impl Runtime {
 
     self.update_stack()?;
 
-    while !self.next_block_meets_requirements() {
+    while !self.next_block_meets_requirements()? {
       self.pop_stack_and_find_next()?;
     }
     self.current_block()
@@ -218,16 +218,16 @@ impl Runtime {
     Ok(())
   }
 
-  pub fn get_variable_kind<R>(&self, variable: R) -> Option<VariableKind>
+  pub fn get_variable_kind<R>(&self, variable: R) -> Result<VariableKind, RuntimeError>
   where
     R: AsRef<str>,
   {
     let variable = variable.as_ref();
 
     if self.database.config.variables.contains_key(variable) {
-      Some(self.database.config.variables[variable].clone())
+      Ok(self.database.config.variables[variable].clone())
     } else {
-      None
+      Err(RuntimeError::VariableDoesntExist(variable.to_string()))
     }
   }
 
@@ -267,34 +267,29 @@ impl Runtime {
   }
 
   pub fn apply_modifier(&mut self, modifier: &Modifier) -> Result<(), RuntimeError> {
-    match self.get_variable_kind(&modifier.variable) {
-      Some(kind) => match kind {
-        VariableKind::Integer => {
-          let value = &modifier.value.parse::<i32>();
-          match value {
-            Ok(value) => {
-              self.apply_integer_modifier(&modifier.variable, *value, &modifier.operator)
-            }
-            Err(e) => Err(RuntimeError::ParseIntError(e.clone())),
-          }
+    match self.get_variable_kind(&modifier.variable)? {
+      VariableKind::Integer => {
+        let value = &modifier.value.parse::<i32>();
+        match value {
+          Ok(value) => self.apply_integer_modifier(&modifier.variable, *value, &modifier.operator),
+          Err(e) => Err(RuntimeError::ParseIntError(e.clone())),
         }
-        VariableKind::Float => {
-          let value = &modifier.value.parse::<f32>();
-          match value {
-            Ok(value) => self.apply_float_modifier(&modifier.variable, *value, &modifier.operator),
-            Err(e) => Err(RuntimeError::ParseFloatError(e.clone())),
-          }
+      }
+      VariableKind::Float => {
+        let value = &modifier.value.parse::<f32>();
+        match value {
+          Ok(value) => self.apply_float_modifier(&modifier.variable, *value, &modifier.operator),
+          Err(e) => Err(RuntimeError::ParseFloatError(e.clone())),
         }
-        VariableKind::Bool => {
-          let value = &modifier.value.parse::<bool>();
-          match value {
-            Ok(value) => self.set_variable(&modifier.variable, *value),
-            Err(e) => Err(RuntimeError::ParseBoolError(e.clone())),
-          }
+      }
+      VariableKind::Bool => {
+        let value = &modifier.value.parse::<bool>();
+        match value {
+          Ok(value) => self.set_variable(&modifier.variable, *value),
+          Err(e) => Err(RuntimeError::ParseBoolError(e.clone())),
         }
-        _ => self.set_variable(&modifier.variable, modifier.value.clone()),
-      },
-      None => Err(RuntimeError::VariableDoesntExist(modifier.variable.clone())),
+      }
+      _ => self.set_variable(&modifier.variable, modifier.value.clone()),
     }
   }
 
@@ -309,80 +304,84 @@ impl Runtime {
     choices_strings
   }
 
-  fn next_block_meets_requirements(&mut self) -> bool {
+  fn next_block_meets_requirements(&mut self) -> Result<bool, RuntimeError> {
     if let Some(id) = self.block_stack.last() {
       self.meets_requirements(*id)
     } else {
-      false
+      Ok(false)
     }
   }
 
-  fn meets_requirements(&mut self, id: BlockId) -> bool {
+  fn meets_requirements(&mut self, id: BlockId) -> Result<bool, RuntimeError> {
     for requirement in &self.get_block(id).get_settings().requirements {
-      if !self.meets_condition(&requirement.condition) {
-        return false;
+      if !self.meets_condition(&requirement.condition)? {
+        return Ok(false);
       }
     }
-    self.roll_chances_for_block(id)
+    Ok(self.roll_chances_for_block(id))
   }
 
-  fn meets_condition(&self, condition: &Condition) -> bool {
-    if let Some(kind) = self.get_variable_kind(condition.variable.clone()) {
-      match kind {
-        VariableKind::Integer => {
-          if let Ok(current_value) = self.get_variable::<&str, i32>(&condition.variable) {
-            if let Ok(condition_value) = condition.value.parse::<i32>() {
-              match condition.operator {
-                ComparisonOperator::Equal => return current_value == condition_value,
-                ComparisonOperator::NotEqual => return current_value != condition_value,
-                ComparisonOperator::GreaterThan => return current_value > condition_value,
-                ComparisonOperator::LessThan => return current_value < condition_value,
-                ComparisonOperator::GreaterOrEqualThan => return current_value >= condition_value,
-                ComparisonOperator::LessOrEqualThan => return current_value <= condition_value,
+  fn meets_condition(&self, condition: &Condition) -> Result<bool, RuntimeError> {
+    let kind = self.get_variable_kind(condition.variable.clone())?;
+
+    match kind {
+      VariableKind::Integer => {
+        if let Ok(current_value) = self.get_variable::<&str, i32>(&condition.variable) {
+          if let Ok(condition_value) = condition.value.parse::<i32>() {
+            match condition.operator {
+              ComparisonOperator::Equal => return Ok(current_value == condition_value),
+              ComparisonOperator::NotEqual => return Ok(current_value != condition_value),
+              ComparisonOperator::GreaterThan => return Ok(current_value > condition_value),
+              ComparisonOperator::LessThan => return Ok(current_value < condition_value),
+              ComparisonOperator::GreaterOrEqualThan => {
+                return Ok(current_value >= condition_value)
               }
+              ComparisonOperator::LessOrEqualThan => return Ok(current_value <= condition_value),
             }
           }
         }
-        VariableKind::Float => {
-          if let Ok(current_value) = self.get_variable::<&str, f32>(&condition.variable) {
-            if let Ok(condition_value) = condition.value.parse::<f32>() {
-              match condition.operator {
-                ComparisonOperator::Equal => return current_value == condition_value,
-                ComparisonOperator::NotEqual => return current_value != condition_value,
-                ComparisonOperator::GreaterThan => return current_value > condition_value,
-                ComparisonOperator::LessThan => return current_value < condition_value,
-                ComparisonOperator::GreaterOrEqualThan => return current_value >= condition_value,
-                ComparisonOperator::LessOrEqualThan => return current_value <= condition_value,
+      }
+      VariableKind::Float => {
+        if let Ok(current_value) = self.get_variable::<&str, f32>(&condition.variable) {
+          if let Ok(condition_value) = condition.value.parse::<f32>() {
+            match condition.operator {
+              ComparisonOperator::Equal => return Ok(current_value == condition_value),
+              ComparisonOperator::NotEqual => return Ok(current_value != condition_value),
+              ComparisonOperator::GreaterThan => return Ok(current_value > condition_value),
+              ComparisonOperator::LessThan => return Ok(current_value < condition_value),
+              ComparisonOperator::GreaterOrEqualThan => {
+                return Ok(current_value >= condition_value)
               }
+              ComparisonOperator::LessOrEqualThan => return Ok(current_value <= condition_value),
             }
           }
         }
-        VariableKind::Bool => {
-          if let Ok(current_value) = self.get_variable::<&str, bool>(&condition.variable) {
-            if let Ok(condition_value) = condition.value.parse::<bool>() {
-              match condition.operator {
-                ComparisonOperator::Equal => return current_value == condition_value,
-                ComparisonOperator::NotEqual => return current_value != condition_value,
-                _ => {}
-              }
+      }
+      VariableKind::Bool => {
+        if let Ok(current_value) = self.get_variable::<&str, bool>(&condition.variable) {
+          if let Ok(condition_value) = condition.value.parse::<bool>() {
+            match condition.operator {
+              ComparisonOperator::Equal => return Ok(current_value == condition_value),
+              ComparisonOperator::NotEqual => return Ok(current_value != condition_value),
+              _ => {}
             }
           }
         }
-        _ => {
-          if let Ok(current_value) = self.get_variable::<&str, String>(&condition.variable) {
-            if let Ok(condition_value) = condition.value.parse::<String>() {
-              match condition.operator {
-                ComparisonOperator::Equal => return current_value == condition_value,
-                ComparisonOperator::NotEqual => return current_value != condition_value,
-                _ => {}
-              }
+      }
+      _ => {
+        if let Ok(current_value) = self.get_variable::<&str, String>(&condition.variable) {
+          if let Ok(condition_value) = condition.value.parse::<String>() {
+            match condition.operator {
+              ComparisonOperator::Equal => return Ok(current_value == condition_value),
+              ComparisonOperator::NotEqual => return Ok(current_value != condition_value),
+              _ => {}
             }
           }
         }
       }
     }
 
-    false
+    Ok(false)
   }
 
   fn roll_chances_for_block(&mut self, id: BlockId) -> bool {
@@ -447,19 +446,21 @@ impl Runtime {
     num
   }
 
-  fn get_frequency_with_modifier(&self, settings: &BlockSettings) -> u32 {
+  fn get_frequency_with_modifier(&self, settings: &BlockSettings) -> Result<u32, RuntimeError> {
     match settings.chance {
-      cuentitos_common::Chance::None => 0,
+      cuentitos_common::Chance::None => Ok(0),
       cuentitos_common::Chance::Frequency(frequency) => {
         let mut final_frequency = frequency as i32;
         for freq_mod in &settings.frequency_modifiers {
-          if self.meets_condition(&freq_mod.condition) {
+          if self.meets_condition(&freq_mod.condition)? {
             final_frequency += freq_mod.value;
           }
         }
-        final_frequency as u32
+        Ok(final_frequency as u32)
       }
-      cuentitos_common::Chance::Probability(_) => 0,
+      cuentitos_common::Chance::Probability(_) => {
+        Err(RuntimeError::FrequencyModifierWithProbability)
+      }
     }
   }
 
@@ -542,6 +543,10 @@ impl Runtime {
   }
 
   fn update_stack(&mut self) -> Result<(), RuntimeError> {
+    if self.database.blocks.is_empty() {
+      return Err(RuntimeError::EmptyDatabase);
+    }
+
     if self.block_stack.is_empty() {
       return self.push_stack(0);
     }
@@ -574,7 +579,7 @@ impl Runtime {
         return Err(RuntimeError::StoryFinished);
       }
       cuentitos_common::NextBlock::Section(section) => {
-        return self.jump_to_section(section);
+        return self.jump_to_section(&section);
       }
     }
 
@@ -604,7 +609,7 @@ impl Runtime {
         name: _,
         settings: bucket_settings,
       } => {
-        if let Some(new_block) = self.get_random_block_from_bucket(&bucket_settings.clone()) {
+        if let Some(new_block) = self.get_random_block_from_bucket(&bucket_settings.clone())? {
           if let cuentitos_common::Block::Choice { id: _, settings: _ } = self.get_block(new_block)
           {
             Err(RuntimeError::WaitingForChoice(self.get_choices_strings()))
@@ -651,7 +656,7 @@ impl Runtime {
             return self.push_stack(*sibling);
           }
           cuentitos_common::Block::Bucket { name: _, settings } => {
-            if let Some(new_block) = self.get_random_block_from_bucket(&settings.clone()) {
+            if let Some(new_block) = self.get_random_block_from_bucket(&settings.clone())? {
               return self.push_stack(new_block);
             }
           }
@@ -676,19 +681,22 @@ impl Runtime {
         return Err(RuntimeError::StoryFinished);
       }
       cuentitos_common::NextBlock::Section(section) => {
-        return self.jump_to_section(section.clone());
+        return self.jump_to_section(section);
       }
     }
 
     self.pop_stack_and_find_next()
   }
 
-  fn get_random_block_from_bucket(&mut self, settings: &BlockSettings) -> Option<BlockId> {
+  fn get_random_block_from_bucket(
+    &mut self,
+    settings: &BlockSettings,
+  ) -> Result<Option<BlockId>, RuntimeError> {
     let mut total_frequency = 0;
     for child in &settings.children {
-      if self.meets_requirements(*child) {
+      if self.meets_requirements(*child)? {
         let child_settings = self.get_block(*child).get_settings();
-        let frequency = self.get_frequency_with_modifier(child_settings);
+        let frequency = self.get_frequency_with_modifier(child_settings)?;
         total_frequency += frequency;
       }
     }
@@ -696,16 +704,16 @@ impl Runtime {
     let mut random_number = self.random_with_max(total_frequency);
 
     for child in &settings.children {
-      if self.meets_requirements(*child) {
+      if self.meets_requirements(*child)? {
         let child_settings = self.get_block(*child).get_settings();
-        let frequency = self.get_frequency_with_modifier(child_settings);
+        let frequency = self.get_frequency_with_modifier(child_settings)?;
         if random_number <= frequency {
-          return Some(*child);
+          return Ok(Some(*child));
         }
         random_number -= frequency;
       }
     }
-    None
+    Ok(None)
   }
 
   fn get_block(&self, id: BlockId) -> &cuentitos_common::Block {
@@ -732,12 +740,12 @@ impl Runtime {
       if *child < self.database.blocks.len() {
         match self.get_block(*child) {
           cuentitos_common::Block::Choice { id: _, settings: _ } => {
-            if self.meets_requirements(*child) {
+            if self.meets_requirements(*child)? {
               self.choices.push(*child)
             }
           }
           cuentitos_common::Block::Bucket { name: _, settings } => {
-            if let Some(picked_block) = self.get_random_block_from_bucket(&settings.clone()) {
+            if let Some(picked_block) = self.get_random_block_from_bucket(&settings.clone())? {
               if let cuentitos_common::Block::Choice { id: _, settings: _ } =
                 self.get_block(picked_block)
               {
@@ -759,7 +767,7 @@ mod test {
 
   use std::{collections::HashMap, fmt::Display, str::FromStr, vec};
 
-  use crate::{runtime::Section, Runtime};
+  use crate::{runtime::Section, Runtime, RuntimeError};
   use cuentitos_common::{
     condition::ComparisonOperator, modifier::ModifierOperator, Block, BlockSettings, Chance,
     Condition, Config, Database, FrequencyModifier, Function, I18n, LanguageDb, LanguageId,
@@ -835,14 +843,14 @@ mod test {
       ..Default::default()
     };
     runtime
-      .jump_to_section(Section {
+      .jump_to_section(&Section {
         section: "section_2".to_string(),
         subsection: Some("subsection".to_string()),
       })
       .unwrap();
     assert_eq!(runtime.block_stack, vec![2, 4]);
     runtime
-      .jump_to_section(Section {
+      .jump_to_section(&Section {
         section: "section_1".to_string(),
         subsection: None,
       })
@@ -1211,12 +1219,14 @@ mod test {
     let bucket_settings = runtime.get_block(0).get_settings().clone();
     let id = runtime
       .get_random_block_from_bucket(&bucket_settings)
+      .unwrap()
       .unwrap();
     assert_eq!(id, 1);
     runtime.push_stack(1).unwrap();
     let bucket_settings = runtime.get_block(0).get_settings().clone();
     let id = runtime
       .get_random_block_from_bucket(&bucket_settings)
+      .unwrap()
       .unwrap();
     assert_eq!(id, 2);
   }
@@ -1645,13 +1655,13 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     runtime.block_stack = vec![0];
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("health", 100).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("health", 150).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
   }
 
@@ -1690,13 +1700,13 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     runtime.block_stack = vec![0];
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("health", 100).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("health", 150).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
   }
 
@@ -1735,13 +1745,13 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     runtime.block_stack = vec![0];
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("health", 100).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("health", 150).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
   }
 
@@ -1780,13 +1790,13 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     runtime.block_stack = vec![0];
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("health", 100).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("health", 150).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
   }
   #[test]
@@ -1824,13 +1834,13 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     runtime.block_stack = vec![0];
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("health", 100).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("health", 150).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
   }
   #[test]
@@ -1868,13 +1878,13 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     runtime.block_stack = vec![0];
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("health", 100).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("health", 150).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
   }
   #[test]
@@ -1912,13 +1922,13 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     runtime.block_stack = vec![0];
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("speed", 1.5 as f32).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("speed", 2. as f32).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
   }
 
@@ -1957,13 +1967,13 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     runtime.block_stack = vec![0];
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("speed", 1.5 as f32).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("speed", 2. as f32).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
   }
 
@@ -2002,13 +2012,13 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     runtime.block_stack = vec![0];
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("speed", 1.5 as f32).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("speed", 2. as f32).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
   }
 
@@ -2047,13 +2057,13 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     runtime.block_stack = vec![0];
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("speed", 1.5 as f32).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("speed", 2. as f32).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
   }
   #[test]
@@ -2091,13 +2101,13 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     runtime.block_stack = vec![0];
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("speed", 1.5 as f32).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("speed", 2. as f32).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
   }
   #[test]
@@ -2135,13 +2145,13 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     runtime.block_stack = vec![0];
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("speed", 1.5 as f32).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("speed", 2. as f32).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
   }
 
@@ -2180,10 +2190,10 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     runtime.block_stack = vec![0];
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("bike", true).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
   }
 
@@ -2222,10 +2232,10 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     runtime.block_stack = vec![0];
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("bike", true).unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
   }
 
@@ -2264,12 +2274,12 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     runtime.block_stack = vec![0];
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime
       .set_variable("message", "hello".to_string())
       .unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
   }
 
@@ -2308,12 +2318,12 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     runtime.block_stack = vec![0];
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime
       .set_variable("message", "hello".to_string())
       .unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
   }
 
@@ -2352,12 +2362,12 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     runtime.block_stack = vec![0];
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime
       .set_variable("time_of_day", TimeOfDay::Night)
       .unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
   }
 
@@ -2396,12 +2406,12 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     runtime.block_stack = vec![0];
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime
       .set_variable("time_of_day", TimeOfDay::Night)
       .unwrap();
-    let meets_requirement = runtime.meets_requirements(0);
+    let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
   }
 
@@ -2442,10 +2452,10 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     runtime.block_stack = vec![0];
-    let frequency_with_modifier = runtime.get_frequency_with_modifier(&settings);
+    let frequency_with_modifier = runtime.get_frequency_with_modifier(&settings).unwrap();
     assert_eq!(frequency_with_modifier, 100);
     runtime.set_variable("bike", true).unwrap();
-    let frequency_with_modifier = runtime.get_frequency_with_modifier(&settings);
+    let frequency_with_modifier = runtime.get_frequency_with_modifier(&settings).unwrap();
     assert_eq!(frequency_with_modifier, 0);
   }
 
@@ -2548,6 +2558,374 @@ mod test {
     assert_eq!(functions, output_functions);
   }
 
+  #[test]
+  fn invalid_id_in_stack_throws_error() {
+    let text = Block::Text {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+
+    let database = Database {
+      blocks: vec![text],
+      ..Default::default()
+    };
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack.push(1);
+    let err = runtime.update_stack().unwrap_err();
+    assert_eq!(err, RuntimeError::InvalidBlockId(1));
+  }
+
+  #[test]
+  fn invalid_id_in_choice_throws_error() {
+    let text = Block::Text {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+
+    let database = Database {
+      blocks: vec![text],
+      ..Default::default()
+    };
+    let mut runtime = Runtime::new(database);
+    runtime.choices.push(1);
+    let err = runtime.pick_choice(0).unwrap_err();
+    assert_eq!(err, RuntimeError::InvalidBlockId(1));
+  }
+
+  #[test]
+  fn next_block_throws_error_if_theres_a_choice() {
+    let text = Block::Text {
+      id: String::default(),
+      settings: BlockSettings {
+        children: vec![2],
+        ..Default::default()
+      },
+    };
+
+    let choice = Block::Choice {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+
+    let text_2 = Block::Text {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+
+    let database = Database {
+      blocks: vec![text, text_2, choice],
+      ..Default::default()
+    };
+    let mut runtime = Runtime::new(database);
+    runtime.update_stack().unwrap();
+    let err = runtime.update_stack().unwrap_err();
+    assert_eq!(
+      err,
+      RuntimeError::WaitingForChoice(vec!["MISSING LOCALE ``".to_string()])
+    );
+  }
+
+  #[test]
+  fn section_at_lower_level_throws_error() {
+    let text = Block::Text {
+      id: String::default(),
+      settings: BlockSettings {
+        children: vec![1],
+        ..Default::default()
+      },
+    };
+
+    let section = Block::Section {
+      id: "section".to_string(),
+      settings: BlockSettings::default(),
+    };
+
+    let database = Database {
+      blocks: vec![text, section],
+      ..Default::default()
+    };
+    let mut runtime = Runtime::new(database);
+    runtime.update_stack().unwrap();
+    let err = runtime.update_stack().unwrap_err();
+    assert_eq!(
+      err,
+      RuntimeError::SectionAtLowerLevel("section".to_string())
+    );
+  }
+  #[test]
+  fn throws_error_when_story_finishes() {
+    let text = Block::Text {
+      id: String::default(),
+      settings: BlockSettings {
+        next: NextBlock::EndOfFile,
+        ..Default::default()
+      },
+    };
+
+    let database = Database {
+      blocks: vec![text],
+      ..Default::default()
+    };
+    let mut runtime = Runtime::new(database);
+    runtime.update_stack().unwrap();
+    let err = runtime.update_stack().unwrap_err();
+    assert_eq!(err, RuntimeError::StoryFinished);
+  }
+
+  #[test]
+  fn jump_to_section_throws_error_if_section_doesnt_exist() {
+    let text = Block::Text {
+      id: String::default(),
+      settings: BlockSettings {
+        next: NextBlock::EndOfFile,
+        ..Default::default()
+      },
+    };
+
+    let database = Database {
+      blocks: vec![text],
+      ..Default::default()
+    };
+    let mut runtime = Runtime::new(database);
+    let section_key = SectionKey {
+      section: "section".to_string(),
+      subsection: Some("subsection".to_string()),
+    };
+    let err = runtime.jump_to_section(&section_key.clone()).unwrap_err();
+
+    assert_eq!(err, RuntimeError::SectionDoesntExist(section_key));
+  }
+
+  #[test]
+  fn current_block_can_only_be_text() {
+    let choice = Block::Choice {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+
+    let database = Database {
+      blocks: vec![choice],
+      ..Default::default()
+    };
+    let mut runtime = Runtime::new(database);
+    runtime.block_stack.push(0);
+    let err = runtime.current_block().unwrap_err();
+
+    assert_eq!(
+      err,
+      RuntimeError::UnexpectedBlock {
+        expected_block: "text".to_string(),
+        block_found: "choice".to_string()
+      }
+    );
+  }
+
+  #[test]
+  fn current_block_throws_error_on_empty_stack() {
+    let text = Block::Text {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+
+    let database = Database {
+      blocks: vec![text],
+      ..Default::default()
+    };
+    let mut runtime = Runtime::new(database);
+    let err = runtime.current_block().unwrap_err();
+    assert_eq!(err, RuntimeError::EmptyStack);
+  }
+
+  #[test]
+  fn apply_modifiers_throws_error_on_empty_stack() {
+    let text = Block::Text {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+
+    let database = Database {
+      blocks: vec![text],
+      ..Default::default()
+    };
+    let mut runtime = Runtime::new(database);
+    let err = runtime.apply_modifiers().unwrap_err();
+    assert_eq!(err, RuntimeError::EmptyStack);
+  }
+
+  #[test]
+  fn empty_database_throws_error() {
+    let database = Database {
+      ..Default::default()
+    };
+    let mut runtime = Runtime::new(database);
+    let err = runtime.next_block().unwrap_err();
+    assert_eq!(err, RuntimeError::EmptyDatabase);
+    let err = runtime.update_stack().unwrap_err();
+    assert_eq!(err, RuntimeError::EmptyDatabase);
+    let err = runtime.pick_choice(0).unwrap_err();
+    assert_eq!(err, RuntimeError::EmptyDatabase);
+  }
+
+  #[test]
+  fn picking_choice_when_no_options_throws_error() {
+    let text = Block::Text {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+
+    let database = Database {
+      blocks: vec![text],
+      ..Default::default()
+    };
+    let mut runtime = Runtime::new(database);
+
+    let err = runtime.pick_choice(0).unwrap_err();
+    assert_eq!(err, RuntimeError::NoChoices);
+  }
+
+  #[test]
+  fn picking_invalid_choice_throws_error() {
+    let text = Block::Text {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+
+    let database = Database {
+      blocks: vec![text],
+      ..Default::default()
+    };
+    let mut runtime = Runtime::new(database);
+    runtime.choices.push(0);
+    let err = runtime.pick_choice(1).unwrap_err();
+    assert_eq!(
+      err,
+      RuntimeError::InvalidChoice {
+        total_choices: 1,
+        choice_picked: 1
+      }
+    );
+  }
+
+  #[test]
+  fn setting_unsupported_variable_type_throws_error() {
+    let text = Block::Text {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+
+    let mut config = Config::default();
+    config
+      .variables
+      .insert("variable".to_string(), VariableKind::Integer);
+
+    let database = Database {
+      blocks: vec![text],
+      config,
+      ..Default::default()
+    };
+    let mut runtime = Runtime::new(database);
+
+    let err = runtime
+      .set_variable("variable", UnsupportedType::default())
+      .unwrap_err();
+    assert_eq!(
+      err,
+      RuntimeError::UnsupportedVariableType {
+        type_found: "cuentitos_runtime::runtime::test::UnsupportedType".to_string()
+      }
+    );
+  }
+
+  #[test]
+  fn getting_unsupported_variable_type_throws_error() {
+    let text = Block::Text {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+
+    let mut config = Config::default();
+    config
+      .variables
+      .insert("variable".to_string(), VariableKind::Integer);
+
+    let database = Database {
+      blocks: vec![text],
+      config,
+      ..Default::default()
+    };
+    let runtime = Runtime::new(database);
+
+    let err = runtime
+      .get_variable::<&str, UnsupportedType>("variable")
+      .unwrap_err();
+    assert_eq!(
+      err,
+      RuntimeError::UnsupportedVariableType {
+        type_found: "cuentitos_runtime::runtime::test::UnsupportedType".to_string()
+      }
+    );
+  }
+
+  #[test]
+  fn setting_non_existent_variable_throws_error() {
+    let text = Block::Text {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+
+    let database = Database {
+      blocks: vec![text],
+      ..Default::default()
+    };
+    let mut runtime = Runtime::new(database);
+
+    let err = runtime.set_variable("variable", 0).unwrap_err();
+    assert_eq!(
+      err,
+      RuntimeError::VariableDoesntExist("variable".to_string())
+    );
+  }
+
+  #[test]
+  fn getting_non_existent_variable_throws_error() {
+    let text = Block::Text {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+
+    let database = Database {
+      blocks: vec![text],
+      ..Default::default()
+    };
+    let runtime = Runtime::new(database);
+
+    let err = runtime.get_variable::<&str, i32>("variable").unwrap_err();
+    assert_eq!(
+      err,
+      RuntimeError::VariableDoesntExist("variable".to_string())
+    );
+  }
+
+  #[test]
+  fn getting_non_existent_variable_kind_throws_error() {
+    let text = Block::Text {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+
+    let database = Database {
+      blocks: vec![text],
+      ..Default::default()
+    };
+    let runtime = Runtime::new(database);
+
+    let err: RuntimeError = runtime.get_variable_kind("variable").unwrap_err();
+    assert_eq!(
+      err,
+      RuntimeError::VariableDoesntExist("variable".to_string())
+    );
+  }
+
   #[derive(Debug, Default, PartialEq, Eq)]
   enum TimeOfDay {
     #[default]
@@ -2557,6 +2935,23 @@ mod test {
 
   #[derive(Debug, PartialEq, Eq)]
   struct TestError;
+
+  #[derive(Default, Debug)]
+  struct UnsupportedType;
+
+  impl Display for UnsupportedType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+      write!(f, "")
+    }
+  }
+
+  impl FromStr for UnsupportedType {
+    type Err = TestError;
+
+    fn from_str(_: &str) -> Result<Self, Self::Err> {
+      Ok(UnsupportedType::default())
+    }
+  }
 
   impl FromStr for TimeOfDay {
     type Err = TestError;

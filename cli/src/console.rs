@@ -94,7 +94,7 @@ impl Console {
                   subsection: None,
                 },
               };
-              match runtime.jump_to_section(section) {
+              match runtime.jump_to_section(&section) {
                 Ok(_) => print_output_text(runtime.current_block(), &runtime),
                 Err(err) => println!("{}", err),
               }
