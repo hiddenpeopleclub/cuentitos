@@ -152,7 +152,7 @@ pub fn parse_database(token: Pair<Rule>, config: &Config) -> Result<Database, Pa
     blocks: ordered_blocks,
     sections: section_map,
     i18n,
-    ..Default::default()
+    config: config.clone()
   })
 }
 
