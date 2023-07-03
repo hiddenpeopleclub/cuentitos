@@ -69,9 +69,11 @@ where
 
       Err(PalabritasError::ParseError {
         file: palabritas_path.display().to_string(),
-        line,
-        col,
-        reason: error.to_string(),
+        info: ErrorInfo {
+          line,
+          col,
+          string: error.to_string(),
+        },
       })
     }
   }
@@ -152,7 +154,7 @@ pub fn parse_database(token: Pair<Rule>, config: &Config) -> Result<Database, Pa
     blocks: ordered_blocks,
     sections: section_map,
     i18n,
-    config: config.clone()
+    config: config.clone(),
   })
 }
 
@@ -254,9 +256,11 @@ fn parse_str(input: &str, rule: Rule) -> Result<Pair<'_, Rule>, PalabritasError>
       Some(token) => Ok(token),
       None => Err(PalabritasError::ParseError {
         file: input.to_string(),
-        line: 1,
-        col: 1,
-        reason: "Modifier not found".to_string(),
+        info: ErrorInfo {
+          line: 1,
+          col: 1,
+          string: "Modifier not found".to_string(),
+        },
       }),
     },
     Err(error) => {
@@ -267,9 +271,11 @@ fn parse_str(input: &str, rule: Rule) -> Result<Pair<'_, Rule>, PalabritasError>
 
       Err(PalabritasError::ParseError {
         file: input.to_string(),
-        line,
-        col,
-        reason: error.to_string(),
+        info: ErrorInfo {
+          line,
+          col,
+          string: error.to_string(),
+        },
       })
     }
   }
@@ -461,7 +467,7 @@ fn parse_block(
 
   //    (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
   let mut block = Block::default();
-  let current_line = token.line_col().0;
+  let line_col = token.line_col();
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Text => {
@@ -500,7 +506,7 @@ fn parse_block(
 
   if let Some(i18n_id) = block.get_i18n_id() {
     if let Some(db) = i18n.strings.get_mut(&i18n.default_locale) {
-      let new_id = current_line.to_string();
+      let new_id = line_col.0.to_string();
       db.insert(new_id.clone(), i18n_id);
 
       match block {
@@ -529,7 +535,7 @@ fn parse_block(
     settings: _,
   } = blocks[child_order][block_id]
   {
-    validate_bucket_data(block_id, blocks, child_order, current_line)?;
+    validate_bucket_data(block_id, blocks, child_order, line_col)?;
     update_children_probabilities_to_frequency(blocks[child_order].len() - 1, blocks, child_order);
   } else if is_child_unnamed_bucket(block_id, blocks, child_order) {
     make_childs_bucket(block_id, blocks, child_order);
@@ -608,7 +614,7 @@ fn validate_bucket_data(
   bucket: usize,
   blocks: &mut [Vec<Block>],
   child_order: usize,
-  current_line: usize,
+  line_col: (usize, usize),
 ) -> Result<(), PalabritasError> {
   let bucket = &blocks[child_order][bucket];
   let settings = bucket.get_settings();
@@ -624,7 +630,7 @@ fn validate_bucket_data(
   let mut chance_found = false;
   let mut total_probability = 0.;
 
-  let mut inner_line = current_line;
+  let mut inner_line = line_col.0;
   for child in &settings.children {
     inner_line += 1;
     let child_block = &blocks[child_order + 1][*child];
@@ -642,6 +648,7 @@ fn validate_bucket_data(
         };
         return Err(PalabritasError::BucketMissingProbability(ErrorInfo {
           line: inner_line,
+          col: 1,
           string,
         }));
       }
@@ -654,7 +661,8 @@ fn validate_bucket_data(
 
     if frequency_found && chance_found {
       return Err(PalabritasError::BucketHasFrequenciesAndChances(ErrorInfo {
-        line: current_line,
+        line: line_col.0,
+        col: line_col.1,
         string: bucket_name,
       }));
     }
@@ -662,7 +670,8 @@ fn validate_bucket_data(
 
   if chance_found && total_probability != 1. {
     return Err(PalabritasError::BucketSumIsNot1(ErrorInfo {
-      line: current_line,
+      line: line_col.0,
+      col: line_col.1,
       string: bucket_name,
     }));
   }
@@ -909,6 +918,7 @@ fn parse_divert(
 
   let error_info = ErrorInfo {
     line: token.line_col().0,
+    col: token.line_col().1,
     string: token.as_str().to_string(),
   };
 
@@ -944,6 +954,7 @@ fn parse_modifier(token: Pair<Rule>, config: &Config) -> Result<Modifier, Palabr
   //Modifier = { "set" ~ " "+ ~ ( (Identifier ~ " "+ ~ ModifierOperator? ~ Value) | (NotOperator? ~ " "* ~ Identifier) ) ~ " "* }
   let error_info = ErrorInfo {
     line: token.line_col().0,
+    col: token.line_col().1,
     string: token.as_str().to_string(),
   };
   let mut modifier = Modifier::default();
@@ -1181,6 +1192,7 @@ fn parse_condition(token: Pair<Rule>, config: &Config) -> Result<Condition, Pala
   //Condition = { ( Identifier ~ " "* ~ ( ComparisonOperator ~ " "* )? ~ Value? ) | ( NotEqualOperator? ~ " "* ~ Identifier ~ " "*) }
   let error_info = ErrorInfo {
     line: token.line_col().0,
+    col: token.line_col().1,
     string: token.as_str().to_string(),
   };
 
@@ -1260,7 +1272,8 @@ fn match_rule(token: &Pair<Rule>, expected_rule: Rule) -> Result<(), PalabritasE
   if token.as_rule() != expected_rule {
     return Err(PalabritasError::UnexpectedRule {
       info: ErrorInfo {
-        line: 0,
+        line: token.line_col().0,
+        col: token.line_col().1,
         string: token.as_str().to_string(),
       },
       expected_rule,
@@ -1333,6 +1346,7 @@ mod test {
       named_bucket,
       PalabritasError::BucketSumIsNot1(ErrorInfo {
         line: 1,
+        col: 1,
         string: snake_case
       })
     );
@@ -1356,6 +1370,7 @@ mod test {
       named_bucket,
       PalabritasError::BucketHasFrequenciesAndChances(ErrorInfo {
         line: 1,
+        col: 1,
         string: snake_case
       })
     );
@@ -1378,6 +1393,7 @@ mod test {
       named_bucket,
       PalabritasError::BucketMissingProbability(ErrorInfo {
         line: 3,
+        col: 1,
         string: child_2
       })
     );
@@ -1709,6 +1725,7 @@ mod test {
       value,
       PalabritasError::DivisionByZero(ErrorInfo {
         line: 1,
+        col: 1,
         string: tag_string
       })
     );
@@ -1723,6 +1740,7 @@ mod test {
       value,
       PalabritasError::DivisionByZero(ErrorInfo {
         line: 1,
+        col: 1,
         string: tag_string
       })
     );
@@ -1736,6 +1754,7 @@ mod test {
       PalabritasError::SectionDoesntExist {
         info: ErrorInfo {
           line: 2,
+          col: 3,
           string: "->Section".to_string()
         },
         section: SectionKey {
@@ -1756,6 +1775,7 @@ mod test {
       PalabritasError::VariableDoesntExist {
         info: ErrorInfo {
           line: 2,
+          col: 7,
           string: "variable = value".to_string()
         },
         variable: "variable".to_string()
@@ -1774,6 +1794,7 @@ mod test {
       PalabritasError::VariableDoesntExist {
         info: ErrorInfo {
           line: 2,
+          col: 8,
           string: "variable = value".to_string()
         },
         variable: "variable".to_string()
@@ -1791,6 +1812,7 @@ mod test {
       PalabritasError::VariableDoesntExist {
         info: ErrorInfo {
           line: 2,
+          col: 3,
           string: "set variable value".to_string()
         },
         variable: "variable".to_string()
@@ -1812,6 +1834,7 @@ mod test {
       PalabritasError::InvalidVariableValue {
         info: ErrorInfo {
           line: 2,
+          col: 7,
           string: "variable = value".to_string()
         },
         variable: "variable".to_string(),
@@ -1828,13 +1851,13 @@ mod test {
     config
       .variables
       .insert("variable".to_string(), VariableKind::Integer);
-    let error =
-      parse_database_str("Text\n  freq variable = value 10", &config).unwrap_err();
+    let error = parse_database_str("Text\n  freq variable = value 10", &config).unwrap_err();
     assert_eq!(
       error,
       PalabritasError::InvalidVariableValue {
         info: ErrorInfo {
           line: 2,
+          col: 8,
           string: "variable = value".to_string()
         },
         variable: "variable".to_string(),
@@ -1857,6 +1880,7 @@ mod test {
       PalabritasError::InvalidVariableValue {
         info: ErrorInfo {
           line: 2,
+          col: 3,
           string: "set variable value".to_string()
         },
         variable: "variable".to_string(),
@@ -1880,6 +1904,7 @@ mod test {
       PalabritasError::InvalidVariableOperator {
         info: ErrorInfo {
           line: 2,
+          col: 7,
           string: "variable > value".to_string()
         },
         variable: "variable".to_string(),
@@ -1896,20 +1921,20 @@ mod test {
     config
       .variables
       .insert("variable".to_string(), VariableKind::String);
-    let error =
-      parse_database_str("Text\n  freq variable > value 10", &config).unwrap_err();
-      assert_eq!(
-        error,
-        PalabritasError::InvalidVariableOperator {
-          info: ErrorInfo {
-            line: 2,
-            string: "variable > value".to_string()
-          },
-          variable: "variable".to_string(),
-          operator: ">".to_string(),
-          variable_type: "String".to_string()
-        }
-      );
+    let error = parse_database_str("Text\n  freq variable > value 10", &config).unwrap_err();
+    assert_eq!(
+      error,
+      PalabritasError::InvalidVariableOperator {
+        info: ErrorInfo {
+          line: 2,
+          col: 8,
+          string: "variable > value".to_string()
+        },
+        variable: "variable".to_string(),
+        operator: ">".to_string(),
+        variable_type: "String".to_string()
+      }
+    );
   }
 
   #[test]
@@ -1925,6 +1950,7 @@ mod test {
       PalabritasError::InvalidVariableOperator {
         info: ErrorInfo {
           line: 2,
+          col: 3,
           string: "set variable +1".to_string()
         },
         variable: "variable".to_string(),
@@ -1933,7 +1959,7 @@ mod test {
       }
     );
   }
-  
+
   /*
   InvalidVariableOperator {
     info: ErrorInfo,
