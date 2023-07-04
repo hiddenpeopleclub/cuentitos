@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::VariableId;
 
-#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Modifier {
   pub variable: VariableId,
   pub value: String,
@@ -29,6 +29,17 @@ impl Display for ModifierOperator {
       ModifierOperator::Substract => write!(f, "-"),
       ModifierOperator::Multiply => write!(f, "*"),
       ModifierOperator::Divide => write!(f, "/"),
+    }
+  }
+}
+
+
+impl Default for Modifier {
+  fn default() -> Self {
+    Self {
+      variable: Default::default(),
+      operator: Default::default(),
+      value: "true".to_string(),
     }
   }
 }
