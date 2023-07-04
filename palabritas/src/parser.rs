@@ -347,6 +347,11 @@ fn parse_section(
 
   blocks[0].push(Block::default());
   let block_id = blocks[0].len() - 1;
+  let error_info = ErrorInfo {
+    line: token.line_col().0,
+    col: token.line_col().1,
+    string: token.as_str().to_string(),
+  };
 
   let mut settings = BlockSettings::default();
   let mut id: String = String::default();
@@ -389,6 +394,7 @@ fn parse_section(
   );
 
   let section = Block::Section { id, settings };
+  check_invalid_frequency(&section, error_info, blocks, 0)?;
   blocks[0][block_id] = section.clone();
 
   Ok(section)
@@ -404,13 +410,17 @@ fn parse_subsection(
   section_list: &Vec<SectionKey>,
 ) -> Result<(), PalabritasError> {
   match_rule(&token, Rule::Subsection)?;
-
   if blocks.is_empty() {
     blocks.push(Vec::default());
   }
 
   blocks[0].push(Block::default());
   let block_id = blocks[0].len() - 1;
+  let error_info = ErrorInfo {
+    line: token.line_col().0,
+    col: token.line_col().1,
+    string: token.as_str().to_string(),
+  };
 
   let mut settings = BlockSettings::default();
   let mut id: String = String::default();
@@ -452,7 +462,10 @@ fn parse_subsection(
     block_id,
   );
 
-  blocks[0][block_id] = Block::Subsection { id, settings };
+  let subsection = Block::Subsection { id, settings };
+  check_invalid_frequency(&subsection, error_info, blocks, 0)?;
+  blocks[0][block_id] = subsection;
+
   Ok(())
 }
 fn parse_block(
@@ -468,6 +481,12 @@ fn parse_block(
   //    (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
   let mut block = Block::default();
   let line_col = token.line_col();
+  let error_info = ErrorInfo {
+    line: token.line_col().0,
+    col: token.line_col().1,
+    string: token.as_str().to_string(),
+  };
+
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Text => {
@@ -504,32 +523,12 @@ fn parse_block(
     blocks.push(Vec::default());
   }
 
-  if let Some(i18n_id) = block.get_i18n_id() {
-    if let Some(db) = i18n.strings.get_mut(&i18n.default_locale) {
-      let new_id = line_col.0.to_string();
-      db.insert(new_id.clone(), i18n_id);
-
-      match block {
-        Block::Text { id: _, settings } => {
-          block = Block::Text {
-            id: new_id,
-            settings,
-          };
-        }
-        Block::Choice { id: _, settings } => {
-          block = Block::Choice {
-            id: new_id,
-            settings,
-          };
-        }
-        _ => {}
-      }
-    }
-  }
+  update_i18n(&mut block, i18n, line_col.0);
 
   blocks[child_order].push(block);
 
   let block_id = blocks[child_order].len() - 1;
+
   if let Block::Bucket {
     name: _,
     settings: _,
@@ -541,7 +540,99 @@ fn parse_block(
     make_childs_bucket(block_id, blocks, child_order);
   }
 
+  check_invalid_frequency(
+    &blocks[child_order][block_id],
+    error_info,
+    blocks,
+    child_order,
+  )?;
+
   Ok(())
+}
+
+fn check_invalid_frequency(
+  block: &Block,
+  error_info: ErrorInfo,
+  blocks: &[Vec<Block>],
+  child_order: usize,
+) -> Result<(), PalabritasError> {
+  fn freq_modifier_matches_chance(
+    settings: &BlockSettings,
+    error_info: &ErrorInfo,
+  ) -> Result<(), PalabritasError> {
+    if settings.frequency_modifiers.is_empty() {
+      Ok(())
+    } else {
+      match settings.chance {
+        Chance::Frequency(_) => Ok(()),
+        _ => Err(PalabritasError::FrequencyModifierWithoutFrequencyChance(
+          error_info.clone(),
+        )),
+      }
+    }
+  }
+
+  match block {
+    Block::Bucket {
+      name: _,
+      settings: _,
+    } => freq_modifier_matches_chance(block.get_settings(), &error_info),
+
+    Block::Section { id: _, settings: _ } => {
+      if let Chance::Frequency(_) = block.get_settings().chance {
+        Err(PalabritasError::FrequencyOutOfBucket(error_info))
+      } else {
+        Ok(())
+      }
+    }
+
+    Block::Subsection { id: _, settings: _ } => {
+      if let Chance::Frequency(_) = block.get_settings().chance {
+        Err(PalabritasError::FrequencyOutOfBucket(error_info))
+      } else {
+        Ok(())
+      }
+    }
+
+    _ => {
+      freq_modifier_matches_chance(block.get_settings(), &error_info)?;
+      if child_order == 0 {
+        if let Chance::Frequency(_) = block.get_settings().chance {
+          return Err(PalabritasError::FrequencyOutOfBucket(error_info));
+        }
+      }
+      for child in &block.get_settings().children {
+        if let Chance::Frequency(_) = blocks[child_order + 1][*child].get_settings().chance {
+          return Err(PalabritasError::FrequencyOutOfBucket(error_info));
+        }
+      }
+      Ok(())
+    }
+  }
+}
+fn update_i18n(block: &mut Block, i18n: &mut I18n, line: usize) {
+  if let Some(i18n_id) = block.get_i18n_id() {
+    if let Some(db) = i18n.strings.get_mut(&i18n.default_locale) {
+      let new_id = line.to_string();
+      db.insert(new_id.clone(), i18n_id);
+
+      match block {
+        Block::Text {
+          ref mut id,
+          settings: _,
+        } => {
+          *id = new_id;
+        }
+        Block::Choice {
+          ref mut id,
+          settings: _,
+        } => {
+          *id = new_id;
+        }
+        _ => {}
+      }
+    }
+  }
 }
 
 fn is_child_unnamed_bucket(block: usize, blocks: &Vec<Vec<Block>>, child_order: usize) -> bool {
@@ -1706,6 +1797,69 @@ mod test {
     let tag = parse_tag_str(&tag_string).unwrap();
 
     assert_eq!(tag, tag_name);
+  }
+  #[test]
+  fn frequency_out_of_bucket_throws_error() {
+    let text = make_random_string();
+    let frequency: u32 = rand::thread_rng().gen_range(0..100);
+    let database_str = format!("({}) {}", frequency, text);
+    let err = parse_database_str(&database_str, &Config::default()).unwrap_err();
+    assert_eq!(
+      err,
+      PalabritasError::FrequencyOutOfBucket(ErrorInfo {
+        line: 1,
+        col: 1,
+        string: database_str
+      })
+    );
+
+    let choice_str = make_random_string();
+    let frequency: u32 = rand::thread_rng().gen_range(0..100);
+    let database_str = format!("*({}) {}", frequency, choice_str);
+    let err = parse_database_str(&database_str, &Config::default()).unwrap_err();
+    assert_eq!(
+      err,
+      PalabritasError::FrequencyOutOfBucket(ErrorInfo {
+        line: 1,
+        col: 1,
+        string: database_str
+      })
+    );
+
+    let text = make_random_string();
+    let choice_str_1 = make_random_string();
+    let frequency_1: u32 = rand::thread_rng().gen_range(0..100);
+    let choice_str_2 = make_random_string();
+    let frequency_2: u32 = rand::thread_rng().gen_range(0..100);
+    let database_str = format!(
+      "{}\n  *({}) {}\n  *({}) {}",
+      text, frequency_1, choice_str_1, frequency_2, choice_str_2
+    );
+    parse_database_str(&database_str, &Config::default()).unwrap();
+  }
+
+  #[test]
+  fn frequency_modifier_without_frequency_chance_throws_error() {
+    let text = make_random_string();
+    let variable = make_random_identifier();
+    let value = rand::thread_rng().gen::<f32>().to_string();
+    let frequency: u32 = rand::thread_rng().gen_range(0..100);
+
+    let mut config = Config::default();
+    config
+      .variables
+      .insert(variable.clone(), VariableKind::Float);
+
+    let database_str = format!("{}\n  freq {} {} {}", text, variable, value, frequency);
+    let err = parse_database_str(&database_str, &config).unwrap_err();
+    assert_eq!(
+      err,
+      PalabritasError::FrequencyModifierWithoutFrequencyChance(ErrorInfo {
+        line: 1,
+        col: 1,
+        string: database_str
+      })
+    );
   }
 
   #[test]

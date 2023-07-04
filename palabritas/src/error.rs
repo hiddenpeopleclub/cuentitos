@@ -45,6 +45,8 @@ pub enum PalabritasError {
     operator: String,
     variable_type: String,
   },
+  FrequencyOutOfBucket(ErrorInfo),
+  FrequencyModifierWithoutFrequencyChance(ErrorInfo),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -137,6 +139,20 @@ impl Display for PalabritasError {
           f,
           "{}\n  Invalid operator for variable '{}'. Operator '{}' can't be applied to {}",
           info, variable, operator, variable_type
+        )
+      }
+      PalabritasError::FrequencyOutOfBucket(info) => {
+        write!(
+          f,
+          "{}\n  Frequency notation is only allowed in buckets.",
+          info
+        )
+      }
+      PalabritasError::FrequencyModifierWithoutFrequencyChance(info) => {
+        write!(
+          f,
+          "{}\n  Frequency modifiers are only allowed for blocks with probabilistic chance and frequency notation.",
+          info
         )
       }
     }
