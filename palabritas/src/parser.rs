@@ -108,7 +108,7 @@ pub fn parse_database(token: Pair<Rule>, config: &Config) -> Result<Database, Pa
           &mut i18n,
           config,
           &section_list,
-          &None
+          &None,
         )?;
       }
       Rule::Section => {
@@ -129,9 +129,11 @@ pub fn parse_database(token: Pair<Rule>, config: &Config) -> Result<Database, Pa
     return Err(PalabritasError::FileIsEmpty);
   }
 
-  if let Some(last) = blocks[0].last_mut() {
-    last.get_settings_mut().next = NextBlock::EndOfFile;
-  }
+  let end_block = Block::Divert {
+    next: NextBlock::EndOfFile,
+    settings: BlockSettings::default(),
+  };
+  blocks[0].push(end_block);
 
   let mut ordered_blocks = Vec::default();
 
@@ -192,7 +194,7 @@ pub fn parse_choice_str(input: &str) -> Result<Block, PalabritasError> {
 pub fn parse_section_str(
   input: &str,
   config: &Config,
-  section_list: &Vec<SectionKey>,
+  section_list: &[SectionKey],
 ) -> Result<Block, PalabritasError> {
   let token = parse_str(input, Rule::Section)?;
   parse_section(
@@ -218,7 +220,7 @@ pub fn parse_function_str(input: &str) -> Result<Function, PalabritasError> {
 pub fn parse_divert_str(
   input: &str,
   section_list: &[SectionKey],
-) -> Result<NextBlock, PalabritasError> {
+) -> Result<Block, PalabritasError> {
   let token = parse_str(input, Rule::Divert)?;
   parse_divert(token, section_list, &None)
 }
@@ -339,7 +341,7 @@ fn parse_section(
   section_map: &mut HashMap<SectionKey, BlockId>,
   i18n: &mut I18n,
   config: &Config,
-  section_list: &Vec<SectionKey>,
+  section_list: &[SectionKey],
 ) -> Result<Block, PalabritasError> {
   match_rule(&token, Rule::Section)?;
   if blocks.is_empty() {
@@ -363,11 +365,19 @@ fn parse_section(
         id = inner_token.as_str().to_string();
       }
       Rule::Command => {
-        add_command_to_settings(inner_token, &mut settings, config, section_list,&Some(id.clone()))?;
+        add_command_to_settings(inner_token, &mut settings, config)?;
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
-          parse_block(inner_blocks_token, blocks, 1, i18n, config, section_list, &Some(id.clone()))?;
+          parse_block(
+            inner_blocks_token,
+            blocks,
+            1,
+            i18n,
+            config,
+            section_list,
+            &Some(id.clone()),
+          )?;
           settings.children.push(blocks[1].len() - 1);
         }
       }
@@ -408,7 +418,7 @@ fn parse_subsection(
   section_map: &mut HashMap<SectionKey, BlockId>,
   i18n: &mut I18n,
   config: &Config,
-  section_list: &Vec<SectionKey>,
+  section_list: &[SectionKey],
 ) -> Result<(), PalabritasError> {
   match_rule(&token, Rule::Subsection)?;
   if blocks.is_empty() {
@@ -432,11 +442,19 @@ fn parse_subsection(
         id = inner_token.as_str().to_string();
       }
       Rule::Command => {
-        add_command_to_settings(inner_token, &mut settings, config, section_list, &Some(section_name.to_string()))?;
+        add_command_to_settings(inner_token, &mut settings, config)?;
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
-          parse_block(inner_blocks_token, blocks, 1, i18n, config, section_list,&Some(section_name.to_string()))?;
+          parse_block(
+            inner_blocks_token,
+            blocks,
+            1,
+            i18n,
+            config,
+            section_list,
+            &Some(section_name.to_string()),
+          )?;
           settings.children.push(blocks[1].len() - 1);
         }
       }
@@ -475,12 +493,12 @@ fn parse_block(
   child_order: usize,
   i18n: &mut I18n,
   config: &Config,
-  section_list: &Vec<SectionKey>,
+  section_list: &[SectionKey],
   current_section: &Option<String>,
 ) -> Result<(), PalabritasError> {
   match_rule(&token, Rule::Block)?;
 
-  //    (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
+  //    (NamedBucket | Choice | Text | Divery)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
   let mut block = Block::default();
   let line_col = token.line_col();
   let error_info = ErrorInfo {
@@ -500,8 +518,11 @@ fn parse_block(
       Rule::Choice => {
         block = parse_choice(inner_token)?;
       }
+      Rule::Divert => {
+        block = parse_divert(inner_token, section_list, current_section)?;
+      }
       Rule::Command => {
-        add_command_to_block(inner_token, &mut block, config, section_list, current_section)?;
+        add_command_to_block(inner_token, &mut block, config)?;
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
@@ -513,7 +534,7 @@ fn parse_block(
             i18n,
             config,
             section_list,
-            current_section
+            current_section,
           )?;
           settings.children.push(blocks[child_order + 1].len() - 1);
         }
@@ -924,14 +945,12 @@ fn add_command_to_settings(
   token: Pair<Rule>,
   settings: &mut BlockSettings,
   config: &Config,
-  section_list: &[SectionKey],
-  current_section: &Option<String>,
 ) -> Result<(), PalabritasError> {
   match_rule(&token, Rule::Command)?;
 
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
-      //Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert | Function | Unique | Tag) }
+      //Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Function | Unique | Tag) }
       Rule::Requirement => {
         let requirement = parse_requirement(inner_token, config)?;
         settings.requirements.push(requirement);
@@ -943,9 +962,6 @@ fn add_command_to_settings(
       Rule::Modifier => {
         let modifier = parse_modifier(inner_token, config)?;
         settings.modifiers.push(modifier);
-      }
-      Rule::Divert => {
-        settings.next = parse_divert(inner_token, section_list, current_section)?;
       }
       Rule::Unique => {
         settings.unique = true;
@@ -968,11 +984,9 @@ fn add_command_to_block(
   token: Pair<Rule>,
   block: &mut Block,
   config: &Config,
-  section_list: &[SectionKey],
-  current_section: &Option<String>
 ) -> Result<(), PalabritasError> {
   let settings = block.get_settings_mut();
-  add_command_to_settings(token, settings, config, section_list, current_section)
+  add_command_to_settings(token, settings, config)
 }
 
 fn parse_function(token: Pair<Rule>) -> Result<Function, PalabritasError> {
@@ -1006,7 +1020,7 @@ fn parse_divert(
   token: Pair<Rule>,
   section_list: &[SectionKey],
   current_section: &Option<String>,
-) -> Result<NextBlock, PalabritasError> {
+) -> Result<Block, PalabritasError> {
   match_rule(&token, Rule::Divert)?;
   //Divert = { "->"  ~ " "* ~ Identifier ~ ("." ~ Identifier)? }
 
@@ -1029,21 +1043,22 @@ fn parse_divert(
     }
   }
 
-  if section.is_some() && subsection.is_none() && section.clone().unwrap() == "END" {
-    return Ok(NextBlock::EndOfFile);
-  }
+  let next = match section.is_some() && subsection.is_none() && section.clone().unwrap() == "END" {
+    true => NextBlock::EndOfFile,
+    false => {
+      let section_key = SectionKey {
+        section: section.unwrap(),
+        subsection,
+      };
+      check_section_existance(&section_key, section_list, &error_info, current_section)?;
+      NextBlock::Section(section_key)
+    }
+  };
 
-  if let Some(section) = section {
-    let section_key = SectionKey {
-      section,
-      subsection,
-    };
-
-    check_section_existance(&section_key, section_list, &error_info, &current_section)?;
-    Ok(NextBlock::Section(section_key))
-  } else {
-    Ok(NextBlock::None)
-  }
+  Ok(Block::Divert {
+    next,
+    settings: BlockSettings::default(),
+  })
 }
 
 fn parse_modifier(token: Pair<Rule>, config: &Config) -> Result<Modifier, PalabritasError> {
@@ -1116,13 +1131,13 @@ fn check_section_existance(
 ) -> Result<(), PalabritasError> {
   if section_list.contains(section_key) {
     Ok(())
-  } else if section_key.subsection.is_none() && current_section.is_some(){
-    let new_section_key = SectionKey{
+  } else if section_key.subsection.is_none() && current_section.is_some() {
+    let new_section_key = SectionKey {
       section: current_section.clone().unwrap(),
       subsection: Some(section_key.clone().section),
     };
     check_section_existance(&new_section_key, section_list, error_info, current_section)
-  } else {  
+  } else {
     Err(PalabritasError::SectionDoesntExist {
       info: error_info.clone(),
       section: section_key.clone(),
@@ -1719,23 +1734,6 @@ mod test {
     let mut block_settings = BlockSettings::default();
     let mut config = Config::default();
 
-    //Divert
-    let section = make_random_identifier();
-    let section_list = vec![SectionKey {
-      section: section.clone(),
-      subsection: None,
-    }];
-
-    let divert_string = format!("\n -> {}", section);
-
-    block_settings.next = NextBlock::Section(SectionKey {
-      section,
-      subsection: None,
-    });
-
-    let token = parse_str(&divert_string, Rule::Command).unwrap();
-    add_command_to_block(token, &mut block, &config, &section_list, &None).unwrap();
-
     //Modifier
     let variable = make_random_identifier();
     let value = rand::thread_rng().gen::<f32>().to_string();
@@ -1753,13 +1751,13 @@ mod test {
     block_settings.modifiers.push(expected_modifier);
 
     let token = parse_str(&modifier_string, Rule::Command).unwrap();
-    add_command_to_block(token, &mut block, &config, &section_list,&None).unwrap();
+    add_command_to_block(token, &mut block, &config).unwrap();
 
     //Unique
 
     block_settings.unique = true;
     let token = parse_str("\n unique", Rule::Command).unwrap();
-    add_command_to_block(token, &mut block, &config, &section_list,&None).unwrap();
+    add_command_to_block(token, &mut block, &config).unwrap();
 
     //Frequency
 
@@ -1783,7 +1781,7 @@ mod test {
     block_settings.frequency_modifiers.push(expected_frequency);
 
     let token = parse_str(&frequency_string, Rule::Command).unwrap();
-    add_command_to_block(token, &mut block, &config, &section_list,&None).unwrap();
+    add_command_to_block(token, &mut block, &config).unwrap();
 
     //Requirement
 
@@ -1803,7 +1801,7 @@ mod test {
     block_settings.requirements.push(expected_requirement);
 
     let token = parse_str(&requirement_string, Rule::Command).unwrap();
-    add_command_to_block(token, &mut block, &config, &section_list,&None).unwrap();
+    add_command_to_block(token, &mut block, &config).unwrap();
 
     let expected_block = Block::Text {
       id: text_id,
@@ -1942,7 +1940,11 @@ mod test {
       }
     );
 
-    parse_database_str("#Secttion\n  Text\n    ->Subsection\n##Subsection\n  Subtext", &Config::default()).unwrap();
+    parse_database_str(
+      "#Secttion\n  Text\n    ->Subsection\n##Subsection\n  Subtext",
+      &Config::default(),
+    )
+    .unwrap();
   }
 
   #[test]
@@ -2278,7 +2280,10 @@ mod test {
       section: section.clone(),
       subsection: None,
     };
-    let expected_value = NextBlock::Section(section_key.clone());
+    let expected_value = Block::Divert {
+      next: NextBlock::Section(section_key.clone()),
+      settings: BlockSettings::default(),
+    };
     let mut section_list = vec![section_key];
 
     let divert = parse_divert_str(&divert_string, &section_list).unwrap();
@@ -2292,7 +2297,10 @@ mod test {
       subsection: Some(subsection.clone()),
     };
 
-    let expected_value = NextBlock::Section(section_key.clone());
+    let expected_value = Block::Divert {
+      next: NextBlock::Section(section_key.clone()),
+      settings: BlockSettings::default(),
+    };
     section_list.push(section_key);
 
     let divert = parse_divert_str(&divert_string, &section_list).unwrap();
@@ -2647,9 +2655,6 @@ mod test {
     let modifier =
       "\nset ".to_string() + &make_random_identifier() + " " + &make_random_identifier();
     assert_parse_rule(Rule::Command, &(modifier));
-
-    let divert = "\n->".to_string() + &make_random_identifier();
-    assert_parse_rule(Rule::Command, &(divert));
   }
 
   #[test]
@@ -2719,22 +2724,6 @@ mod test {
     );
   }
 
-  /* #[test]
-   fn parse_block_blocks_rule() {
-      //BlockBlock = {
-      // (choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
-      //}
-
-      let choice = "*".to_string() + &make_random_string();
-      assert_parse_rule(Rule::BlockBlock, &choice);
-
-      let text = make_random_string();
-      assert_parse_rule(Rule::BlockBlock, &text);
-
-      let new_block = "\n  ".to_string() + &make_random_string();
-      assert_parse_rule(Rule::BlockBlock, &(text + &new_block));
-    }
-  */
   #[test]
   fn parse_section_commands_correctly() {
     let identifier = make_random_snake_case();
@@ -2927,7 +2916,7 @@ mod test {
       &mut I18n::default(),
       &Config::default(),
       &Vec::default(),
-      &None
+      &None,
     )?;
     Ok(blocks)
   }

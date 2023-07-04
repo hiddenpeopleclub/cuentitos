@@ -28,16 +28,14 @@ impl fmt::Display for SectionKey {
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub enum NextBlock {
   #[default]
-  None,
-  BlockId(BlockId),
   EndOfFile,
+  BlockId(BlockId),
   Section(SectionKey),
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq, Clone)]
 pub struct BlockSettings {
   pub children: Vec<BlockId>,
-  pub next: NextBlock,
   pub chance: Chance,
   pub frequency_modifiers: Vec<FrequencyModifier>,
   pub requirements: Vec<Requirement>,
@@ -77,6 +75,10 @@ pub enum Block {
     id: SectionName,
     settings: BlockSettings,
   },
+  Divert {
+    next: NextBlock,
+    settings: BlockSettings,
+  },
 }
 
 impl Block {
@@ -87,6 +89,7 @@ impl Block {
       Block::Bucket { name: _, settings } => settings,
       Block::Section { id: _, settings } => settings,
       Block::Subsection { id: _, settings } => settings,
+      Block::Divert { next: _, settings } => settings,
     }
   }
   pub fn get_settings(&self) -> &BlockSettings {
@@ -96,6 +99,7 @@ impl Block {
       Block::Bucket { name: _, settings } => settings,
       Block::Section { id: _, settings } => settings,
       Block::Subsection { id: _, settings } => settings,
+      Block::Divert { next: _, settings } => settings,
     }
   }
   pub fn get_i18n_id(&self) -> Option<I18nId> {
@@ -108,6 +112,10 @@ impl Block {
       } => None,
       Block::Section { id: _, settings: _ } => None,
       Block::Subsection { id: _, settings: _ } => None,
+      Block::Divert {
+        next: _,
+        settings: _,
+      } => None,
     }
   }
 }

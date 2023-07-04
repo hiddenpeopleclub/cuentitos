@@ -11,6 +11,7 @@ use cuentitos_common::Database;
 use cuentitos_common::Function;
 use cuentitos_common::LanguageId;
 use cuentitos_common::Modifier;
+use cuentitos_common::NextBlock;
 use cuentitos_common::SectionKey;
 use cuentitos_common::VariableKind;
 use rand::Rng;
@@ -26,7 +27,7 @@ pub struct Block {
   pub functions: Vec<Function>,
 }
 
-pub type Section = SectionKey;
+pub type Divert = SectionKey;
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Runtime {
@@ -43,6 +44,7 @@ pub struct Runtime {
 
 impl Runtime {
   pub fn new(database: Database) -> Runtime {
+    println!("{:?}", database);
     let game_state: GameState = GameState::from_config(&database.config);
     let current_locale = database.i18n.default_locale.clone();
     Runtime {
@@ -78,13 +80,13 @@ impl Runtime {
     self.rng = Some(Pcg32::seed_from_u64(seed));
   }
 
-  pub fn jump_to_section(&mut self, section: &Section) -> Result<(), RuntimeError> {
+  pub fn jump_to_section(&mut self, divert: &Divert) -> Result<(), RuntimeError> {
     let current_section = self.game_state.current_section.clone();
-    if section.subsection.is_none() {
+    if divert.subsection.is_none() {
       if let Some(current_section) = current_section {
         let key = SectionKey {
           section: current_section,
-          subsection: Some(section.section.clone()),
+          subsection: Some(divert.section.clone()),
         };
         if let Some(block_id) = self.database.sections.get(&key) {
           self.block_stack.clear();
@@ -93,13 +95,34 @@ impl Runtime {
       }
     }
 
-    if let Some(block_id) = self.database.sections.get(section) {
+    if let Some(block_id) = self.database.sections.get(divert) {
       self.block_stack.clear();
-      self.game_state.current_section = Some(section.section.clone());
+      self.game_state.current_section = Some(divert.section.clone());
       self.game_state.current_subsection = None;
       self.push_stack(*block_id)
     } else {
-      Err(RuntimeError::SectionDoesntExist(section.clone()))
+      Err(RuntimeError::SectionDoesntExist(divert.clone()))
+    }
+  }
+
+  fn get_section_block_id(&mut self, divert: &Divert) -> Result<BlockId, RuntimeError> {
+    let current_section = self.game_state.current_section.clone();
+    if divert.subsection.is_none() {
+      if let Some(current_section) = current_section {
+        let key = SectionKey {
+          section: current_section,
+          subsection: Some(divert.section.clone()),
+        };
+        if let Some(block_id) = self.database.sections.get(&key) {
+          return Ok(*block_id);
+        }
+      }
+    }
+
+    if let Some(block_id) = self.database.sections.get(divert) {
+      Ok(*block_id)
+    } else {
+      Err(RuntimeError::SectionDoesntExist(divert.clone()))
     }
   }
 
@@ -158,6 +181,13 @@ impl Runtime {
           block_found: "subsection".to_string(),
         })
       }
+      cuentitos_common::Block::Divert {
+        next: _,
+        settings: _,
+      } => Err(RuntimeError::UnexpectedBlock {
+        expected_block: "text".to_string(),
+        block_found: "divert".to_string(),
+      }),
     }
   }
 
@@ -182,7 +212,6 @@ impl Runtime {
     if choices[choice] >= self.database.blocks.len() {
       return Err(RuntimeError::InvalidBlockId(choices[choice]));
     }
-
     self.push_stack(choices[choice])?;
     self.next_block()
   }
@@ -526,22 +555,53 @@ impl Runtime {
     }
 
     self.apply_modifiers()?;
-    self.update_choices()?;
 
-    match self.get_block(id) {
+    let block = self.get_block(id).clone();
+    match block {
       cuentitos_common::Block::Section { id, settings: _ } => {
-        self.game_state.current_section = Some(id.clone());
+        self.game_state.current_section = Some(id);
         self.game_state.current_subsection = None;
         self.update_stack()
       }
       cuentitos_common::Block::Subsection { id, settings: _ } => {
-        self.game_state.current_subsection = Some(id.clone());
+        self.game_state.current_subsection = Some(id);
         self.update_stack()
       }
-      _ => Ok(()),
+      cuentitos_common::Block::Text { id: _, settings: _ } => {
+        self.update_choices()?;
+        Ok(())
+      }
+      cuentitos_common::Block::Choice { id: _, settings: _ } => {
+        self.update_choices()?;
+        Ok(())
+      }
+      cuentitos_common::Block::Bucket {
+        name: _,
+        settings: _,
+      } => {
+        if let Some(next) = self.get_random_block_from_bucket(block.get_settings())? {
+          self.push_stack(next)
+        } else {
+          self.update_choices()
+        }
+      }
+      cuentitos_common::Block::Divert { next, settings: _ } => {
+        println!("{:?}", self.get_block(id).clone());
+        let next = self.get_divert_next(next)?;
+        self.push_stack(next)
+      }
     }
   }
 
+  fn get_divert_next(&mut self, next: NextBlock) -> Result<BlockId, RuntimeError> {
+    match next {
+      NextBlock::BlockId(id) => Ok(id),
+      NextBlock::EndOfFile => {
+        self.reset();
+        Err(RuntimeError::FrequencyModifierWithProbability)},
+      NextBlock::Section(section_key) => self.get_section_block_id(&section_key),
+    }
+  }
   fn update_stack(&mut self) -> Result<(), RuntimeError> {
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
@@ -563,30 +623,15 @@ impl Runtime {
     let settings = self.get_block(*last_block_id).get_settings().clone();
 
     if !settings.children.is_empty() {
-      if let Some(child) = self.push_next_child_in_stack(&settings, 0)? {
+      if let Some(child) = self.get_next_child_in_stack(&settings, 0)? {
         return self.push_stack(child);
-      }
-    }
-
-    match settings.next {
-      cuentitos_common::NextBlock::None => {}
-      cuentitos_common::NextBlock::BlockId(id) => {
-        self.block_stack.clear();
-        return self.push_stack(id);
-      }
-      cuentitos_common::NextBlock::EndOfFile => {
-        self.reset();
-        return Err(RuntimeError::StoryFinished);
-      }
-      cuentitos_common::NextBlock::Section(section) => {
-        return self.jump_to_section(&section);
       }
     }
 
     self.pop_stack_and_find_next()
   }
 
-  fn push_next_child_in_stack(
+  fn get_next_child_in_stack(
     &mut self,
     settings: &BlockSettings,
     next_child: usize,
@@ -597,27 +642,11 @@ impl Runtime {
 
     let id = settings.children[next_child];
     match self.get_block(id) {
-      cuentitos_common::Block::Text { id: _, settings: _ } => Ok(Some(settings.children[0])),
       cuentitos_common::Block::Choice { id: _, settings: _ } => {
         if self.choices.contains(&id) {
           Err(RuntimeError::WaitingForChoice(self.get_choices_strings()))
         } else {
-          self.push_next_child_in_stack(settings, next_child + 1)
-        }
-      }
-      cuentitos_common::Block::Bucket {
-        name: _,
-        settings: bucket_settings,
-      } => {
-        if let Some(new_block) = self.get_random_block_from_bucket(&bucket_settings.clone())? {
-          if let cuentitos_common::Block::Choice { id: _, settings: _ } = self.get_block(new_block)
-          {
-            Err(RuntimeError::WaitingForChoice(self.get_choices_strings()))
-          } else {
-            Ok(Some(new_block))
-          }
-        } else {
-          self.push_next_child_in_stack(settings, next_child + 1)
+          self.get_next_child_in_stack(settings, next_child + 1)
         }
       }
       cuentitos_common::Block::Section { id, settings: _ } => {
@@ -626,6 +655,7 @@ impl Runtime {
       cuentitos_common::Block::Subsection { id, settings: _ } => {
         Err(RuntimeError::SectionAtLowerLevel(id.clone()))
       }
+      _ => Ok(Some(settings.children[0])),
     }
   }
 
@@ -667,21 +697,6 @@ impl Runtime {
       }
       if *sibling == last_block_id {
         previous_block_found = true;
-      }
-    }
-
-    match &parent_settings.next {
-      cuentitos_common::NextBlock::None => {}
-      cuentitos_common::NextBlock::BlockId(id) => {
-        self.block_stack.clear();
-        return self.push_stack(*id);
-      }
-      cuentitos_common::NextBlock::EndOfFile => {
-        self.reset();
-        return Err(RuntimeError::StoryFinished);
-      }
-      cuentitos_common::NextBlock::Section(section) => {
-        return self.jump_to_section(section);
       }
     }
 
@@ -767,7 +782,7 @@ mod test {
 
   use std::{collections::HashMap, fmt::Display, str::FromStr, vec};
 
-  use crate::{runtime::Section, Runtime, RuntimeError};
+  use crate::{runtime::Divert, Runtime, RuntimeError};
   use cuentitos_common::{
     condition::ComparisonOperator, modifier::ModifierOperator, Block, BlockSettings, Chance,
     Condition, Config, Database, FrequencyModifier, Function, I18n, LanguageDb, LanguageId,
@@ -843,14 +858,14 @@ mod test {
       ..Default::default()
     };
     runtime
-      .jump_to_section(&Section {
+      .jump_to_section(&Divert {
         section: "section_2".to_string(),
         subsection: Some("subsection".to_string()),
       })
       .unwrap();
     assert_eq!(runtime.block_stack, vec![2, 4]);
     runtime
-      .jump_to_section(&Section {
+      .jump_to_section(&Divert {
         section: "section_1".to_string(),
         subsection: None,
       })
@@ -2488,10 +2503,10 @@ mod test {
     };
 
     let settings = BlockSettings {
-      next: NextBlock::Section(SectionKey {
-        section: "section".to_string(),
-        subsection: None,
-      }),
+      //next: NextBlock::Section(SectionKey {
+      //  section: "section".to_string(),
+      //  subsection: None,
+      //}),
       ..Default::default()
     };
     let text_2 = Block::Text {
@@ -2512,6 +2527,7 @@ mod test {
     assert_eq!(2, *runtime.block_stack.last().unwrap());
     runtime.update_stack().unwrap();
     assert_eq!(2, *runtime.block_stack.last().unwrap());
+    assert!(false);
   }
 
   #[test]
@@ -2657,7 +2673,7 @@ mod test {
     let text = Block::Text {
       id: String::default(),
       settings: BlockSettings {
-        next: NextBlock::EndOfFile,
+        // next: NextBlock::EndOfFile,
         ..Default::default()
       },
     };
@@ -2670,6 +2686,7 @@ mod test {
     runtime.update_stack().unwrap();
     let err = runtime.update_stack().unwrap_err();
     assert_eq!(err, RuntimeError::StoryFinished);
+    assert!(false);
   }
 
   #[test]
@@ -2677,7 +2694,7 @@ mod test {
     let text = Block::Text {
       id: String::default(),
       settings: BlockSettings {
-        next: NextBlock::EndOfFile,
+        // next: NextBlock::EndOfFile,
         ..Default::default()
       },
     };
@@ -2694,6 +2711,7 @@ mod test {
     let err = runtime.jump_to_section(&section_key.clone()).unwrap_err();
 
     assert_eq!(err, RuntimeError::SectionDoesntExist(section_key));
+    assert!(false);
   }
 
   #[test]

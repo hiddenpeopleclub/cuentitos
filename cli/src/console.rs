@@ -85,11 +85,11 @@ impl Console {
             if let Some(section_str) = splitted.next() {
               let subsection = splitted.next();
               let section = match subsection {
-                Some(subsection) => Section {
+                Some(subsection) => Divert {
                   section: section_str.to_string(),
                   subsection: Some(subsection.to_string()),
                 },
-                None => Section {
+                None => Divert {
                   section: section_str.to_string(),
                   subsection: None,
                 },
