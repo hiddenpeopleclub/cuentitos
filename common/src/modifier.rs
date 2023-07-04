@@ -33,7 +33,6 @@ impl Display for ModifierOperator {
   }
 }
 
-
 impl Default for Modifier {
   fn default() -> Self {
     Self {

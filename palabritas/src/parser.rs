@@ -1161,7 +1161,18 @@ fn check_variable_value_matches_type(
           })
         }
       }
-      _ => Ok(()),
+      cuentitos_common::VariableKind::String => Ok(()),
+      cuentitos_common::VariableKind::Enum(variants) => {
+        match variants.contains(&value.to_string()) {
+          true => Ok(()),
+          false => Err(PalabritasError::InvalidVariableValue {
+            info: error_info.clone(),
+            variable: variable.to_string(),
+            value: value.to_string(),
+            variable_type: format!("{}", kind),
+          }),
+        }
+      }
     }
   } else {
     Err(PalabritasError::VariableDoesntExist {
@@ -1972,6 +1983,111 @@ mod test {
         variable: "variable".to_string()
       }
     );
+  }
+
+  #[test]
+  fn integer_with_invalid_value_throws_error() {
+    let mut config = Config::default();
+    config
+      .variables
+      .insert("variable".to_string(), VariableKind::Integer);
+
+    let error_info = ErrorInfo {
+      line: 0,
+      col: 0,
+      string: String::default(),
+    };
+
+    let error =
+      check_variable_value_matches_type("variable", "hello", &config, &error_info).unwrap_err();
+
+    let expected_error = PalabritasError::InvalidVariableValue {
+      info: error_info,
+      variable: "variable".to_string(),
+      value: "hello".to_string(),
+      variable_type: "Integer".to_string(),
+    };
+
+    assert_eq!(error, expected_error);
+  }
+
+  #[test]
+  fn float_with_invalid_value_throws_error() {
+    let mut config = Config::default();
+    config
+      .variables
+      .insert("variable".to_string(), VariableKind::Float);
+
+    let error_info = ErrorInfo {
+      line: 0,
+      col: 0,
+      string: String::default(),
+    };
+
+    let error =
+      check_variable_value_matches_type("variable", "hello", &config, &error_info).unwrap_err();
+
+    let expected_error = PalabritasError::InvalidVariableValue {
+      info: error_info,
+      variable: "variable".to_string(),
+      value: "hello".to_string(),
+      variable_type: "Float".to_string(),
+    };
+
+    assert_eq!(error, expected_error);
+  }
+
+  #[test]
+  fn bool_with_invalid_value_throws_error() {
+    let mut config = Config::default();
+    config
+      .variables
+      .insert("variable".to_string(), VariableKind::Bool);
+
+    let error_info = ErrorInfo {
+      line: 0,
+      col: 0,
+      string: String::default(),
+    };
+
+    let error =
+      check_variable_value_matches_type("variable", "hello", &config, &error_info).unwrap_err();
+
+    let expected_error = PalabritasError::InvalidVariableValue {
+      info: error_info,
+      variable: "variable".to_string(),
+      value: "hello".to_string(),
+      variable_type: "Bool".to_string(),
+    };
+
+    assert_eq!(error, expected_error);
+  }
+
+  #[test]
+  fn enum_with_invalid_value_throws_error() {
+    let mut config = Config::default();
+    config.variables.insert(
+      "variable".to_string(),
+      VariableKind::Enum(vec!["night".to_string(), "day".to_string()]),
+    );
+
+    let error_info = ErrorInfo {
+      line: 0,
+      col: 0,
+      string: String::default(),
+    };
+
+    let error =
+      check_variable_value_matches_type("variable", "hello", &config, &error_info).unwrap_err();
+
+    let expected_error = PalabritasError::InvalidVariableValue {
+      info: error_info,
+      variable: "variable".to_string(),
+      value: "hello".to_string(),
+      variable_type: "Enum([\"night\", \"day\"])".to_string(),
+    };
+
+    assert_eq!(error, expected_error);
   }
 
   #[test]
