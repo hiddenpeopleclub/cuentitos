@@ -50,9 +50,13 @@ impl Console {
       let input = Self::prompt(section, subsection);
 
       match input.as_str() {
-        "" => {
-          print_output_text(runtime.next_block(), &runtime);
-        }
+        "" => match runtime.next_block() {
+          Ok((block, variables)) => {
+            print_block(block);
+            print_variables(&variables, &runtime)
+          }
+          Err(error) => print_runtime_error(error, &runtime),
+        },
         "sections" => {
           println!("Sections:");
           for section in runtime.database.sections.keys() {
@@ -64,16 +68,16 @@ impl Console {
             println!("Current Text Id: {}", current_id);
           }
           println!("Variables: ");
-          print_variables(&runtime)
+          print_all_variables(&runtime)
         }
         "q" => break,
-        "variables" => print_variables(&runtime),
+        "variables" => print_all_variables(&runtime),
         str => {
           if str.starts_with("set") {
             match parse_modifier_str(str, &runtime.database.config) {
               Ok(modifier) => match runtime.apply_modifier(&modifier) {
                 Ok(_) => {
-                  print_variable(&runtime, &modifier.variable);
+                  print_variable(&modifier.variable, &runtime);
                 }
                 Err(error) => println!("{}", error),
               },
@@ -95,8 +99,11 @@ impl Console {
                 },
               };
               match runtime.divert(&section) {
-                Ok(_) => print_output_text(runtime.current_block(), &runtime),
-                Err(err) => println!("{}", err),
+                Ok(_) => match runtime.current_block() {
+                  Ok(block) => print_block(block),
+                  Err(error) => print_runtime_error(error, &runtime),
+                },
+                Err(error) => print_runtime_error(error, &runtime),
               }
             }
           } else if let Ok(choice) = str.parse::<usize>() {
@@ -104,7 +111,13 @@ impl Console {
               println!("invalid option");
               continue;
             }
-            print_output_text(runtime.pick_choice(choice - 1), &runtime);
+            match runtime.pick_choice(choice - 1) {
+              Ok((block, variables)) => {
+                print_block(block);
+                print_variables(&variables, &runtime)
+              }
+              Err(error) => print_runtime_error(error, &runtime),
+            }
           } else {
             println!("Unkown command: {}", str);
           }
@@ -114,7 +127,7 @@ impl Console {
   }
 }
 
-fn print_variables(runtime: &Runtime) {
+fn print_all_variables(runtime: &Runtime) {
   for (variable, kind) in &runtime.database.config.variables {
     match kind {
       VariableKind::Integer => {
@@ -137,7 +150,13 @@ fn print_variables(runtime: &Runtime) {
   }
 }
 
-fn print_variable(runtime: &Runtime, variable: &String) {
+fn print_variables(variables: &ModifiedVariables, runtime: &Runtime) {
+  for variable in variables {
+    print_variable(variable, runtime);
+  }
+}
+
+fn print_variable(variable: &String, runtime: &Runtime) {
   for (runtime_variable, kind) in &runtime.database.config.variables {
     if runtime_variable == variable {
       match kind {
@@ -163,33 +182,33 @@ fn print_variable(runtime: &Runtime, variable: &String) {
   }
   println!("Variable {} doesn't exist", variable)
 }
-fn print_output_text(output_text: Result<Block, RuntimeError>, runtime: &Runtime) {
-  match output_text {
-    Ok(output_text) => {
-      println!("{}", output_text.text);
-      print_choices(output_text.choices);
+
+fn print_block(block: Block) {
+  println!("{}", block.text);
+  print_choices(block.choices);
+}
+
+fn print_runtime_error(error: RuntimeError, runtime: &Runtime) {
+  match error {
+    RuntimeError::WaitingForChoice(choices) => {
+      println!("Make a choice:\n");
+      print_choices(choices);
     }
-    Err(err) => match err {
-      RuntimeError::WaitingForChoice(choices) => {
-        println!("Make a choice:\n");
-        print_choices(choices);
-      }
-      RuntimeError::InvalidChoice {
-        total_choices,
-        choice_picked,
-      } => {
-        println!(
-          "Can't pick {}, because there's only {} options",
-          choice_picked + 1,
-          total_choices
-        );
-        println!("Make a choice:\n");
-        print_choices(runtime.get_choices_strings());
-      }
-      _ => {
-        println!("{}", err)
-      }
-    },
+    RuntimeError::InvalidChoice {
+      total_choices,
+      choice_picked,
+    } => {
+      println!(
+        "Can't pick {}, because there's only {} options",
+        choice_picked + 1,
+        total_choices
+      );
+      println!("Make a choice:\n");
+      print_choices(runtime.get_choices_strings());
+    }
+    _ => {
+      println!("{}", error)
+    }
   }
 }
 

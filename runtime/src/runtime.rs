@@ -28,6 +28,7 @@ pub struct Block {
 }
 
 pub type DivertData = SectionKey;
+pub type ModifiedVariables = Vec<String>;
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Runtime {
@@ -79,7 +80,7 @@ impl Runtime {
     self.rng = Some(Pcg32::seed_from_u64(seed));
   }
 
-  pub fn divert(&mut self, divert: &DivertData) -> Result<(), RuntimeError> {
+  pub fn divert(&mut self, divert: &DivertData) -> Result<ModifiedVariables, RuntimeError> {
     let next = self.get_section_block_id(divert)?;
     self.push_stack(next)
   }
@@ -105,17 +106,19 @@ impl Runtime {
     }
   }
 
-  pub fn next_block(&mut self) -> Result<Block, RuntimeError> {
+  pub fn next_block(&mut self) -> Result<(Block, ModifiedVariables), RuntimeError> {
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
     }
 
-    self.update_stack()?;
+    let mut modified_variables = self.update_stack()?;
 
     while !self.next_block_meets_requirements()? {
-      self.pop_stack_and_find_next()?;
+      modified_variables.append(&mut self.pop_stack_and_find_next()?);
     }
-    self.current_block()
+
+    let block = self.current_block()?;
+    Ok((block, modified_variables))
   }
 
   pub fn get_block(&self, id: BlockId) -> &cuentitos_common::Block {
@@ -174,7 +177,7 @@ impl Runtime {
     }
   }
 
-  pub fn pick_choice(&mut self, choice: usize) -> Result<Block, RuntimeError> {
+  pub fn pick_choice(&mut self, choice: usize) -> Result<(Block, ModifiedVariables), RuntimeError> {
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
     }
@@ -515,7 +518,8 @@ impl Runtime {
     }
   }
 
-  fn apply_modifiers(&mut self) -> Result<(), RuntimeError> {
+  fn apply_modifiers(&mut self) -> Result<ModifiedVariables, RuntimeError> {
+    let mut modified_variables = ModifiedVariables::default();
     let id = match self.block_stack.last() {
       Some(id) => id,
       None => return Err(RuntimeError::EmptyStack),
@@ -523,11 +527,12 @@ impl Runtime {
     let block = self.get_block(*id);
     for modifier in block.get_settings().modifiers.clone() {
       self.apply_modifier(&modifier)?;
+      modified_variables.push(modifier.variable);
     }
-    Ok(())
+    Ok(modified_variables)
   }
 
-  fn push_stack(&mut self, id: BlockId) -> Result<(), RuntimeError> {
+  fn push_stack(&mut self, id: BlockId) -> Result<ModifiedVariables, RuntimeError> {
     self.block_stack.push(id);
 
     if self.get_block(id).get_settings().unique {
@@ -538,40 +543,45 @@ impl Runtime {
       }
     }
 
-    self.apply_modifiers()?;
+    let mut modified_variables = self.apply_modifiers()?;
 
     let block = self.get_block(id).clone();
     match block {
       cuentitos_common::Block::Section { id, settings: _ } => {
         self.game_state.current_section = Some(id);
         self.game_state.current_subsection = None;
-        self.update_stack()
+        modified_variables.append(&mut self.update_stack()?);
+        Ok(modified_variables)
       }
       cuentitos_common::Block::Subsection { id, settings: _ } => {
         self.game_state.current_subsection = Some(id);
-        self.update_stack()
+        modified_variables.append(&mut self.update_stack()?);
+        Ok(modified_variables)
       }
       cuentitos_common::Block::Text { id: _, settings: _ } => {
         self.update_choices()?;
-        Ok(())
+        Ok(modified_variables)
       }
       cuentitos_common::Block::Choice { id: _, settings: _ } => {
         self.update_choices()?;
-        Ok(())
+        Ok(modified_variables)
       }
       cuentitos_common::Block::Bucket {
         name: _,
         settings: _,
       } => {
         if let Some(next) = self.get_random_block_from_bucket(block.get_settings())? {
-          self.push_stack(next)
+          modified_variables.append(&mut self.push_stack(next)?);
+          Ok(modified_variables)
         } else {
-          self.update_choices()
+          self.update_choices()?;
+          Ok(modified_variables)
         }
       }
       cuentitos_common::Block::Divert { next, settings: _ } => {
         let next = self.get_divert_next(next)?;
-        self.push_stack(next)
+        modified_variables.append(&mut self.push_stack(next)?);
+        Ok(modified_variables)
       }
     }
   }
@@ -586,7 +596,7 @@ impl Runtime {
       NextBlock::Section(section_key) => self.get_section_block_id(&section_key),
     }
   }
-  fn update_stack(&mut self) -> Result<(), RuntimeError> {
+  fn update_stack(&mut self) -> Result<ModifiedVariables, RuntimeError> {
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
     }
@@ -643,7 +653,7 @@ impl Runtime {
     }
   }
 
-  fn pop_stack_and_find_next(&mut self) -> Result<(), RuntimeError> {
+  fn pop_stack_and_find_next(&mut self) -> Result<ModifiedVariables, RuntimeError> {
     let last_block_id: usize = match self.block_stack.last() {
       Some(id) => *id,
       None => return Err(RuntimeError::EmptyStack),
@@ -1142,11 +1152,14 @@ mod test {
     };
 
     let output = runtime.next_block().unwrap();
-    let expected_output = crate::Block {
-      text: "parent".to_string(),
-      choices: vec!["1".to_string(), "2".to_string()],
-      ..Default::default()
-    };
+    let expected_output = (
+      crate::Block {
+        text: "parent".to_string(),
+        choices: vec!["1".to_string(), "2".to_string()],
+        ..Default::default()
+      },
+      Vec::default(),
+    );
 
     assert_eq!(output, expected_output);
     assert_eq!(runtime.block_stack, vec![0]);
@@ -2517,7 +2530,7 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(database);
-    let output_tags = runtime.next_block().unwrap().tags;
+    let output_tags = runtime.next_block().unwrap().0.tags;
     assert_eq!(tags, output_tags);
   }
 
@@ -2541,7 +2554,7 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(database);
-    let output_functions = runtime.next_block().unwrap().functions;
+    let output_functions = runtime.next_block().unwrap().0.functions;
     assert_eq!(functions, output_functions);
   }
 
