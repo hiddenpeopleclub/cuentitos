@@ -1,7 +1,7 @@
 mod runtime;
 pub use cuentitos_common::Database;
 pub use runtime::Block;
-pub use runtime::Divert;
+pub use runtime::DivertData;
 pub use runtime::Runtime;
 
 mod game_state;

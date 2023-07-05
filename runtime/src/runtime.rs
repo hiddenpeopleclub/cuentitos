@@ -27,7 +27,7 @@ pub struct Block {
   pub functions: Vec<Function>,
 }
 
-pub type Divert = SectionKey;
+pub type DivertData = SectionKey;
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Runtime {
@@ -44,7 +44,6 @@ pub struct Runtime {
 
 impl Runtime {
   pub fn new(database: Database) -> Runtime {
-    println!("{:?}", database);
     let game_state: GameState = GameState::from_config(&database.config);
     let current_locale = database.i18n.default_locale.clone();
     Runtime {
@@ -80,32 +79,12 @@ impl Runtime {
     self.rng = Some(Pcg32::seed_from_u64(seed));
   }
 
-  pub fn jump_to_section(&mut self, divert: &Divert) -> Result<(), RuntimeError> {
-    let current_section = self.game_state.current_section.clone();
-    if divert.subsection.is_none() {
-      if let Some(current_section) = current_section {
-        let key = SectionKey {
-          section: current_section,
-          subsection: Some(divert.section.clone()),
-        };
-        if let Some(block_id) = self.database.sections.get(&key) {
-          self.block_stack.clear();
-          return self.push_stack(*block_id);
-        }
-      }
-    }
-
-    if let Some(block_id) = self.database.sections.get(divert) {
-      self.block_stack.clear();
-      self.game_state.current_section = Some(divert.section.clone());
-      self.game_state.current_subsection = None;
-      self.push_stack(*block_id)
-    } else {
-      Err(RuntimeError::SectionDoesntExist(divert.clone()))
-    }
+  pub fn divert(&mut self, divert: &DivertData) -> Result<(), RuntimeError> {
+    let next = self.get_section_block_id(divert)?;
+    self.push_stack(next)
   }
 
-  fn get_section_block_id(&mut self, divert: &Divert) -> Result<BlockId, RuntimeError> {
+  fn get_section_block_id(&mut self, divert: &DivertData) -> Result<BlockId, RuntimeError> {
     let current_section = self.game_state.current_section.clone();
     if divert.subsection.is_none() {
       if let Some(current_section) = current_section {
@@ -137,6 +116,10 @@ impl Runtime {
       self.pop_stack_and_find_next()?;
     }
     self.current_block()
+  }
+
+  pub fn get_block(&self, id: BlockId) -> &cuentitos_common::Block {
+    &self.database.blocks[id]
   }
 
   pub fn current_block(&mut self) -> Result<Block, RuntimeError> {
@@ -212,6 +195,7 @@ impl Runtime {
     if choices[choice] >= self.database.blocks.len() {
       return Err(RuntimeError::InvalidBlockId(choices[choice]));
     }
+
     self.push_stack(choices[choice])?;
     self.next_block()
   }
@@ -586,7 +570,6 @@ impl Runtime {
         }
       }
       cuentitos_common::Block::Divert { next, settings: _ } => {
-        println!("{:?}", self.get_block(id).clone());
         let next = self.get_divert_next(next)?;
         self.push_stack(next)
       }
@@ -598,7 +581,8 @@ impl Runtime {
       NextBlock::BlockId(id) => Ok(id),
       NextBlock::EndOfFile => {
         self.reset();
-        Err(RuntimeError::FrequencyModifierWithProbability)},
+        Err(RuntimeError::StoryFinished)
+      }
       NextBlock::Section(section_key) => self.get_section_block_id(&section_key),
     }
   }
@@ -681,19 +665,10 @@ impl Runtime {
     let mut previous_block_found = false;
     for sibling in &parent_settings.children {
       if previous_block_found {
-        match self.get_block(*sibling).clone() {
-          cuentitos_common::Block::Text { id: _, settings: _ } => {
-            return self.push_stack(*sibling);
-          }
-          cuentitos_common::Block::Bucket { name: _, settings } => {
-            if let Some(new_block) = self.get_random_block_from_bucket(&settings.clone())? {
-              return self.push_stack(new_block);
-            }
-          }
-          _ => {
-            continue;
-          }
+        if let cuentitos_common::Block::Choice { id: _, settings: _ } = self.get_block(*sibling) {
+          continue;
         }
+        return self.push_stack(*sibling);
       }
       if *sibling == last_block_id {
         previous_block_found = true;
@@ -729,10 +704,6 @@ impl Runtime {
       }
     }
     Ok(None)
-  }
-
-  fn get_block(&self, id: BlockId) -> &cuentitos_common::Block {
-    &self.database.blocks[id]
   }
 
   fn update_choices(&mut self) -> Result<(), RuntimeError> {
@@ -782,11 +753,11 @@ mod test {
 
   use std::{collections::HashMap, fmt::Display, str::FromStr, vec};
 
-  use crate::{runtime::Divert, Runtime, RuntimeError};
+  use crate::{runtime::DivertData, Runtime, RuntimeError};
   use cuentitos_common::{
     condition::ComparisonOperator, modifier::ModifierOperator, Block, BlockSettings, Chance,
     Condition, Config, Database, FrequencyModifier, Function, I18n, LanguageDb, LanguageId,
-    Modifier, NextBlock, Requirement, SectionKey, VariableKind,
+    Modifier, Requirement, SectionKey, VariableKind, NextBlock,
   };
 
   #[test]
@@ -797,7 +768,7 @@ mod test {
   }
 
   #[test]
-  fn jump_to_section_works_correctly() {
+  fn divert_works_correctly() {
     let section_1 = Block::Section {
       id: "section_1".to_string(),
       settings: BlockSettings {
@@ -858,19 +829,19 @@ mod test {
       ..Default::default()
     };
     runtime
-      .jump_to_section(&Divert {
+      .divert(&DivertData {
         section: "section_2".to_string(),
         subsection: Some("subsection".to_string()),
       })
       .unwrap();
     assert_eq!(runtime.block_stack, vec![2, 4]);
     runtime
-      .jump_to_section(&Divert {
+      .divert(&DivertData {
         section: "section_1".to_string(),
         subsection: None,
       })
       .unwrap();
-    assert_eq!(runtime.block_stack, vec![0, 3]);
+    assert_eq!(runtime.block_stack, vec![2, 4, 0, 3]);
   }
 
   #[test]
@@ -2479,7 +2450,7 @@ mod test {
     let section = Block::Section {
       id: "section".to_string(),
       settings: BlockSettings {
-        children: vec![1, 2],
+        children: vec![1, 2, 3],
         ..Default::default()
       },
     };
@@ -2502,20 +2473,18 @@ mod test {
       settings,
     };
 
-    let settings = BlockSettings {
-      //next: NextBlock::Section(SectionKey {
-      //  section: "section".to_string(),
-      //  subsection: None,
-      //}),
-      ..Default::default()
-    };
     let text_2 = Block::Text {
       id: String::default(),
-      settings,
+      settings: BlockSettings::default(),
+    };
+
+    let divert = Block::Divert {
+      next: NextBlock::Section(SectionKey { section: "section".to_string(), subsection: None }),
+      settings: BlockSettings::default(),
     };
 
     let database = Database {
-      blocks: vec![section, text_1, text_2],
+      blocks: vec![section, text_1, text_2, divert],
       sections,
       ..Default::default()
     };
@@ -2527,7 +2496,6 @@ mod test {
     assert_eq!(2, *runtime.block_stack.last().unwrap());
     runtime.update_stack().unwrap();
     assert_eq!(2, *runtime.block_stack.last().unwrap());
-    assert!(false);
   }
 
   #[test]
@@ -2670,12 +2638,9 @@ mod test {
   }
   #[test]
   fn throws_error_when_story_finishes() {
-    let text = Block::Text {
-      id: String::default(),
-      settings: BlockSettings {
-        // next: NextBlock::EndOfFile,
-        ..Default::default()
-      },
+    let text: Block = Block::Divert {
+      next: NextBlock::EndOfFile,
+      settings: BlockSettings::default(),
     };
 
     let database = Database {
@@ -2683,35 +2648,28 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(database);
-    runtime.update_stack().unwrap();
     let err = runtime.update_stack().unwrap_err();
     assert_eq!(err, RuntimeError::StoryFinished);
-    assert!(false);
   }
 
   #[test]
-  fn jump_to_section_throws_error_if_section_doesnt_exist() {
-    let text = Block::Text {
-      id: String::default(),
-      settings: BlockSettings {
-        // next: NextBlock::EndOfFile,
-        ..Default::default()
-      },
-    };
+  fn divert_throws_error_if_section_doesnt_exist() {
 
-    let database = Database {
-      blocks: vec![text],
-      ..Default::default()
-    };
-    let mut runtime = Runtime::new(database);
     let section_key = SectionKey {
       section: "section".to_string(),
       subsection: Some("subsection".to_string()),
     };
-    let err = runtime.jump_to_section(&section_key.clone()).unwrap_err();
-
+    let divert = Block::Divert {
+      next: NextBlock::Section(section_key.clone()),
+      settings: BlockSettings::default()
+    };
+    let database = Database {
+      blocks: vec![divert],
+      ..Default::default()
+    };
+    let mut runtime = Runtime::new(database);
+    let err = runtime.divert(&section_key.clone()).unwrap_err();
     assert_eq!(err, RuntimeError::SectionDoesntExist(section_key));
-    assert!(false);
   }
 
   #[test]

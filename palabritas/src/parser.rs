@@ -1730,7 +1730,7 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    // //Command = {NEWLINE ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert) }
+    // //Command = {NEWLINE ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier) }
     let mut block_settings = BlockSettings::default();
     let mut config = Config::default();
 

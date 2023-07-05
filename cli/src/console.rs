@@ -85,16 +85,16 @@ impl Console {
             if let Some(section_str) = splitted.next() {
               let subsection = splitted.next();
               let section = match subsection {
-                Some(subsection) => Divert {
+                Some(subsection) => DivertData {
                   section: section_str.to_string(),
                   subsection: Some(subsection.to_string()),
                 },
-                None => Divert {
+                None => DivertData {
                   section: section_str.to_string(),
                   subsection: None,
                 },
               };
-              match runtime.jump_to_section(&section) {
+              match runtime.divert(&section) {
                 Ok(_) => print_output_text(runtime.current_block(), &runtime),
                 Err(err) => println!("{}", err),
               }

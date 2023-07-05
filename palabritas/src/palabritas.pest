@@ -31,7 +31,7 @@ Subsection = { "##" ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ 
 Text = { !Indentation ~ !ReservedKeywords ~ Chance? ~ String }
 Choice = { "*" ~ " "* ~ Chance? ~ String }
 NamedBucket = { "[" ~ " "* ~ Chance? ~ SnakeCase ~ " "* ~ "]" }
-Divert = { Chance? ~ "->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)? ~ " "*}
+Divert = { Chance? ~ "->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)? }
 
 NewBlock = {
     // The first line in the block

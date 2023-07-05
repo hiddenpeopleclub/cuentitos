@@ -7,7 +7,7 @@ use std::{
 
 use cuentitos_common::{BlockId, SectionName};
 
-use crate::Divert;
+use crate::DivertData;
 type VariableName = String;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -16,7 +16,7 @@ pub enum RuntimeError {
   WaitingForChoice(Vec<String>),
   SectionAtLowerLevel(SectionName),
   StoryFinished,
-  SectionDoesntExist(Divert),
+  SectionDoesntExist(DivertData),
   UnexpectedBlock {
     expected_block: String,
     block_found: String,
