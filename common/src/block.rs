@@ -1,6 +1,7 @@
 use crate::{FrequencyModifier, Function, I18nId, Modifier, Requirement};
 use core::fmt;
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 
 pub type BlockId = usize;
 pub type BucketName = String;
@@ -33,6 +34,29 @@ pub enum NextBlock {
   Section(SectionKey),
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct Script {
+  pub file: String,
+  pub line: usize,
+  pub col: usize,
+}
+
+impl Default for Script {
+  fn default() -> Self {
+    Self {
+      file: Default::default(),
+      line: 1,
+      col: 1,
+    }
+  }
+}
+
+impl Display for Script {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{}:{}:{}", self.file, self.line, self.col)
+  }
+}
+
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq, Clone)]
 pub struct BlockSettings {
   pub children: Vec<BlockId>,
@@ -43,6 +67,7 @@ pub struct BlockSettings {
   pub unique: bool,
   pub tags: Vec<String>,
   pub functions: Vec<Function>,
+  pub script: Script,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq, Clone)]

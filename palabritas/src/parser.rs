@@ -6,7 +6,7 @@ use cuentitos_common::condition::ComparisonOperator;
 use cuentitos_common::modifier::ModifierOperator;
 use cuentitos_common::{
   Block, BlockId, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Function,
-  I18n, Modifier, NextBlock, Requirement, SectionKey,
+  I18n, Modifier, NextBlock, Requirement, Script, SectionKey,
 };
 use pest::{iterators::Pair, Parser};
 
@@ -381,7 +381,14 @@ fn parse_section(
     file: parsing_data.file.clone(),
   };
 
-  let mut settings = BlockSettings::default();
+  let mut settings = BlockSettings {
+    script: Script {
+      file: parsing_data.file.clone(),
+      line: token.line_col().0,
+      col: token.line_col().1,
+    },
+    ..Default::default()
+  };
   let mut id: String = String::default();
   //Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
   for inner_token in token.into_inner() {
@@ -445,7 +452,15 @@ fn parse_subsection(
     file: parsing_data.file.clone(),
   };
 
-  let mut settings = BlockSettings::default();
+  let mut settings = BlockSettings {
+    script: Script {
+      file: parsing_data.file.clone(),
+      line: token.line_col().0,
+      col: token.line_col().1,
+    },
+    ..Default::default()
+  };
+
   let mut id: String = String::default();
 
   for inner_token in token.into_inner() {
@@ -551,6 +566,12 @@ fn parse_block(
 
   update_i18n(&mut block, &mut parsing_data.i18n, line_col.0);
 
+  block.get_settings_mut().script = Script {
+    file: parsing_data.file.clone(),
+    line: line_col.0,
+    col: line_col.1,
+  };
+
   parsing_data.blocks[child_order].push(block);
 
   let block_id = parsing_data.blocks[child_order].len() - 1;
@@ -567,6 +588,7 @@ fn parse_block(
       line_col,
       &parsing_data.file,
     )?;
+
     update_children_probabilities_to_frequency(
       parsing_data.blocks[child_order].len() - 1,
       &mut parsing_data.blocks,
@@ -1722,7 +1744,14 @@ mod test {
 
     let expected_value = Block::Subsection {
       id: subsection_identifier_1,
-      settings: BlockSettings::default(),
+      settings: BlockSettings {
+        script: Script {
+          file: String::default(),
+          line: 2,
+          col: 1,
+        },
+        ..Default::default()
+      },
     };
     assert_eq!(sub_section_1, expected_value);
 
@@ -1730,7 +1759,14 @@ mod test {
 
     let expected_value = Block::Subsection {
       id: subsection_identifier_2,
-      settings: BlockSettings::default(),
+      settings: BlockSettings {
+        script: Script {
+          file: String::default(),
+          line: 3,
+          col: 1,
+        },
+        ..Default::default()
+      },
     };
     assert_eq!(sub_section_2, expected_value);
   }

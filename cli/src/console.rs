@@ -64,8 +64,23 @@ impl Console {
           }
         }
         "?" => {
-          if let Some(current_id) = runtime.block_stack.last() {
-            println!("Current Text Id: {}", current_id);
+          if !runtime.block_stack.is_empty() {
+            match runtime.current_block() {
+              Ok(block) => {
+                println!("Current Block:");
+                println!("  Text: {}", block.text);
+                println!("  Script: {}", block.script);
+              }
+              Err(error) => print_runtime_error(error, &runtime),
+            }
+            match runtime.peek_next_block() {
+              Ok((block, _)) => {
+                println!("Next Block:");
+                println!("  Text: {}", block.text);
+                println!("  Script: {}", block.script);
+              }
+              Err(error) => print_runtime_error(error, &runtime),
+            }
           }
           println!("Variables: ");
           print_all_variables(&runtime)
