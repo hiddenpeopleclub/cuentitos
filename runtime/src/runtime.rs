@@ -757,7 +757,7 @@ mod test {
   use cuentitos_common::{
     condition::ComparisonOperator, modifier::ModifierOperator, Block, BlockSettings, Chance,
     Condition, Config, Database, FrequencyModifier, Function, I18n, LanguageDb, LanguageId,
-    Modifier, Requirement, SectionKey, VariableKind, NextBlock,
+    Modifier, NextBlock, Requirement, SectionKey, VariableKind,
   };
 
   #[test]
@@ -2479,7 +2479,10 @@ mod test {
     };
 
     let divert = Block::Divert {
-      next: NextBlock::Section(SectionKey { section: "section".to_string(), subsection: None }),
+      next: NextBlock::Section(SectionKey {
+        section: "section".to_string(),
+        subsection: None,
+      }),
       settings: BlockSettings::default(),
     };
 
@@ -2654,14 +2657,13 @@ mod test {
 
   #[test]
   fn divert_throws_error_if_section_doesnt_exist() {
-
     let section_key = SectionKey {
       section: "section".to_string(),
       subsection: Some("subsection".to_string()),
     };
     let divert = Block::Divert {
       next: NextBlock::Section(section_key.clone()),
-      settings: BlockSettings::default()
+      settings: BlockSettings::default(),
     };
     let database = Database {
       blocks: vec![divert],

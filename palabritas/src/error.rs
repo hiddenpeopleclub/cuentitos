@@ -1,14 +1,14 @@
 use std::{error::Error, fmt::Display, path::PathBuf};
 
-use cuentitos_common::SectionKey;
+use cuentitos_common::{SectionKey, VariableKind};
 
 use crate::parser::Rule;
 #[derive(Debug, PartialEq, Eq)]
 pub enum PalabritasError {
   FileIsEmpty,
   ParseError {
-    file: String,
     info: ErrorInfo,
+    reason: String,
   },
   PathIsNotAFile(PathBuf),
   PathDoesntExist(PathBuf),
@@ -34,16 +34,16 @@ pub enum PalabritasError {
     variable: String,
   },
   InvalidVariableValue {
-    info: ErrorInfo,
+    info: Box<ErrorInfo>,
     variable: String,
     value: String,
-    variable_type: String,
+    variable_type: VariableKind,
   },
   InvalidVariableOperator {
-    info: ErrorInfo,
+    info: Box<ErrorInfo>,
     variable: String,
     operator: String,
-    variable_type: String,
+    variable_type: VariableKind,
   },
   FrequencyOutOfBucket(ErrorInfo),
   FrequencyModifierWithoutFrequencyChance(ErrorInfo),
@@ -54,11 +54,16 @@ pub struct ErrorInfo {
   pub line: usize,
   pub col: usize,
   pub string: String,
+  pub file: String,
 }
 
 impl Display for ErrorInfo {
   fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-    write!(f, "{}:{}  {}", self.line, self.col, self.string)
+    write!(
+      f,
+      "{}:{}:{}  {}",
+      self.file, self.line, self.col, self.string
+    )
   }
 }
 impl Error for PalabritasError {}
@@ -68,8 +73,8 @@ impl Display for PalabritasError {
       PalabritasError::FileIsEmpty => {
         write!(f, "File provided is empty.")
       }
-      PalabritasError::ParseError { file, info } => {
-        write!(f, "{}:{}", file, info)
+      PalabritasError::ParseError { info, reason } => {
+        write!(f, "{}\n{}", info, reason)
       }
       PalabritasError::BucketSumIsNot1(info) => {
         write!(

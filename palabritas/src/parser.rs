@@ -18,6 +18,29 @@ use crate::error::{ErrorInfo, PalabritasError};
 #[grammar = "palabritas.pest"]
 struct PalabritasParser;
 
+#[derive(Default)]
+struct ParsingData {
+  pub blocks: Vec<Vec<Block>>,
+  pub i18n: I18n,
+  pub config: Config,
+  pub section_list: Vec<SectionKey>,
+  pub file: String,
+  pub current_section: Option<String>,
+}
+
+impl ParsingData {
+  fn new(config: Config, section_list: Vec<SectionKey>, file: String) -> Self {
+    ParsingData {
+      blocks: Vec::default(),
+      i18n: I18n::from_config(&config),
+      config,
+      section_list,
+      file,
+      current_section: None,
+    }
+  }
+}
+
 pub fn parse_database_from_path<P>(path: P) -> Result<Database, PalabritasError>
 where
   P: AsRef<Path>,
@@ -27,14 +50,14 @@ where
       path.as_ref().to_path_buf(),
     ));
   }
-  let palabritas_path = match path.as_ref().is_file() {
+  let story_path = match path.as_ref().is_file() {
     true => path.as_ref().to_path_buf(),
     false => {
       //TODO: search for it instead
       return Err(PalabritasError::PathIsNotAFile(path.as_ref().to_path_buf()));
     }
   };
-  let mut config_path = palabritas_path.clone();
+  let mut config_path = story_path.clone();
   config_path.pop();
   let config = match Config::load(&config_path) {
     Ok(config) => config,
@@ -46,21 +69,27 @@ where
     }
   };
 
-  let str = match std::fs::read_to_string(&palabritas_path) {
+  let str = match std::fs::read_to_string(&story_path) {
     Ok(str) => str,
     Err(e) => {
       return Err(PalabritasError::CantReadFile {
-        path: palabritas_path,
+        path: story_path,
         message: e.to_string(),
       });
     }
   };
 
   match PalabritasParser::parse(Rule::Database, &str) {
-    Ok(mut result) => match parse_database(result.next().unwrap(), &config) {
-      Ok(database) => Ok(database),
-      Err(error) => Err(error),
-    },
+    Ok(mut result) => {
+      let token = result.next().unwrap();
+      let file = story_path.display().to_string();
+      let parsing_data = ParsingData::new(config, find_all_section_list(&token, &file)?, file);
+
+      match parse_database(token, parsing_data) {
+        Ok(database) => Ok(database),
+        Err(error) => Err(error),
+      }
+    }
     Err(error) => {
       let (line, col) = match error.line_col {
         LineColLocation::Pos(line_col) => line_col,
@@ -68,64 +97,58 @@ where
       };
 
       Err(PalabritasError::ParseError {
-        file: palabritas_path.display().to_string(),
+        reason: error.to_string(),
         info: ErrorInfo {
           line,
           col,
-          string: error.to_string(),
+          string: String::default(),
+          file: story_path.display().to_string(),
         },
       })
     }
   }
 }
 
-pub fn find_all_section_list(token: &Pair<Rule>) -> Result<Vec<SectionKey>, PalabritasError> {
-  match_rule(token, Rule::Database)?;
+pub fn find_all_section_list(
+  token: &Pair<Rule>,
+  file: &str,
+) -> Result<Vec<SectionKey>, PalabritasError> {
+  match_rule(token, Rule::Database, file)?;
   let mut section_list = Vec::default(); //  pub section_list: HashMap<SectionId, BlockId>
   for inner_token in token.clone().into_inner() {
     if inner_token.as_rule() == Rule::Section {
-      parse_section_key(inner_token, &mut section_list)?;
+      parse_section_key(inner_token, &mut section_list, file)?;
     }
   }
 
   Ok(section_list)
 }
-pub fn parse_database(token: Pair<Rule>, config: &Config) -> Result<Database, PalabritasError> {
-  match_rule(&token, Rule::Database)?;
 
-  let mut blocks: Vec<Vec<Block>> = Vec::default();
-  let mut i18n = I18n::from_config(config);
+fn parse_database(
+  token: Pair<Rule>,
+  mut parsing_data: ParsingData,
+) -> Result<Database, PalabritasError> {
+  match_rule(&token, Rule::Database, &parsing_data.file)?;
+
+  //let mut blocks: Vec<Vec<Block>> = Vec::default();
+  // let mut i18n = I18n::from_config(config);
 
   let mut section_map = HashMap::default();
-  let section_list = find_all_section_list(&token)?;
+  //let section_list = find_all_section_list(&token)?;
+
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Block => {
-        parse_block(
-          inner_token,
-          &mut blocks,
-          0,
-          &mut i18n,
-          config,
-          &section_list,
-          &None,
-        )?;
+        parse_block(inner_token, &mut parsing_data, 0)?;
       }
       Rule::Section => {
-        parse_section(
-          inner_token,
-          &mut blocks,
-          &mut section_map,
-          &mut i18n,
-          config,
-          &section_list,
-        )?;
+        parse_section(inner_token, &mut parsing_data, &mut section_map)?;
       }
       _ => {}
     }
   }
 
-  if blocks.is_empty() {
+  if parsing_data.blocks.is_empty() {
     return Err(PalabritasError::FileIsEmpty);
   }
 
@@ -133,17 +156,17 @@ pub fn parse_database(token: Pair<Rule>, config: &Config) -> Result<Database, Pa
     next: NextBlock::EndOfFile,
     settings: BlockSettings::default(),
   };
-  blocks[0].push(end_block);
+  parsing_data.blocks[0].push(end_block);
 
   let mut ordered_blocks = Vec::default();
 
-  for child_level in 0..blocks.len() {
+  for child_level in 0..parsing_data.blocks.len() {
     let mut index_offset = 0;
-    for childs_in_level in blocks.iter().take(child_level + 1) {
+    for childs_in_level in parsing_data.blocks.iter().take(child_level + 1) {
       index_offset += childs_in_level.len();
     }
 
-    for block in &mut blocks[child_level] {
+    for block in &mut parsing_data.blocks[child_level] {
       let settings = block.get_settings_mut();
       for child in &mut settings.children {
         *child += index_offset;
@@ -156,39 +179,44 @@ pub fn parse_database(token: Pair<Rule>, config: &Config) -> Result<Database, Pa
   Ok(Database {
     blocks: ordered_blocks,
     sections: section_map,
-    i18n,
-    config: config.clone(),
+    i18n: parsing_data.i18n,
+    config: parsing_data.config,
   })
 }
 
 pub fn parse_database_str(input: &str, config: &Config) -> Result<Database, PalabritasError> {
   let token = parse_str(input, Rule::Database)?;
-  parse_database(token, config)
+  let parsing_data = ParsingData::new(
+    config.clone(),
+    find_all_section_list(&token, &String::default())?,
+    String::default(),
+  );
+  parse_database(token, parsing_data)
 }
 
 pub fn parse_text_str(input: &str) -> Result<Block, PalabritasError> {
   let token = parse_str(input, Rule::Text)?;
-  parse_text(token)
+  parse_text(token, &String::default())
 }
 
 pub fn parse_named_bucket_str(input: &str) -> Result<Block, PalabritasError> {
   let token = parse_str(input, Rule::NamedBucket)?;
-  parse_named_bucket(token)
+  parse_named_bucket(token, &String::default())
 }
 
 pub fn parse_chance_str(input: &str) -> Result<Chance, PalabritasError> {
   let token = parse_str(input, Rule::Chance)?;
-  parse_chance(token)
+  parse_chance(token, &String::default())
 }
 
 pub fn parse_condition_str(input: &str, config: &Config) -> Result<Condition, PalabritasError> {
   let token = parse_str(input, Rule::Condition)?;
-  parse_condition(token, config)
+  parse_condition(token, config, &String::default())
 }
 
 pub fn parse_choice_str(input: &str) -> Result<Block, PalabritasError> {
   let token = parse_str(input, Rule::Choice)?;
-  parse_choice(token)
+  parse_choice(token, &String::default())
 }
 
 pub fn parse_section_str(
@@ -197,24 +225,19 @@ pub fn parse_section_str(
   section_list: &[SectionKey],
 ) -> Result<Block, PalabritasError> {
   let token = parse_str(input, Rule::Section)?;
-  parse_section(
-    token,
-    &mut Vec::default(),
-    &mut HashMap::default(),
-    &mut I18n::default(),
-    config,
-    section_list,
-  )
+  let mut parsing_data =
+    ParsingData::new(config.clone(), section_list.to_owned(), String::default());
+  parse_section(token, &mut parsing_data, &mut HashMap::default())
 }
 
 pub fn parse_tag_str(input: &str) -> Result<String, PalabritasError> {
   let token = parse_str(input, Rule::Tag)?;
-  parse_tag(token)
+  parse_tag(token, &String::default())
 }
 
 pub fn parse_function_str(input: &str) -> Result<Function, PalabritasError> {
   let token = parse_str(input, Rule::Function)?;
-  parse_function(token)
+  parse_function(token, &String::default())
 }
 
 pub fn parse_divert_str(
@@ -222,12 +245,12 @@ pub fn parse_divert_str(
   section_list: &[SectionKey],
 ) -> Result<Block, PalabritasError> {
   let token = parse_str(input, Rule::Divert)?;
-  parse_divert(token, section_list, &None)
+  parse_divert(token, section_list, &None, &String::default())
 }
 
 pub fn parse_modifier_str(input: &str, config: &Config) -> Result<Modifier, PalabritasError> {
   let token = parse_str(input, Rule::Modifier)?;
-  parse_modifier(token, config)
+  parse_modifier(token, config, &String::default())
 }
 
 pub fn parse_frequency_str(
@@ -235,22 +258,22 @@ pub fn parse_frequency_str(
   config: &Config,
 ) -> Result<FrequencyModifier, PalabritasError> {
   let token = parse_str(input, Rule::Frequency)?;
-  parse_frequency(token, config)
+  parse_frequency(token, config, &String::default())
 }
 
 pub fn parse_requirement_str(input: &str, config: &Config) -> Result<Requirement, PalabritasError> {
   let token = parse_str(input, Rule::Requirement)?;
-  parse_requirement(token, config)
+  parse_requirement(token, config, &String::default())
 }
 
 pub fn parse_comparison_operator_str(input: &str) -> Result<ComparisonOperator, PalabritasError> {
   let token = parse_str(input, Rule::ComparisonOperator)?;
-  parse_comparison_operator(token)
+  parse_comparison_operator(token, &String::default())
 }
 
 pub fn parse_modifier_operator_str(input: &str) -> Result<ModifierOperator, PalabritasError> {
   let token = parse_str(input, Rule::ModifierOperator)?;
-  parse_modifier_operator(token)
+  parse_modifier_operator(token, &String::default())
 }
 
 fn parse_str(input: &str, rule: Rule) -> Result<Pair<'_, Rule>, PalabritasError> {
@@ -258,11 +281,12 @@ fn parse_str(input: &str, rule: Rule) -> Result<Pair<'_, Rule>, PalabritasError>
     Ok(mut pairs) => match pairs.next() {
       Some(token) => Ok(token),
       None => Err(PalabritasError::ParseError {
-        file: input.to_string(),
+        reason: format!("{:?} not found", rule),
         info: ErrorInfo {
           line: 1,
           col: 1,
-          string: "Modifier not found".to_string(),
+          string: input.to_string(),
+          file: String::default(),
         },
       }),
     },
@@ -273,11 +297,12 @@ fn parse_str(input: &str, rule: Rule) -> Result<Pair<'_, Rule>, PalabritasError>
       };
 
       Err(PalabritasError::ParseError {
-        file: input.to_string(),
+        reason: error.to_string(),
         info: ErrorInfo {
           line,
           col,
-          string: error.to_string(),
+          string: input.to_string(),
+          file: String::default(),
         },
       })
     }
@@ -287,8 +312,9 @@ fn parse_str(input: &str, rule: Rule) -> Result<Pair<'_, Rule>, PalabritasError>
 fn parse_section_key(
   token: Pair<Rule>,
   section_list: &mut Vec<SectionKey>,
+  file: &str,
 ) -> Result<(), PalabritasError> {
-  match_rule(&token, Rule::Section)?;
+  match_rule(&token, Rule::Section, file)?;
   let mut id = String::default();
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
@@ -296,7 +322,7 @@ fn parse_section_key(
         id = inner_token.as_str().to_string();
       }
       Rule::Subsection => {
-        parse_subsection_key(inner_token, &id, section_list)?;
+        parse_subsection_key(inner_token, &id, section_list, file)?;
       }
       _ => {}
     }
@@ -313,8 +339,9 @@ fn parse_subsection_key(
   token: Pair<Rule>,
   section: &str,
   section_list: &mut Vec<SectionKey>,
+  file: &str,
 ) -> Result<(), PalabritasError> {
-  match_rule(&token, Rule::Subsection)?;
+  match_rule(&token, Rule::Subsection, file)?;
   let mut id = String::default();
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
@@ -322,7 +349,7 @@ fn parse_subsection_key(
         id = inner_token.as_str().to_string();
       }
       Rule::Subsection => {
-        parse_subsection_key(inner_token, &id, section_list)?;
+        parse_subsection_key(inner_token, &id, section_list, file)?;
       }
       _ => {}
     }
@@ -337,23 +364,21 @@ fn parse_subsection_key(
 
 fn parse_section(
   token: Pair<Rule>,
-  blocks: &mut Vec<Vec<Block>>,
+  parsing_data: &mut ParsingData,
   section_map: &mut HashMap<SectionKey, BlockId>,
-  i18n: &mut I18n,
-  config: &Config,
-  section_list: &[SectionKey],
 ) -> Result<Block, PalabritasError> {
-  match_rule(&token, Rule::Section)?;
-  if blocks.is_empty() {
-    blocks.push(Vec::default());
+  match_rule(&token, Rule::Section, &parsing_data.file)?;
+  if parsing_data.blocks.is_empty() {
+    parsing_data.blocks.push(Vec::default());
   }
 
-  blocks[0].push(Block::default());
-  let block_id = blocks[0].len() - 1;
+  parsing_data.blocks[0].push(Block::default());
+  let block_id = parsing_data.blocks[0].len() - 1;
   let error_info = ErrorInfo {
     line: token.line_col().0,
     col: token.line_col().1,
     string: token.as_str().to_string(),
+    file: parsing_data.file.clone(),
   };
 
   let mut settings = BlockSettings::default();
@@ -363,34 +388,24 @@ fn parse_section(
     match inner_token.as_rule() {
       Rule::Identifier => {
         id = inner_token.as_str().to_string();
+        parsing_data.current_section = Some(id.clone());
       }
       Rule::Command => {
-        add_command_to_settings(inner_token, &mut settings, config)?;
+        add_command_to_settings(
+          inner_token,
+          &mut settings,
+          &parsing_data.config,
+          &parsing_data.file,
+        )?;
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
-          parse_block(
-            inner_blocks_token,
-            blocks,
-            1,
-            i18n,
-            config,
-            section_list,
-            &Some(id.clone()),
-          )?;
-          settings.children.push(blocks[1].len() - 1);
+          parse_block(inner_blocks_token, parsing_data, 1)?;
+          settings.children.push(parsing_data.blocks[1].len() - 1);
         }
       }
       Rule::Subsection => {
-        parse_subsection(
-          inner_token,
-          blocks,
-          &id,
-          section_map,
-          i18n,
-          config,
-          section_list,
-        )?;
+        parse_subsection(inner_token, parsing_data, section_map)?;
       }
       _ => {}
     }
@@ -405,32 +420,29 @@ fn parse_section(
   );
 
   let section = Block::Section { id, settings };
-  check_invalid_frequency(&section, error_info, blocks, 0)?;
-  blocks[0][block_id] = section.clone();
+  check_invalid_frequency(&section, error_info, &parsing_data.blocks, 0)?;
+  parsing_data.blocks[0][block_id] = section.clone();
 
   Ok(section)
 }
 
 fn parse_subsection(
   token: Pair<Rule>,
-  blocks: &mut Vec<Vec<Block>>,
-  section_name: &str,
+  parsing_data: &mut ParsingData,
   section_map: &mut HashMap<SectionKey, BlockId>,
-  i18n: &mut I18n,
-  config: &Config,
-  section_list: &[SectionKey],
 ) -> Result<(), PalabritasError> {
-  match_rule(&token, Rule::Subsection)?;
-  if blocks.is_empty() {
-    blocks.push(Vec::default());
+  match_rule(&token, Rule::Subsection, &parsing_data.file)?;
+  if parsing_data.blocks.is_empty() {
+    parsing_data.blocks.push(Vec::default());
   }
 
-  blocks[0].push(Block::default());
-  let block_id = blocks[0].len() - 1;
+  parsing_data.blocks[0].push(Block::default());
+  let block_id = parsing_data.blocks[0].len() - 1;
   let error_info = ErrorInfo {
     line: token.line_col().0,
     col: token.line_col().1,
     string: token.as_str().to_string(),
+    file: parsing_data.file.clone(),
   };
 
   let mut settings = BlockSettings::default();
@@ -442,32 +454,21 @@ fn parse_subsection(
         id = inner_token.as_str().to_string();
       }
       Rule::Command => {
-        add_command_to_settings(inner_token, &mut settings, config)?;
+        add_command_to_settings(
+          inner_token,
+          &mut settings,
+          &parsing_data.config,
+          &parsing_data.file,
+        )?;
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
-          parse_block(
-            inner_blocks_token,
-            blocks,
-            1,
-            i18n,
-            config,
-            section_list,
-            &Some(section_name.to_string()),
-          )?;
-          settings.children.push(blocks[1].len() - 1);
+          parse_block(inner_blocks_token, parsing_data, 1)?;
+          settings.children.push(parsing_data.blocks[1].len() - 1);
         }
       }
       Rule::Subsection => {
-        parse_subsection(
-          inner_token,
-          blocks,
-          section_name,
-          section_map,
-          i18n,
-          config,
-          section_list,
-        )?;
+        parse_subsection(inner_token, parsing_data, section_map)?;
       }
       _ => {}
     }
@@ -475,28 +476,24 @@ fn parse_subsection(
 
   section_map.insert(
     SectionKey {
-      section: section_name.to_string(),
+      section: parsing_data.current_section.clone().unwrap(),
       subsection: Some(id.clone()),
     },
     block_id,
   );
 
   let subsection = Block::Subsection { id, settings };
-  check_invalid_frequency(&subsection, error_info, blocks, 0)?;
-  blocks[0][block_id] = subsection;
+  check_invalid_frequency(&subsection, error_info, &parsing_data.blocks, 0)?;
+  parsing_data.blocks[0][block_id] = subsection;
 
   Ok(())
 }
 fn parse_block(
   token: Pair<Rule>,
-  blocks: &mut Vec<Vec<Block>>,
+  parsing_data: &mut ParsingData,
   child_order: usize,
-  i18n: &mut I18n,
-  config: &Config,
-  section_list: &[SectionKey],
-  current_section: &Option<String>,
 ) -> Result<(), PalabritasError> {
-  match_rule(&token, Rule::Block)?;
+  match_rule(&token, Rule::Block, &parsing_data.file)?;
 
   //    (NamedBucket | Choice | Text | Divery)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
   let mut block = Block::default();
@@ -505,69 +502,84 @@ fn parse_block(
     line: token.line_col().0,
     col: token.line_col().1,
     string: token.as_str().to_string(),
+    file: parsing_data.file.clone(),
   };
 
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Text => {
-        block = parse_text(inner_token)?;
+        block = parse_text(inner_token, &parsing_data.file)?;
       }
       Rule::NamedBucket => {
-        block = parse_named_bucket(inner_token)?;
+        block = parse_named_bucket(inner_token, &parsing_data.file)?;
       }
       Rule::Choice => {
-        block = parse_choice(inner_token)?;
+        block = parse_choice(inner_token, &parsing_data.file)?;
       }
       Rule::Divert => {
-        block = parse_divert(inner_token, section_list, current_section)?;
+        block = parse_divert(
+          inner_token,
+          &parsing_data.section_list,
+          &parsing_data.current_section,
+          &parsing_data.file,
+        )?;
       }
       Rule::Command => {
-        add_command_to_block(inner_token, &mut block, config)?;
+        add_command_to_block(
+          inner_token,
+          &mut block,
+          &parsing_data.config,
+          &parsing_data.file,
+        )?;
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
           let settings = block.get_settings_mut();
-          parse_block(
-            inner_blocks_token,
-            blocks,
-            child_order + 1,
-            i18n,
-            config,
-            section_list,
-            current_section,
-          )?;
-          settings.children.push(blocks[child_order + 1].len() - 1);
+          parse_block(inner_blocks_token, parsing_data, child_order + 1)?;
+          settings
+            .children
+            .push(parsing_data.blocks[child_order + 1].len() - 1);
         }
       }
       _ => {}
     }
   }
 
-  while child_order >= blocks.len() {
-    blocks.push(Vec::default());
+  while child_order >= parsing_data.blocks.len() {
+    parsing_data.blocks.push(Vec::default());
   }
 
-  update_i18n(&mut block, i18n, line_col.0);
+  update_i18n(&mut block, &mut parsing_data.i18n, line_col.0);
 
-  blocks[child_order].push(block);
+  parsing_data.blocks[child_order].push(block);
 
-  let block_id = blocks[child_order].len() - 1;
+  let block_id = parsing_data.blocks[child_order].len() - 1;
 
   if let Block::Bucket {
     name: _,
     settings: _,
-  } = blocks[child_order][block_id]
+  } = parsing_data.blocks[child_order][block_id]
   {
-    validate_bucket_data(block_id, blocks, child_order, line_col)?;
-    update_children_probabilities_to_frequency(blocks[child_order].len() - 1, blocks, child_order);
-  } else if is_child_unnamed_bucket(block_id, blocks, child_order) {
-    make_childs_bucket(block_id, blocks, child_order);
+    validate_bucket_data(
+      block_id,
+      &mut parsing_data.blocks,
+      child_order,
+      line_col,
+      &parsing_data.file,
+    )?;
+    update_children_probabilities_to_frequency(
+      parsing_data.blocks[child_order].len() - 1,
+      &mut parsing_data.blocks,
+      child_order,
+    );
+  } else if is_child_unnamed_bucket(block_id, &parsing_data.blocks, child_order) {
+    make_childs_bucket(block_id, &mut parsing_data.blocks, child_order);
   }
 
   check_invalid_frequency(
-    &blocks[child_order][block_id],
+    &parsing_data.blocks[child_order][block_id],
     error_info,
-    blocks,
+    &parsing_data.blocks,
     child_order,
   )?;
 
@@ -730,6 +742,7 @@ fn validate_bucket_data(
   blocks: &mut [Vec<Block>],
   child_order: usize,
   line_col: (usize, usize),
+  file: &str,
 ) -> Result<(), PalabritasError> {
   let bucket = &blocks[child_order][bucket];
   let settings = bucket.get_settings();
@@ -765,6 +778,7 @@ fn validate_bucket_data(
           line: inner_line,
           col: 1,
           string,
+          file: file.to_string(),
         }));
       }
       Chance::Frequency(_) => frequency_found = true,
@@ -779,6 +793,7 @@ fn validate_bucket_data(
         line: line_col.0,
         col: line_col.1,
         string: bucket_name,
+        file: file.to_string(),
       }));
     }
   }
@@ -788,6 +803,7 @@ fn validate_bucket_data(
       line: line_col.0,
       col: line_col.1,
       string: bucket_name,
+      file: file.to_string(),
     }));
   }
 
@@ -880,15 +896,15 @@ fn get_blocks_from_new_block(token: Pair<Rule>) -> Vec<Pair<Rule>> {
   blocks
 }
 
-fn parse_named_bucket(token: Pair<Rule>) -> Result<Block, PalabritasError> {
-  match_rule(&token, Rule::NamedBucket)?;
+fn parse_named_bucket(token: Pair<Rule>, file: &str) -> Result<Block, PalabritasError> {
+  match_rule(&token, Rule::NamedBucket, file)?;
 
   let mut name = None;
   let mut settings = BlockSettings::default();
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Chance => {
-        settings.chance = parse_chance(inner_token)?;
+        settings.chance = parse_chance(inner_token, file)?;
       }
       Rule::SnakeCase => {
         name = Some(inner_token.as_str().to_string());
@@ -900,8 +916,8 @@ fn parse_named_bucket(token: Pair<Rule>) -> Result<Block, PalabritasError> {
   Ok(Block::Bucket { name, settings })
 }
 
-fn parse_choice(token: Pair<Rule>) -> Result<Block, PalabritasError> {
-  match_rule(&token, Rule::Choice)?;
+fn parse_choice(token: Pair<Rule>, file: &str) -> Result<Block, PalabritasError> {
+  match_rule(&token, Rule::Choice, file)?;
 
   let mut text = String::default();
   let mut settings = BlockSettings::default();
@@ -909,7 +925,7 @@ fn parse_choice(token: Pair<Rule>) -> Result<Block, PalabritasError> {
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Chance => {
-        settings.chance = parse_chance(inner_token)?;
+        settings.chance = parse_chance(inner_token, file)?;
       }
       Rule::String => {
         text = inner_token.as_str().to_string();
@@ -921,15 +937,15 @@ fn parse_choice(token: Pair<Rule>) -> Result<Block, PalabritasError> {
   Ok(Block::Choice { id: text, settings })
 }
 
-fn parse_text(token: Pair<Rule>) -> Result<Block, PalabritasError> {
-  match_rule(&token, Rule::Text)?;
+fn parse_text(token: Pair<Rule>, file: &str) -> Result<Block, PalabritasError> {
+  match_rule(&token, Rule::Text, file)?;
 
   let mut text = String::default();
   let mut settings = BlockSettings::default();
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Chance => {
-        settings.chance = parse_chance(inner_token)?;
+        settings.chance = parse_chance(inner_token, file)?;
       }
       Rule::String => {
         text = inner_token.as_str().to_string();
@@ -945,33 +961,34 @@ fn add_command_to_settings(
   token: Pair<Rule>,
   settings: &mut BlockSettings,
   config: &Config,
+  file: &str,
 ) -> Result<(), PalabritasError> {
-  match_rule(&token, Rule::Command)?;
+  match_rule(&token, Rule::Command, file)?;
 
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       //Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Function | Unique | Tag) }
       Rule::Requirement => {
-        let requirement = parse_requirement(inner_token, config)?;
+        let requirement = parse_requirement(inner_token, config, file)?;
         settings.requirements.push(requirement);
       }
       Rule::Frequency => {
-        let frequency = parse_frequency(inner_token, config)?;
+        let frequency = parse_frequency(inner_token, config, file)?;
         settings.frequency_modifiers.push(frequency);
       }
       Rule::Modifier => {
-        let modifier = parse_modifier(inner_token, config)?;
+        let modifier = parse_modifier(inner_token, config, file)?;
         settings.modifiers.push(modifier);
       }
       Rule::Unique => {
         settings.unique = true;
       }
       Rule::Tag => {
-        let tag = parse_tag(inner_token)?;
+        let tag = parse_tag(inner_token, file)?;
         settings.tags.push(tag);
       }
       Rule::Function => {
-        let function = parse_function(inner_token)?;
+        let function = parse_function(inner_token, file)?;
         settings.functions.push(function);
       }
       _ => {}
@@ -984,13 +1001,14 @@ fn add_command_to_block(
   token: Pair<Rule>,
   block: &mut Block,
   config: &Config,
+  file: &str,
 ) -> Result<(), PalabritasError> {
   let settings = block.get_settings_mut();
-  add_command_to_settings(token, settings, config)
+  add_command_to_settings(token, settings, config, file)
 }
 
-fn parse_function(token: Pair<Rule>) -> Result<Function, PalabritasError> {
-  match_rule(&token, Rule::Function)?;
+fn parse_function(token: Pair<Rule>, file: &str) -> Result<Function, PalabritasError> {
+  match_rule(&token, Rule::Function, file)?;
 
   let mut name = String::default();
   let mut parameters = Vec::default();
@@ -1005,8 +1023,8 @@ fn parse_function(token: Pair<Rule>) -> Result<Function, PalabritasError> {
   Ok(Function { name, parameters })
 }
 
-fn parse_tag(token: Pair<Rule>) -> Result<String, PalabritasError> {
-  match_rule(&token, Rule::Tag)?;
+fn parse_tag(token: Pair<Rule>, file: &str) -> Result<String, PalabritasError> {
+  match_rule(&token, Rule::Tag, file)?;
 
   let mut name = String::default();
   for inner_token in token.into_inner() {
@@ -1020,8 +1038,9 @@ fn parse_divert(
   token: Pair<Rule>,
   section_list: &[SectionKey],
   current_section: &Option<String>,
+  file: &str,
 ) -> Result<Block, PalabritasError> {
-  match_rule(&token, Rule::Divert)?;
+  match_rule(&token, Rule::Divert, file)?;
   //Divert = { "->"  ~ " "* ~ Identifier ~ ("." ~ Identifier)? }
 
   let mut section: Option<String> = None;
@@ -1031,6 +1050,7 @@ fn parse_divert(
     line: token.line_col().0,
     col: token.line_col().1,
     string: token.as_str().to_string(),
+    file: file.to_string(),
   };
 
   for inner_token in token.into_inner() {
@@ -1061,13 +1081,18 @@ fn parse_divert(
   })
 }
 
-fn parse_modifier(token: Pair<Rule>, config: &Config) -> Result<Modifier, PalabritasError> {
-  match_rule(&token, Rule::Modifier)?;
+fn parse_modifier(
+  token: Pair<Rule>,
+  config: &Config,
+  file: &str,
+) -> Result<Modifier, PalabritasError> {
+  match_rule(&token, Rule::Modifier, file)?;
   //Modifier = { "set" ~ " "+ ~ ( (Identifier ~ " "+ ~ ModifierOperator? ~ Value) | (NotOperator? ~ " "* ~ Identifier) ) ~ " "* }
   let error_info = ErrorInfo {
     line: token.line_col().0,
     col: token.line_col().1,
     string: token.as_str().to_string(),
+    file: file.to_string(),
   };
   let mut modifier = Modifier::default();
   for inner_token in token.into_inner() {
@@ -1081,7 +1106,7 @@ fn parse_modifier(token: Pair<Rule>, config: &Config) -> Result<Modifier, Palabr
       }
 
       Rule::ModifierOperator => {
-        modifier.operator = parse_modifier_operator(inner_token)?;
+        modifier.operator = parse_modifier_operator(inner_token, file)?;
       }
 
       Rule::NotOperator => {
@@ -1158,10 +1183,10 @@ fn check_variable_value_matches_type(
           Ok(())
         } else {
           Err(PalabritasError::InvalidVariableValue {
-            info: error_info.clone(),
+            info: Box::new(error_info.clone()),
             variable: variable.to_string(),
             value: value.to_string(),
-            variable_type: format!("{}", kind),
+            variable_type: kind.clone(),
           })
         }
       }
@@ -1170,10 +1195,10 @@ fn check_variable_value_matches_type(
           Ok(())
         } else {
           Err(PalabritasError::InvalidVariableValue {
-            info: error_info.clone(),
+            info: Box::new(error_info.clone()),
             variable: variable.to_string(),
             value: value.to_string(),
-            variable_type: format!("{}", kind),
+            variable_type: kind.clone(),
           })
         }
       }
@@ -1182,10 +1207,10 @@ fn check_variable_value_matches_type(
           Ok(())
         } else {
           Err(PalabritasError::InvalidVariableValue {
-            info: error_info.clone(),
+            info: Box::new(error_info.clone()),
             variable: variable.to_string(),
             value: value.to_string(),
-            variable_type: format!("{}", kind),
+            variable_type: kind.clone(),
           })
         }
       }
@@ -1194,10 +1219,10 @@ fn check_variable_value_matches_type(
         match variants.contains(&value.to_string()) {
           true => Ok(()),
           false => Err(PalabritasError::InvalidVariableValue {
-            info: error_info.clone(),
+            info: Box::new(error_info.clone()),
             variable: variable.to_string(),
             value: value.to_string(),
-            variable_type: format!("{}", kind),
+            variable_type: kind.clone(),
           }),
         }
       }
@@ -1223,10 +1248,10 @@ fn check_variable_modifier_operator_matches_type(
       _ => match operator {
         ModifierOperator::Set => Ok(()),
         _ => Err(PalabritasError::InvalidVariableOperator {
-          info: error_info.clone(),
+          info: Box::new(error_info.clone()),
           variable: variable.to_string(),
           operator: format!("{}", operator),
-          variable_type: format!("{}", kind),
+          variable_type: kind.clone(),
         }),
       },
     }
@@ -1252,10 +1277,10 @@ fn check_variable_comparison_operator_matches_type(
         ComparisonOperator::Equal => Ok(()),
         ComparisonOperator::NotEqual => Ok(()),
         _ => Err(PalabritasError::InvalidVariableOperator {
-          info: error_info.clone(),
+          info: Box::new(error_info.clone()),
           variable: variable.to_string(),
           operator: format!("{}", operator),
-          variable_type: format!("{}", kind),
+          variable_type: kind.clone(),
         }),
       },
     }
@@ -1267,9 +1292,12 @@ fn check_variable_comparison_operator_matches_type(
   }
 }
 
-fn parse_modifier_operator(token: Pair<Rule>) -> Result<ModifierOperator, PalabritasError> {
+fn parse_modifier_operator(
+  token: Pair<Rule>,
+  file: &str,
+) -> Result<ModifierOperator, PalabritasError> {
   //ModifierOperator = {"+" | "-" | "*" | "/" | "="}
-  match_rule(&token, Rule::ModifierOperator)?;
+  match_rule(&token, Rule::ModifierOperator, file)?;
 
   match token.as_str() {
     "+" => Ok(ModifierOperator::Add),
@@ -1283,14 +1311,15 @@ fn parse_modifier_operator(token: Pair<Rule>) -> Result<ModifierOperator, Palabr
 fn parse_frequency(
   token: Pair<Rule>,
   config: &Config,
+  file: &str,
 ) -> Result<FrequencyModifier, PalabritasError> {
-  match_rule(&token, Rule::Frequency)?;
+  match_rule(&token, Rule::Frequency, file)?;
 
   let mut frequency = FrequencyModifier::default();
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Condition => {
-        frequency.condition = parse_condition(inner_token, config)?;
+        frequency.condition = parse_condition(inner_token, config, file)?;
       }
 
       Rule::Float | Rule::Integer => {
@@ -1304,26 +1333,35 @@ fn parse_frequency(
   Ok(frequency)
 }
 
-fn parse_requirement(token: Pair<Rule>, config: &Config) -> Result<Requirement, PalabritasError> {
-  match_rule(&token, Rule::Requirement)?;
+fn parse_requirement(
+  token: Pair<Rule>,
+  config: &Config,
+  file: &str,
+) -> Result<Requirement, PalabritasError> {
+  match_rule(&token, Rule::Requirement, file)?;
 
   let mut condition = Condition::default();
   for inner_token in token.into_inner() {
     if inner_token.as_rule() == Rule::Condition {
-      condition = parse_condition(inner_token, config)?;
+      condition = parse_condition(inner_token, config, file)?;
     }
   }
 
   Ok(Requirement { condition })
 }
 
-fn parse_condition(token: Pair<Rule>, config: &Config) -> Result<Condition, PalabritasError> {
-  match_rule(&token, Rule::Condition)?;
+fn parse_condition(
+  token: Pair<Rule>,
+  config: &Config,
+  file: &str,
+) -> Result<Condition, PalabritasError> {
+  match_rule(&token, Rule::Condition, file)?;
   //Condition = { ( Identifier ~ " "* ~ ( ComparisonOperator ~ " "* )? ~ Value? ) | ( NotEqualOperator? ~ " "* ~ Identifier ~ " "*) }
   let error_info = ErrorInfo {
     line: token.line_col().0,
     col: token.line_col().1,
     string: token.as_str().to_string(),
+    file: file.to_string(),
   };
 
   let mut condition = Condition::default();
@@ -1334,7 +1372,7 @@ fn parse_condition(token: Pair<Rule>, config: &Config) -> Result<Condition, Pala
         condition.variable = inner_token.as_str().to_string();
       }
       Rule::ComparisonOperator => {
-        condition.operator = parse_comparison_operator(inner_token)?;
+        condition.operator = parse_comparison_operator(inner_token, file)?;
       }
       Rule::NotOperator => {
         condition.operator = ComparisonOperator::NotEqual;
@@ -1357,8 +1395,11 @@ fn parse_condition(token: Pair<Rule>, config: &Config) -> Result<Condition, Pala
   Ok(condition)
 }
 
-fn parse_comparison_operator(token: Pair<Rule>) -> Result<ComparisonOperator, PalabritasError> {
-  match_rule(&token, Rule::ComparisonOperator)?;
+fn parse_comparison_operator(
+  token: Pair<Rule>,
+  file: &str,
+) -> Result<ComparisonOperator, PalabritasError> {
+  match_rule(&token, Rule::ComparisonOperator, file)?;
 
   match token.as_str() {
     "!=" => Ok(ComparisonOperator::NotEqual),
@@ -1372,8 +1413,8 @@ fn parse_comparison_operator(token: Pair<Rule>) -> Result<ComparisonOperator, Pa
   }
 }
 
-fn parse_chance(token: Pair<Rule>) -> Result<Chance, PalabritasError> {
-  match_rule(&token, Rule::Chance)?;
+fn parse_chance(token: Pair<Rule>, file: &str) -> Result<Chance, PalabritasError> {
+  match_rule(&token, Rule::Chance, file)?;
 
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
@@ -1398,13 +1439,14 @@ fn parse_chance(token: Pair<Rule>) -> Result<Chance, PalabritasError> {
   Ok(Chance::None)
 }
 
-fn match_rule(token: &Pair<Rule>, expected_rule: Rule) -> Result<(), PalabritasError> {
+fn match_rule(token: &Pair<Rule>, expected_rule: Rule, file: &str) -> Result<(), PalabritasError> {
   if token.as_rule() != expected_rule {
     return Err(PalabritasError::UnexpectedRule {
       info: ErrorInfo {
         line: token.line_col().0,
         col: token.line_col().1,
         string: token.as_str().to_string(),
+        file: file.to_string(),
       },
       expected_rule,
       rule_found: token.as_rule(),
@@ -1477,7 +1519,8 @@ mod test {
       PalabritasError::BucketSumIsNot1(ErrorInfo {
         line: 1,
         col: 1,
-        string: snake_case
+        string: snake_case,
+        file: String::default()
       })
     );
   }
@@ -1501,7 +1544,8 @@ mod test {
       PalabritasError::BucketHasFrequenciesAndChances(ErrorInfo {
         line: 1,
         col: 1,
-        string: snake_case
+        string: snake_case,
+        file: String::default()
       })
     );
   }
@@ -1524,7 +1568,8 @@ mod test {
       PalabritasError::BucketMissingProbability(ErrorInfo {
         line: 3,
         col: 1,
-        string: child_2
+        string: child_2,
+        file: String::default()
       })
     );
   }
@@ -1662,18 +1707,10 @@ mod test {
     );
 
     let token = parse_str(&section_string, Rule::Section).unwrap();
-    let mut blocks = Vec::default();
-    parse_section(
-      token,
-      &mut blocks,
-      &mut HashMap::default(),
-      &mut I18n::default(),
-      &Config::default(),
-      &Vec::default(),
-    )
-    .unwrap();
+    let mut parsing_data = ParsingData::default();
+    parse_section(token, &mut parsing_data, &mut HashMap::default()).unwrap();
 
-    let section = blocks[0][0].clone();
+    let section = parsing_data.blocks[0][0].clone();
 
     let expected_value = Block::Section {
       id: section_identifier,
@@ -1681,7 +1718,7 @@ mod test {
     };
     assert_eq!(section, expected_value);
 
-    let sub_section_1 = blocks[0][1].clone();
+    let sub_section_1 = parsing_data.blocks[0][1].clone();
 
     let expected_value = Block::Subsection {
       id: subsection_identifier_1,
@@ -1689,7 +1726,7 @@ mod test {
     };
     assert_eq!(sub_section_1, expected_value);
 
-    let sub_section_2 = blocks[0][2].clone();
+    let sub_section_2 = parsing_data.blocks[0][2].clone();
 
     let expected_value = Block::Subsection {
       id: subsection_identifier_2,
@@ -1751,13 +1788,13 @@ mod test {
     block_settings.modifiers.push(expected_modifier);
 
     let token = parse_str(&modifier_string, Rule::Command).unwrap();
-    add_command_to_block(token, &mut block, &config).unwrap();
+    add_command_to_block(token, &mut block, &config, &String::default()).unwrap();
 
     //Unique
 
     block_settings.unique = true;
     let token = parse_str("\n unique", Rule::Command).unwrap();
-    add_command_to_block(token, &mut block, &config).unwrap();
+    add_command_to_block(token, &mut block, &config, &String::default()).unwrap();
 
     //Frequency
 
@@ -1781,7 +1818,7 @@ mod test {
     block_settings.frequency_modifiers.push(expected_frequency);
 
     let token = parse_str(&frequency_string, Rule::Command).unwrap();
-    add_command_to_block(token, &mut block, &config).unwrap();
+    add_command_to_block(token, &mut block, &config, &String::default()).unwrap();
 
     //Requirement
 
@@ -1801,7 +1838,7 @@ mod test {
     block_settings.requirements.push(expected_requirement);
 
     let token = parse_str(&requirement_string, Rule::Command).unwrap();
-    add_command_to_block(token, &mut block, &config).unwrap();
+    add_command_to_block(token, &mut block, &config, &String::default()).unwrap();
 
     let expected_block = Block::Text {
       id: text_id,
@@ -1831,7 +1868,8 @@ mod test {
       PalabritasError::FrequencyOutOfBucket(ErrorInfo {
         line: 1,
         col: 1,
-        string: database_str
+        string: database_str,
+        file: String::default()
       })
     );
 
@@ -1844,7 +1882,8 @@ mod test {
       PalabritasError::FrequencyOutOfBucket(ErrorInfo {
         line: 1,
         col: 1,
-        string: database_str
+        string: database_str,
+        file: String::default()
       })
     );
 
@@ -1879,7 +1918,8 @@ mod test {
       PalabritasError::FrequencyModifierWithoutFrequencyChance(ErrorInfo {
         line: 1,
         col: 1,
-        string: database_str
+        string: database_str,
+        file: String::default()
       })
     );
   }
@@ -1902,7 +1942,8 @@ mod test {
       PalabritasError::DivisionByZero(ErrorInfo {
         line: 1,
         col: 1,
-        string: tag_string
+        string: tag_string,
+        file: String::default()
       })
     );
 
@@ -1917,7 +1958,8 @@ mod test {
       PalabritasError::DivisionByZero(ErrorInfo {
         line: 1,
         col: 1,
-        string: tag_string
+        string: tag_string,
+        file: String::default()
       })
     );
   }
@@ -1931,7 +1973,8 @@ mod test {
         info: ErrorInfo {
           line: 2,
           col: 3,
-          string: "->Section".to_string()
+          string: "->Section".to_string(),
+          file: String::default()
         },
         section: SectionKey {
           section: "Section".to_string(),
@@ -1958,7 +2001,8 @@ mod test {
         info: ErrorInfo {
           line: 2,
           col: 7,
-          string: "variable = value".to_string()
+          string: "variable = value".to_string(),
+          file: String::default()
         },
         variable: "variable".to_string()
       }
@@ -1977,7 +2021,8 @@ mod test {
         info: ErrorInfo {
           line: 2,
           col: 8,
-          string: "variable = value".to_string()
+          string: "variable = value".to_string(),
+          file: String::default()
         },
         variable: "variable".to_string()
       }
@@ -1995,7 +2040,8 @@ mod test {
         info: ErrorInfo {
           line: 2,
           col: 3,
-          string: "set variable value".to_string()
+          string: "set variable value".to_string(),
+          file: String::default()
         },
         variable: "variable".to_string()
       }
@@ -2013,16 +2059,17 @@ mod test {
       line: 0,
       col: 0,
       string: String::default(),
+      file: String::default(),
     };
 
     let error =
       check_variable_value_matches_type("variable", "hello", &config, &error_info).unwrap_err();
 
     let expected_error = PalabritasError::InvalidVariableValue {
-      info: error_info,
+      info: Box::new(error_info),
       variable: "variable".to_string(),
       value: "hello".to_string(),
-      variable_type: "Integer".to_string(),
+      variable_type: VariableKind::Integer,
     };
 
     assert_eq!(error, expected_error);
@@ -2039,16 +2086,17 @@ mod test {
       line: 0,
       col: 0,
       string: String::default(),
+      file: String::default(),
     };
 
     let error =
       check_variable_value_matches_type("variable", "hello", &config, &error_info).unwrap_err();
 
     let expected_error = PalabritasError::InvalidVariableValue {
-      info: error_info,
+      info: Box::new(error_info),
       variable: "variable".to_string(),
       value: "hello".to_string(),
-      variable_type: "Float".to_string(),
+      variable_type: VariableKind::Float,
     };
 
     assert_eq!(error, expected_error);
@@ -2065,16 +2113,17 @@ mod test {
       line: 0,
       col: 0,
       string: String::default(),
+      file: String::default(),
     };
 
     let error =
       check_variable_value_matches_type("variable", "hello", &config, &error_info).unwrap_err();
 
     let expected_error = PalabritasError::InvalidVariableValue {
-      info: error_info,
+      info: Box::new(error_info),
       variable: "variable".to_string(),
       value: "hello".to_string(),
-      variable_type: "Bool".to_string(),
+      variable_type: VariableKind::Bool,
     };
 
     assert_eq!(error, expected_error);
@@ -2083,25 +2132,26 @@ mod test {
   #[test]
   fn enum_with_invalid_value_throws_error() {
     let mut config = Config::default();
-    config.variables.insert(
-      "variable".to_string(),
-      VariableKind::Enum(vec!["night".to_string(), "day".to_string()]),
-    );
+    let kind = VariableKind::Enum(vec!["night".to_string(), "day".to_string()]);
+    config
+      .variables
+      .insert("variable".to_string(), kind.clone());
 
     let error_info = ErrorInfo {
       line: 0,
       col: 0,
       string: String::default(),
+      file: String::default(),
     };
 
     let error =
       check_variable_value_matches_type("variable", "hello", &config, &error_info).unwrap_err();
 
     let expected_error = PalabritasError::InvalidVariableValue {
-      info: error_info,
+      info: Box::new(error_info),
       variable: "variable".to_string(),
       value: "hello".to_string(),
-      variable_type: "Enum([\"night\", \"day\"])".to_string(),
+      variable_type: kind,
     };
 
     assert_eq!(error, expected_error);
@@ -2119,14 +2169,15 @@ mod test {
     assert_eq!(
       error,
       PalabritasError::InvalidVariableValue {
-        info: ErrorInfo {
+        info: Box::new(ErrorInfo {
           line: 2,
           col: 7,
-          string: "variable = value".to_string()
-        },
+          string: "variable = value".to_string(),
+          file: String::default()
+        }),
         variable: "variable".to_string(),
         value: "value".to_string(),
-        variable_type: "Integer".to_string()
+        variable_type: VariableKind::Integer
       }
     );
   }
@@ -2142,14 +2193,15 @@ mod test {
     assert_eq!(
       error,
       PalabritasError::InvalidVariableValue {
-        info: ErrorInfo {
+        info: Box::new(ErrorInfo {
           line: 2,
           col: 8,
-          string: "variable = value".to_string()
-        },
+          string: "variable = value".to_string(),
+          file: String::default()
+        }),
         variable: "variable".to_string(),
         value: "value".to_string(),
-        variable_type: "Integer".to_string()
+        variable_type: VariableKind::Integer
       }
     );
   }
@@ -2165,14 +2217,15 @@ mod test {
     assert_eq!(
       error,
       PalabritasError::InvalidVariableValue {
-        info: ErrorInfo {
+        info: Box::new(ErrorInfo {
           line: 2,
           col: 3,
-          string: "set variable value".to_string()
-        },
+          string: "set variable value".to_string(),
+          file: String::default()
+        }),
         variable: "variable".to_string(),
         value: "value".to_string(),
-        variable_type: "Integer".to_string()
+        variable_type: VariableKind::Integer
       }
     );
   }
@@ -2189,14 +2242,15 @@ mod test {
     assert_eq!(
       error,
       PalabritasError::InvalidVariableOperator {
-        info: ErrorInfo {
+        info: Box::new(ErrorInfo {
           line: 2,
           col: 7,
-          string: "variable > value".to_string()
-        },
+          string: "variable > value".to_string(),
+          file: String::default()
+        }),
         variable: "variable".to_string(),
         operator: ">".to_string(),
-        variable_type: "String".to_string()
+        variable_type: VariableKind::String
       }
     );
   }
@@ -2212,14 +2266,15 @@ mod test {
     assert_eq!(
       error,
       PalabritasError::InvalidVariableOperator {
-        info: ErrorInfo {
+        info: Box::new(ErrorInfo {
           line: 2,
           col: 8,
-          string: "variable > value".to_string()
-        },
+          string: "variable > value".to_string(),
+          file: String::default()
+        }),
         variable: "variable".to_string(),
         operator: ">".to_string(),
-        variable_type: "String".to_string()
+        variable_type: VariableKind::String
       }
     );
   }
@@ -2235,25 +2290,19 @@ mod test {
     assert_eq!(
       error,
       PalabritasError::InvalidVariableOperator {
-        info: ErrorInfo {
+        info: Box::new(ErrorInfo {
           line: 2,
           col: 3,
-          string: "set variable +1".to_string()
-        },
+          string: "set variable +1".to_string(),
+          file: String::default()
+        }),
         variable: "variable".to_string(),
         operator: "+".to_string(),
-        variable_type: "String".to_string()
+        variable_type: VariableKind::String
       }
     );
   }
 
-  /*
-  InvalidVariableOperator {
-    info: ErrorInfo,
-    variable: String,
-    operator: String,
-    variable_type: String,
-  }, */
   #[test]
   fn parse_function_correctly() {
     //Function = {"`" ~ " "* ~ Identifier ~ (" " ~ Value)* ~ " "* ~ "`"}
@@ -2908,17 +2957,9 @@ mod test {
 
   fn parse_block_str(input: &str) -> Result<Vec<Vec<Block>>, PalabritasError> {
     let token = parse_str(input, Rule::Block)?;
-    let mut blocks = Vec::default();
-    parse_block(
-      token,
-      &mut blocks,
-      0,
-      &mut I18n::default(),
-      &Config::default(),
-      &Vec::default(),
-      &None,
-    )?;
-    Ok(blocks)
+    let mut parsing_data = ParsingData::default();
+    parse_block(token, &mut parsing_data, 0)?;
+    Ok(parsing_data.blocks)
   }
   fn make_random_condition_str() -> String {
     make_random_identifier() + " " + &make_random_identifier()
