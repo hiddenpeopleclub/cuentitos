@@ -100,7 +100,6 @@ impl Runtime {
     for block in new_stack {
       modified_variables.append(&mut Self::push_stack(self, block)?);
     }
-
     Ok(modified_variables)
   }
 
@@ -923,6 +922,88 @@ mod test {
       })
       .unwrap();
     assert_eq!(runtime.block_stack, vec![0]);
+  }
+
+  
+  #[test]
+  fn boomerang_divert_works_correctly() {
+    let section_1 = Block::Section {
+      id: "section_1".to_string(),
+      settings: BlockSettings {
+        children: vec![3],
+        ..Default::default()
+      },
+    };
+    let section_2 = Block::Section {
+      id: "section_2".to_string(),
+      settings: BlockSettings {
+        children: vec![2],
+        ..Default::default()
+      },
+    };
+    let subsection = Block::Subsection {
+      id: "subsection".to_string(),
+      settings: BlockSettings {
+        children: vec![4],
+        ..Default::default()
+      },
+    };
+    let text_1 = Block::Text {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+    let text_2 = Block::Text {
+      id: String::default(),
+      settings: BlockSettings::default(),
+    };
+
+    let mut sections: HashMap<Section, usize> = HashMap::default();
+    sections.insert(
+      Section {
+        section_name: "section_1".to_string(),
+        subsection_name: None,
+      },
+      0,
+    );
+    sections.insert(
+      Section {
+        section_name: "section_2".to_string(),
+        subsection_name: None,
+      },
+      1,
+    );
+    sections.insert(
+      Section {
+        section_name: "section_2".to_string(),
+        subsection_name: Some("subsection".to_string()),
+      },
+      2,
+    );
+    let database = Database {
+      blocks: vec![section_1, section_2, subsection, text_1, text_2],
+      sections,
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime {
+      database,
+      ..Default::default()
+    };
+    runtime
+      .boomerang_divert(&Section {
+        section_name: "section_2".to_string(),
+        subsection_name: Some("subsection".to_string()),
+      })
+      .unwrap();
+    assert_eq!(runtime.block_stack, vec![1, 2]);
+
+    runtime
+      .boomerang_divert(&Section {
+        section_name: "section_1".to_string(),
+        subsection_name: None,
+      })
+      .unwrap();
+    assert_eq!(runtime.block_stack, vec![1 , 2 , 0]);
   }
 
   #[test]
