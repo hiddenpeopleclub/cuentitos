@@ -205,9 +205,9 @@ fn print_block(block: Block) {
 
 fn print_runtime_error(error: RuntimeError, runtime: &Runtime) {
   match error {
-    RuntimeError::WaitingForChoice(choices) => {
+    RuntimeError::WaitingForChoice(_) => {
       println!("Make a choice:\n");
-      print_choices(choices);
+      print_block(runtime.current_block().unwrap());
     }
     RuntimeError::InvalidChoice {
       total_choices,
@@ -219,7 +219,7 @@ fn print_runtime_error(error: RuntimeError, runtime: &Runtime) {
         total_choices
       );
       println!("Make a choice:\n");
-      print_choices(runtime.get_choices_strings());
+      print_block(runtime.current_block().unwrap());
     }
     _ => {
       println!("{}", error)

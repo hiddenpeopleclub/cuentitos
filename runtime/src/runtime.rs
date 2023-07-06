@@ -135,7 +135,7 @@ impl Runtime {
     &self.database.blocks[id]
   }
 
-  pub fn current_block(&mut self) -> Result<Block, RuntimeError> {
+  pub fn current_block(&self) -> Result<Block, RuntimeError> {
     let id = match self.block_stack.last() {
       Some(id) => id,
       None => return Err(RuntimeError::EmptyStack),
