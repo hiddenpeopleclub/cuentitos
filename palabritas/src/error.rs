@@ -1,6 +1,6 @@
 use std::{error::Error, fmt::Display, path::PathBuf};
 
-use cuentitos_common::{SectionKey, VariableKind};
+use cuentitos_common::{Section, VariableKind};
 
 use crate::parser::Rule;
 #[derive(Debug, PartialEq, Eq)]
@@ -27,7 +27,7 @@ pub enum PalabritasError {
   DivisionByZero(ErrorInfo),
   SectionDoesntExist {
     info: ErrorInfo,
-    section: SectionKey,
+    section: Section,
   },
   VariableDoesntExist {
     info: ErrorInfo,

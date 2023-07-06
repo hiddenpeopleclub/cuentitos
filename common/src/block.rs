@@ -8,17 +8,17 @@ pub type BucketName = String;
 pub type SectionName = String;
 
 #[derive(Debug, Default, Serialize, Deserialize, Eq, PartialEq, Clone, Hash)]
-pub struct SectionKey {
-  pub section: String,
-  pub subsection: Option<String>,
+pub struct Section {
+  pub section_name: SectionName,
+  pub subsection_name: Option<SectionName>,
 }
-impl fmt::Display for SectionKey {
+impl fmt::Display for Section {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     let mut key = String::new();
 
-    key.push_str(&self.section);
+    key.push_str(&self.section_name);
 
-    if let Some(subsection) = &self.subsection {
+    if let Some(subsection) = &self.subsection_name {
       key.push('/');
       key.push_str(subsection);
     }
@@ -31,7 +31,7 @@ pub enum NextBlock {
   #[default]
   EndOfFile,
   BlockId(BlockId),
-  Section(SectionKey),
+  Section(Section),
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -68,6 +68,7 @@ pub struct BlockSettings {
   pub tags: Vec<String>,
   pub functions: Vec<Function>,
   pub script: Script,
+  pub section: Option<Section>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq, Clone)]

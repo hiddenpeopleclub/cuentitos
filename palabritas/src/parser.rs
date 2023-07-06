@@ -6,7 +6,7 @@ use cuentitos_common::condition::ComparisonOperator;
 use cuentitos_common::modifier::ModifierOperator;
 use cuentitos_common::{
   Block, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Function, I18n,
-  Modifier, NextBlock, Requirement, Script, SectionKey,
+  Modifier, NextBlock, Requirement, Script, Section,
 };
 use pest::{iterators::Pair, Parser};
 
@@ -23,13 +23,13 @@ struct ParsingData {
   pub blocks: Vec<Vec<Block>>,
   pub i18n: I18n,
   pub config: Config,
-  pub section_list: Vec<SectionKey>,
+  pub section_list: Vec<Section>,
   pub file: String,
-  pub current_section: Option<String>,
+  pub current_section: Option<Section>,
 }
 
 impl ParsingData {
-  fn new(config: Config, section_list: Vec<SectionKey>, file: String) -> Self {
+  fn new(config: Config, section_list: Vec<Section>, file: String) -> Self {
     ParsingData {
       blocks: Vec::default(),
       i18n: I18n::from_config(&config),
@@ -112,7 +112,7 @@ where
 pub fn find_all_section_list(
   token: &Pair<Rule>,
   file: &str,
-) -> Result<Vec<SectionKey>, PalabritasError> {
+) -> Result<Vec<Section>, PalabritasError> {
   match_rule(token, Rule::Database, file)?;
   let mut section_list = Vec::default(); //  pub section_list: HashMap<SectionId, BlockId>
   for inner_token in token.clone().into_inner() {
@@ -173,18 +173,26 @@ fn parse_database(
   let mut section_map = HashMap::default();
 
   for i in 0..ordered_blocks.len() {
-    if let Block::Section { id: section_id, settings } = &ordered_blocks[i] {
-      let section_key = SectionKey {
-        section: section_id.clone(),
-        subsection: None,
+    if let Block::Section {
+      id: section_id,
+      settings,
+    } = &ordered_blocks[i]
+    {
+      let section_key = Section {
+        section_name: section_id.clone(),
+        subsection_name: None,
       };
 
       section_map.insert(section_key, i);
       for child in &settings.children {
-        if let Block::Subsection { id: subsection_id, settings: _ } = &ordered_blocks[*child] {
-          let section_key = SectionKey {
-            section: section_id.clone(),
-            subsection: Some(subsection_id.clone()),
+        if let Block::Subsection {
+          id: subsection_id,
+          settings: _,
+        } = &ordered_blocks[*child]
+        {
+          let section_key = Section {
+            section_name: section_id.clone(),
+            subsection_name: Some(subsection_id.clone()),
           };
           section_map.insert(section_key, *child);
         }
@@ -238,7 +246,7 @@ pub fn parse_choice_str(input: &str) -> Result<Block, PalabritasError> {
 pub fn parse_section_str(
   input: &str,
   config: &Config,
-  section_list: &[SectionKey],
+  section_list: &[Section],
 ) -> Result<Block, PalabritasError> {
   let token = parse_str(input, Rule::Section)?;
   let mut parsing_data =
@@ -256,10 +264,7 @@ pub fn parse_function_str(input: &str) -> Result<Function, PalabritasError> {
   parse_function(token, &String::default())
 }
 
-pub fn parse_divert_str(
-  input: &str,
-  section_list: &[SectionKey],
-) -> Result<Block, PalabritasError> {
+pub fn parse_divert_str(input: &str, section_list: &[Section]) -> Result<Block, PalabritasError> {
   let token = parse_str(input, Rule::Divert)?;
   parse_divert(token, section_list, &None, &String::default())
 }
@@ -327,7 +332,7 @@ fn parse_str(input: &str, rule: Rule) -> Result<Pair<'_, Rule>, PalabritasError>
 
 fn parse_section_key(
   token: Pair<Rule>,
-  section_list: &mut Vec<SectionKey>,
+  section_list: &mut Vec<Section>,
   file: &str,
 ) -> Result<(), PalabritasError> {
   match_rule(&token, Rule::Section, file)?;
@@ -343,9 +348,9 @@ fn parse_section_key(
       _ => {}
     }
   }
-  section_list.push(SectionKey {
-    section: id.clone(),
-    subsection: None,
+  section_list.push(Section {
+    section_name: id.clone(),
+    subsection_name: None,
   });
 
   Ok(())
@@ -354,7 +359,7 @@ fn parse_section_key(
 fn parse_subsection_key(
   token: Pair<Rule>,
   section: &str,
-  section_list: &mut Vec<SectionKey>,
+  section_list: &mut Vec<Section>,
   file: &str,
 ) -> Result<(), PalabritasError> {
   match_rule(&token, Rule::Subsection, file)?;
@@ -370,9 +375,9 @@ fn parse_subsection_key(
       _ => {}
     }
   }
-  section_list.push(SectionKey {
-    section: section.to_string(),
-    subsection: Some(id),
+  section_list.push(Section {
+    section_name: section.to_string(),
+    subsection_name: Some(id),
   });
 
   Ok(())
@@ -411,7 +416,11 @@ fn parse_section(
     match inner_token.as_rule() {
       Rule::Identifier => {
         id = inner_token.as_str().to_string();
-        parsing_data.current_section = Some(id.clone());
+        parsing_data.current_section = Some(Section {
+          section_name: id.clone(),
+          subsection_name: None,
+        });
+        settings.section = parsing_data.current_section.clone();
       }
       Rule::Command => {
         add_command_to_settings(
@@ -432,8 +441,8 @@ fn parse_section(
       Rule::Subsection => {
         parse_subsection(inner_token, parsing_data, child_order + 1)?;
         settings
-        .children
-        .push(parsing_data.blocks[child_order + 1].len() - 1);
+          .children
+          .push(parsing_data.blocks[child_order + 1].len() - 1);
       }
       _ => {}
     }
@@ -480,6 +489,10 @@ fn parse_subsection(
     match inner_token.as_rule() {
       Rule::Identifier => {
         id = inner_token.as_str().to_string();
+        if let Some(ref mut section) = parsing_data.current_section {
+          section.subsection_name = Some(id.clone());
+        }
+        settings.section = parsing_data.current_section.clone();
       }
       Rule::Command => {
         add_command_to_settings(
@@ -500,8 +513,8 @@ fn parse_subsection(
       Rule::Subsection => {
         parse_subsection(inner_token, parsing_data, child_order + 1)?;
         settings
-        .children
-        .push(parsing_data.blocks[child_order + 1].len() - 1);
+          .children
+          .push(parsing_data.blocks[child_order + 1].len() - 1);
       }
       _ => {}
     }
@@ -569,6 +582,8 @@ fn parse_block(
       _ => {}
     }
   }
+
+  block.get_settings_mut().section = parsing_data.current_section.clone();
 
   while child_order >= parsing_data.blocks.len() {
     parsing_data.blocks.push(Vec::default());
@@ -1068,8 +1083,8 @@ fn parse_tag(token: Pair<Rule>, file: &str) -> Result<String, PalabritasError> {
 }
 fn parse_divert(
   token: Pair<Rule>,
-  section_list: &[SectionKey],
-  current_section: &Option<String>,
+  section_list: &[Section],
+  current_section: &Option<Section>,
   file: &str,
 ) -> Result<Block, PalabritasError> {
   match_rule(&token, Rule::Divert, file)?;
@@ -1098,9 +1113,9 @@ fn parse_divert(
   let next = match section.is_some() && subsection.is_none() && section.clone().unwrap() == "END" {
     true => NextBlock::EndOfFile,
     false => {
-      let section_key = SectionKey {
-        section: section.unwrap(),
-        subsection,
+      let section_key = Section {
+        section_name: section.unwrap(),
+        subsection_name: subsection,
       };
       check_section_existance(&section_key, section_list, &error_info, current_section)?;
       NextBlock::Section(section_key)
@@ -1181,17 +1196,17 @@ fn check_variable_existance(
 }
 
 fn check_section_existance(
-  section_key: &SectionKey,
-  section_list: &[SectionKey],
+  section_key: &Section,
+  section_list: &[Section],
   error_info: &ErrorInfo,
-  current_section: &Option<String>,
+  current_section: &Option<Section>,
 ) -> Result<(), PalabritasError> {
   if section_list.contains(section_key) {
     Ok(())
-  } else if section_key.subsection.is_none() && current_section.is_some() {
-    let new_section_key = SectionKey {
-      section: current_section.clone().unwrap(),
-      subsection: Some(section_key.clone().section),
+  } else if section_key.subsection_name.is_none() && current_section.is_some() {
+    let new_section_key = Section {
+      section_name: current_section.clone().unwrap().section_name,
+      subsection_name: Some(section_key.clone().section_name),
     };
     check_section_existance(&new_section_key, section_list, error_info, current_section)
   } else {
@@ -1719,8 +1734,14 @@ mod test {
     let section = parse_section_str(&section_string, &Config::default(), &Vec::default()).unwrap();
 
     let expected_value = Block::Section {
-      id: identifier,
-      settings: BlockSettings::default(),
+      id: identifier.clone(),
+      settings: BlockSettings {
+        section: Some(Section {
+          section_name: identifier,
+          subsection_name: None,
+        }),
+        ..Default::default()
+      },
     };
     assert_eq!(section, expected_value);
   }
@@ -1746,8 +1767,12 @@ mod test {
 
     let expected_value = Block::Section {
       id: section_identifier.clone(),
-      settings: BlockSettings{
-        children: vec![0,1],
+      settings: BlockSettings {
+        section: Some(Section {
+          section_name: section_identifier.clone(),
+          subsection_name: None,
+        }),
+        children: vec![0, 1],
         ..Default::default()
       },
     };
@@ -1758,6 +1783,10 @@ mod test {
     let expected_value = Block::Subsection {
       id: subsection_identifier_1.clone(),
       settings: BlockSettings {
+        section: Some(Section {
+          section_name: section_identifier.clone(),
+          subsection_name: Some(subsection_identifier_1.clone()),
+        }),
         script: Script {
           file: String::default(),
           line: 2,
@@ -1773,6 +1802,10 @@ mod test {
     let expected_value = Block::Subsection {
       id: subsection_identifier_2.clone(),
       settings: BlockSettings {
+        section: Some(Section {
+          section_name: section_identifier.clone(),
+          subsection_name: Some(subsection_identifier_2.clone()),
+        }),
         script: Script {
           file: String::default(),
           line: 3,
@@ -1786,25 +1819,25 @@ mod test {
     let parsing_data = ParsingData::default();
     let database = parse_database(token, parsing_data).unwrap();
 
-    let section_key = SectionKey {
-      section: section_identifier.clone(),
-      subsection: None,
+    let section_key = Section {
+      section_name: section_identifier.clone(),
+      subsection_name: None,
     };
 
     let id = *database.sections.get(&section_key).unwrap();
     assert_eq!(id, 0);
 
-    let section_key = SectionKey {
-      section: section_identifier.clone(),
-      subsection: Some(subsection_identifier_1),
+    let section_key = Section {
+      section_name: section_identifier.clone(),
+      subsection_name: Some(subsection_identifier_1),
     };
-    
+
     let id = *database.sections.get(&section_key).unwrap();
     assert_eq!(id, 2);
 
-    let section_key = SectionKey {
-      section: section_identifier,
-      subsection: Some(subsection_identifier_2),
+    let section_key = Section {
+      section_name: section_identifier,
+      subsection_name: Some(subsection_identifier_2),
     };
 
     let id = *database.sections.get(&section_key).unwrap();
@@ -2052,9 +2085,9 @@ mod test {
           string: "->Section".to_string(),
           file: String::default()
         },
-        section: SectionKey {
-          section: "Section".to_string(),
-          subsection: None
+        section: Section {
+          section_name: "Section".to_string(),
+          subsection_name: None
         }
       }
     );
@@ -2401,9 +2434,9 @@ mod test {
     //Section
     let section = make_random_identifier();
     let divert_string = format!("-> {}", section);
-    let section_key = SectionKey {
-      section: section.clone(),
-      subsection: None,
+    let section_key = Section {
+      section_name: section.clone(),
+      subsection_name: None,
     };
     let expected_value = Block::Divert {
       next: NextBlock::Section(section_key.clone()),
@@ -2417,9 +2450,9 @@ mod test {
     //Subsection
     let subsection = make_random_identifier();
     let divert_string = format!("-> {}/{}", section, subsection);
-    let section_key = SectionKey {
-      section: section.clone(),
-      subsection: Some(subsection.clone()),
+    let section_key = Section {
+      section_name: section.clone(),
+      subsection_name: Some(subsection.clone()),
     };
 
     let expected_value = Block::Divert {
@@ -2865,8 +2898,12 @@ mod test {
     .unwrap();
 
     let expected_value = Block::Section {
-      id: identifier,
+      id: identifier.clone(),
       settings: BlockSettings {
+        section: Some(Section {
+          section_name: identifier,
+          subsection_name: None,
+        }),
         requirements: vec![Requirement {
           condition: Condition {
             variable: "test".to_string(),

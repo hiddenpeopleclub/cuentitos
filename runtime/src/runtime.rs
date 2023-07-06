@@ -13,7 +13,7 @@ use cuentitos_common::LanguageId;
 use cuentitos_common::Modifier;
 use cuentitos_common::NextBlock;
 use cuentitos_common::Script;
-use cuentitos_common::SectionKey;
+use cuentitos_common::Section;
 use cuentitos_common::VariableKind;
 use rand::Rng;
 use rand::SeedableRng;
@@ -29,7 +29,6 @@ pub struct Block {
   pub script: Script,
 }
 
-pub type DivertData = SectionKey;
 pub type ModifiedVariables = Vec<String>;
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
@@ -82,30 +81,53 @@ impl Runtime {
     self.rng = Some(Pcg32::seed_from_u64(seed));
   }
 
-  pub fn divert(&mut self, divert: &DivertData) -> Result<ModifiedVariables, RuntimeError> {
-    let next = self.get_section_block_id(divert)?;
-    Self::push_stack(self, next)
+  pub fn divert(&mut self, section: &Section) -> Result<ModifiedVariables, RuntimeError> {
+    let new_stack = self.get_section_blocks_stack(section)?;
+    self.block_stack.clear();
+    let mut modified_variables = ModifiedVariables::default();
+
+    for block in new_stack {
+      modified_variables.append(&mut Self::push_stack(self, block)?);
+    }
+
+    Ok(modified_variables)
   }
 
-  fn get_section_block_id(&mut self, divert: &DivertData) -> Result<BlockId, RuntimeError> {
-    let current_section = self.game_state.current_section.clone();
-    if divert.subsection.is_none() {
-      if let Some(current_section) = current_section {
-        let key = SectionKey {
-          section: current_section,
-          subsection: Some(divert.section.clone()),
-        };
-        if let Some(block_id) = self.database.sections.get(&key) {
-          return Ok(*block_id);
+  fn get_section_blocks_stack(&mut self, section: &Section) -> Result<Vec<BlockId>, RuntimeError> {
+    let mut section = section.clone();
+    let section_id = match self.database.sections.get(&section) {
+      Some(id) => Some(id),
+      None => {
+        if let Some(current_section) = &self.game_state.section {
+          section = Section {
+            section_name: current_section.section_name.clone(),
+            subsection_name: Some(section.section_name.clone()),
+          };
+          self.database.sections.get(&section)
+        } else {
+          return Err(RuntimeError::SectionDoesntExist(section.clone()));
         }
       }
+    };
+
+    let mut stack: Vec<usize> = Vec::default();
+
+    if let Some(block_id) = section_id {
+      if section.subsection_name.is_some() {
+        let parent = Section {
+          section_name: section.section_name.clone(),
+          subsection_name: None,
+        };
+        if let Some(parent_id) = self.database.sections.get(&parent) {
+          stack.push(*parent_id);
+        } else {
+          return Err(RuntimeError::SectionDoesntExist(parent.clone()));
+        }
+      }
+      stack.push(*block_id);
     }
 
-    if let Some(block_id) = self.database.sections.get(divert) {
-      Ok(*block_id)
-    } else {
-      Err(RuntimeError::SectionDoesntExist(divert.clone()))
-    }
+    Ok(stack)
   }
 
   pub fn peek_next_block(&mut self) -> Result<(Block, ModifiedVariables), RuntimeError> {
@@ -210,7 +232,7 @@ impl Runtime {
       return Err(RuntimeError::InvalidBlockId(choices[choice]));
     }
 
-    Self::push_stack(self, choices[choice])?;
+    Self::push_stack_until_text(self, choices[choice])?;
     self.next_block()
   }
 
@@ -535,66 +557,19 @@ impl Runtime {
     Ok(modified_variables)
   }
 
-  fn update_section(&mut self) 
-  {
-    self.game_state.current_section = None;
-    self.game_state.current_subsection = None;
-
-    for block in self.block_stack.iter().rev()
-    {
-      match self.get_block(*block)
-      {
-        cuentitos_common::Block::Section { id, settings:_ } => {
-          self.game_state.current_section = Some(id.clone());
-        },
-        cuentitos_common::Block::Subsection { id, settings:_ } => {
-          if  self.game_state.current_subsection.is_none()
-          {
-            self.game_state.current_subsection = Some(id.clone());
-          }
-        },
-        cuentitos_common::Block::Divert { next, settings:_ } => {
-          if  let NextBlock::Section(section_key) =  next{
-            if section_key.subsection.is_some()
-            {
-              self.game_state.current_section = Some(section_key.section.clone());
-            }
-          }
-        },
-        _=>{}
-      }
-
-      if  self.game_state.current_section.is_some()
-      {
-        return;
-      }
-    }
-  }
-  fn push_stack(runtime: &mut Runtime, id: BlockId) -> Result<ModifiedVariables, RuntimeError> {
-    runtime.block_stack.push(id);
-
-    if !runtime.meets_requirements(id)? {
-      return Self::pop_stack_and_find_next(runtime);
-    }
-
-    if runtime.get_block(id).get_settings().unique {
-      if runtime.game_state.uniques_played.contains(&id) {
-        return Self::pop_stack_and_find_next(runtime);
-      } else {
-        runtime.game_state.uniques_played.push(id);
-      }
-    }
-
-    let mut modified_variables = runtime.apply_modifiers()?;
-    runtime.update_section();
-
+  fn push_stack_until_text(
+    runtime: &mut Runtime,
+    id: BlockId,
+  ) -> Result<ModifiedVariables, RuntimeError> {
+    let mut modified_variables = Self::push_stack(runtime, id)?;
     let block = runtime.get_block(id).clone();
+
     match block {
-      cuentitos_common::Block::Section { id:_, settings: _ } => {
+      cuentitos_common::Block::Section { id: _, settings: _ } => {
         modified_variables.append(&mut Self::update_stack(runtime)?);
         Ok(modified_variables)
       }
-      cuentitos_common::Block::Subsection { id:_, settings: _ } => {
+      cuentitos_common::Block::Subsection { id: _, settings: _ } => {
         modified_variables.append(&mut Self::update_stack(runtime)?);
         Ok(modified_variables)
       }
@@ -611,7 +586,7 @@ impl Runtime {
         settings: _,
       } => {
         if let Some(next) = runtime.get_random_block_from_bucket(block.get_settings())? {
-          modified_variables.append(&mut Self::push_stack(runtime, next)?);
+          modified_variables.append(&mut Self::push_stack_until_text(runtime, next)?);
           Ok(modified_variables)
         } else {
           runtime.update_choices()?;
@@ -619,22 +594,41 @@ impl Runtime {
         }
       }
       cuentitos_common::Block::Divert { next, settings: _ } => {
-        let next = runtime.get_divert_next(next)?;
-        modified_variables.append(&mut Self::push_stack(runtime, next)?);
+        match next {
+          NextBlock::BlockId(id) => {
+            modified_variables.append(&mut Self::push_stack_until_text(runtime, id)?)
+          }
+          NextBlock::EndOfFile => {
+            runtime.reset();
+            return Err(RuntimeError::StoryFinished);
+          }
+          NextBlock::Section(section) => {
+            modified_variables.append(&mut runtime.divert(&section)?);
+            modified_variables.append(&mut Self::update_stack(runtime)?)
+          }
+        }
         Ok(modified_variables)
       }
     }
   }
 
-  fn get_divert_next(&mut self, next: NextBlock) -> Result<BlockId, RuntimeError> {
-    match next {
-      NextBlock::BlockId(id) => Ok(id),
-      NextBlock::EndOfFile => {
-        self.reset();
-        Err(RuntimeError::StoryFinished)
-      }
-      NextBlock::Section(section_key) => self.get_section_block_id(&section_key),
+  fn push_stack(runtime: &mut Runtime, id: BlockId) -> Result<ModifiedVariables, RuntimeError> {
+    runtime.block_stack.push(id);
+
+    if !runtime.meets_requirements(id)? {
+      return Self::pop_stack_and_find_next(runtime);
     }
+
+    if runtime.get_block(id).get_settings().unique {
+      if runtime.game_state.uniques_played.contains(&id) {
+        return Self::pop_stack_and_find_next(runtime);
+      } else {
+        runtime.game_state.uniques_played.push(id);
+      }
+    }
+
+    runtime.game_state.section = runtime.get_block(id).get_settings().section.clone();
+    runtime.apply_modifiers()
   }
 
   fn update_stack(runtime: &mut Runtime) -> Result<ModifiedVariables, RuntimeError> {
@@ -643,7 +637,7 @@ impl Runtime {
     }
 
     if runtime.block_stack.is_empty() {
-      return Self::push_stack(runtime, 0);
+      return Self::push_stack_until_text(runtime, 0);
     }
 
     let last_block_id = match runtime.block_stack.last() {
@@ -659,7 +653,7 @@ impl Runtime {
 
     if !settings.children.is_empty() {
       if let Some(child) = runtime.get_next_child_in_stack(&settings, 0)? {
-        return Self::push_stack(runtime, child);
+        return Self::push_stack_until_text(runtime, child);
       }
     }
 
@@ -687,9 +681,6 @@ impl Runtime {
       cuentitos_common::Block::Section { id, settings: _ } => {
         Err(RuntimeError::SectionAtLowerLevel(id.clone()))
       }
-      cuentitos_common::Block::Subsection { id, settings: _ } => {
-        Err(RuntimeError::SectionAtLowerLevel(id.clone()))
-      }
       _ => Ok(Some(settings.children[0])),
     }
   }
@@ -702,7 +693,7 @@ impl Runtime {
 
     runtime.block_stack.pop();
     if runtime.block_stack.is_empty() {
-      return Self::push_stack(runtime, last_block_id + 1);
+      return Self::push_stack_until_text(runtime, last_block_id + 1);
     }
 
     let new_block_id: &usize = match runtime.block_stack.last() {
@@ -720,7 +711,7 @@ impl Runtime {
         {
           continue;
         }
-        return Self::push_stack(runtime, *sibling);
+        return Self::push_stack_until_text(runtime, *sibling);
       }
       if *sibling == last_block_id {
         previous_block_found = true;
@@ -805,11 +796,11 @@ mod test {
 
   use std::{collections::HashMap, fmt::Display, str::FromStr, vec};
 
-  use crate::{runtime::DivertData, Runtime, RuntimeError};
+  use crate::{Runtime, RuntimeError};
   use cuentitos_common::{
     condition::ComparisonOperator, modifier::ModifierOperator, Block, BlockSettings, Chance,
     Condition, Config, Database, FrequencyModifier, Function, I18n, LanguageDb, LanguageId,
-    Modifier, NextBlock, Requirement, SectionKey, VariableKind,
+    Modifier, NextBlock, Requirement, Section, VariableKind,
   };
 
   #[test]
@@ -829,8 +820,11 @@ mod test {
       },
     };
     let section_2 = Block::Section {
-      id: "section_1".to_string(),
-      settings: BlockSettings::default(),
+      id: "section_2".to_string(),
+      settings: BlockSettings {
+        children: vec![2],
+        ..Default::default()
+      },
     };
     let subsection = Block::Subsection {
       id: "subsection".to_string(),
@@ -848,25 +842,25 @@ mod test {
       settings: BlockSettings::default(),
     };
 
-    let mut sections: HashMap<SectionKey, usize> = HashMap::default();
+    let mut sections: HashMap<Section, usize> = HashMap::default();
     sections.insert(
-      SectionKey {
-        section: "section_1".to_string(),
-        subsection: None,
+      Section {
+        section_name: "section_1".to_string(),
+        subsection_name: None,
       },
       0,
     );
     sections.insert(
-      SectionKey {
-        section: "section_2".to_string(),
-        subsection: None,
+      Section {
+        section_name: "section_2".to_string(),
+        subsection_name: None,
       },
       1,
     );
     sections.insert(
-      SectionKey {
-        section: "section_2".to_string(),
-        subsection: Some("subsection".to_string()),
+      Section {
+        section_name: "section_2".to_string(),
+        subsection_name: Some("subsection".to_string()),
       },
       2,
     );
@@ -881,19 +875,20 @@ mod test {
       ..Default::default()
     };
     runtime
-      .divert(&DivertData {
-        section: "section_2".to_string(),
-        subsection: Some("subsection".to_string()),
+      .divert(&Section {
+        section_name: "section_2".to_string(),
+        subsection_name: Some("subsection".to_string()),
       })
       .unwrap();
-    assert_eq!(runtime.block_stack, vec![2, 4]);
+    assert_eq!(runtime.block_stack, vec![1, 2]);
+
     runtime
-      .divert(&DivertData {
-        section: "section_1".to_string(),
-        subsection: None,
+      .divert(&Section {
+        section_name: "section_1".to_string(),
+        subsection_name: None,
       })
       .unwrap();
-    assert_eq!(runtime.block_stack, vec![2, 4, 0, 3]);
+    assert_eq!(runtime.block_stack, vec![0]);
   }
 
   #[test]
@@ -1263,7 +1258,7 @@ mod test {
       .unwrap()
       .unwrap();
     assert_eq!(id, 1);
-    Runtime::push_stack(&mut runtime, 1).unwrap();
+    Runtime::push_stack_until_text(&mut runtime, 1).unwrap();
     let bucket_settings = runtime.get_block(0).get_settings().clone();
     let id = runtime
       .get_random_block_from_bucket(&bucket_settings)
@@ -2510,22 +2505,21 @@ mod test {
       },
     };
 
-    let mut sections: HashMap<SectionKey, usize> = HashMap::default();
+    let mut sections: HashMap<Section, usize> = HashMap::default();
     sections.insert(
-      SectionKey {
-        section: "section".to_string(),
-        subsection: None,
+      Section {
+        section_name: "section".to_string(),
+        subsection_name: None,
       },
       0,
     );
 
-    let settings = BlockSettings {
-      unique: true,
-      ..Default::default()
-    };
     let text_1 = Block::Text {
       id: String::default(),
-      settings,
+      settings: BlockSettings {
+        unique: true,
+        ..Default::default()
+      },
     };
 
     let text_2 = Block::Text {
@@ -2534,9 +2528,9 @@ mod test {
     };
 
     let divert = Block::Divert {
-      next: NextBlock::Section(SectionKey {
-        section: "section".to_string(),
-        subsection: None,
+      next: NextBlock::Section(Section {
+        section_name: "section".to_string(),
+        subsection_name: None,
       }),
       settings: BlockSettings::default(),
     };
@@ -2712,9 +2706,9 @@ mod test {
 
   #[test]
   fn divert_throws_error_if_section_doesnt_exist() {
-    let section_key = SectionKey {
-      section: "section".to_string(),
-      subsection: Some("subsection".to_string()),
+    let section_key = Section {
+      section_name: "section".to_string(),
+      subsection_name: Some("subsection".to_string()),
     };
     let divert = Block::Divert {
       next: NextBlock::Section(section_key.clone()),
@@ -2764,7 +2758,7 @@ mod test {
       blocks: vec![text],
       ..Default::default()
     };
-    let mut runtime = Runtime::new(database);
+    let runtime = Runtime::new(database);
     let err = runtime.current_block().unwrap_err();
     assert_eq!(err, RuntimeError::EmptyStack);
   }

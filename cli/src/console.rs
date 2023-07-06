@@ -10,18 +10,17 @@ use std::path::PathBuf;
 #[derive(Debug)]
 pub struct Console {}
 impl Console {
-  fn prompt(section: Option<String>, subsection: Option<String>) -> String {
+  fn prompt(section: &Option<Section>) -> String {
     let mut line = String::new();
 
     let mut prompt_str = String::from("\n");
 
     if let Some(section) = section {
-      prompt_str.push_str(&section);
-    }
-
-    if let Some(subsection) = subsection {
-      prompt_str.push('/');
-      prompt_str.push_str(&subsection);
+      prompt_str.push_str(&section.section_name);
+      if let Some(subsection) = &section.subsection_name {
+        prompt_str.push('/');
+        prompt_str.push_str(subsection);
+      }
     }
 
     prompt_str.push_str(" > ");
@@ -45,9 +44,7 @@ impl Console {
     let mut runtime = Runtime::new(file);
 
     loop {
-      let section = runtime.game_state.current_section.clone();
-      let subsection = runtime.game_state.current_subsection.clone();
-      let input = Self::prompt(section, subsection);
+      let input = Self::prompt(&runtime.game_state.section);
 
       match input.as_str() {
         "" => match runtime.next_block() {
@@ -104,18 +101,21 @@ impl Console {
             if let Some(section_str) = splitted.next() {
               let subsection = splitted.next();
               let section = match subsection {
-                Some(subsection) => DivertData {
-                  section: section_str.to_string(),
-                  subsection: Some(subsection.to_string()),
+                Some(subsection) => Section {
+                  section_name: section_str.to_string(),
+                  subsection_name: Some(subsection.to_string()),
                 },
-                None => DivertData {
-                  section: section_str.to_string(),
-                  subsection: None,
+                None => Section {
+                  section_name: section_str.to_string(),
+                  subsection_name: None,
                 },
               };
               match runtime.divert(&section) {
-                Ok(_) => match runtime.current_block() {
-                  Ok(block) => print_block(block),
+                Ok(_) => match runtime.next_block() {
+                  Ok((block, choices)) => {
+                    print_block(block);
+                    print_choices(choices);
+                  }
                   Err(error) => print_runtime_error(error, &runtime),
                 },
                 Err(error) => print_runtime_error(error, &runtime),

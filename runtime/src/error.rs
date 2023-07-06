@@ -5,9 +5,7 @@ use std::{
   str::ParseBoolError,
 };
 
-use cuentitos_common::{BlockId, SectionName};
-
-use crate::DivertData;
+use cuentitos_common::{BlockId, Section, SectionName};
 type VariableName = String;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -16,7 +14,7 @@ pub enum RuntimeError {
   WaitingForChoice(Vec<String>),
   SectionAtLowerLevel(SectionName),
   StoryFinished,
-  SectionDoesntExist(DivertData),
+  SectionDoesntExist(Section),
   UnexpectedBlock {
     expected_block: String,
     block_found: String,
