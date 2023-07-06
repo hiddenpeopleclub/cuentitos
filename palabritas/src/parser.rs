@@ -5,8 +5,8 @@ use std::path::Path;
 use cuentitos_common::condition::ComparisonOperator;
 use cuentitos_common::modifier::ModifierOperator;
 use cuentitos_common::{
-  Block, BlockId, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Function,
-  I18n, Modifier, NextBlock, Requirement, Script, SectionKey,
+  Block, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Function, I18n,
+  Modifier, NextBlock, Requirement, Script, SectionKey,
 };
 use pest::{iterators::Pair, Parser};
 
@@ -130,19 +130,13 @@ fn parse_database(
 ) -> Result<Database, PalabritasError> {
   match_rule(&token, Rule::Database, &parsing_data.file)?;
 
-  //let mut blocks: Vec<Vec<Block>> = Vec::default();
-  // let mut i18n = I18n::from_config(config);
-
-  let mut section_map = HashMap::default();
-  //let section_list = find_all_section_list(&token)?;
-
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Block => {
         parse_block(inner_token, &mut parsing_data, 0)?;
       }
       Rule::Section => {
-        parse_section(inner_token, &mut parsing_data, &mut section_map)?;
+        parse_section(inner_token, &mut parsing_data, 0)?;
       }
       _ => {}
     }
@@ -173,6 +167,28 @@ fn parse_database(
       }
 
       ordered_blocks.push(block.clone());
+    }
+  }
+
+  let mut section_map = HashMap::default();
+
+  for i in 0..ordered_blocks.len() {
+    if let Block::Section { id: section_id, settings } = &ordered_blocks[i] {
+      let section_key = SectionKey {
+        section: section_id.clone(),
+        subsection: None,
+      };
+
+      section_map.insert(section_key, i);
+      for child in &settings.children {
+        if let Block::Subsection { id: subsection_id, settings: _ } = &ordered_blocks[*child] {
+          let section_key = SectionKey {
+            section: section_id.clone(),
+            subsection: Some(subsection_id.clone()),
+          };
+          section_map.insert(section_key, *child);
+        }
+      }
     }
   }
 
@@ -227,7 +243,7 @@ pub fn parse_section_str(
   let token = parse_str(input, Rule::Section)?;
   let mut parsing_data =
     ParsingData::new(config.clone(), section_list.to_owned(), String::default());
-  parse_section(token, &mut parsing_data, &mut HashMap::default())
+  parse_section(token, &mut parsing_data, 0)
 }
 
 pub fn parse_tag_str(input: &str) -> Result<String, PalabritasError> {
@@ -365,15 +381,15 @@ fn parse_subsection_key(
 fn parse_section(
   token: Pair<Rule>,
   parsing_data: &mut ParsingData,
-  section_map: &mut HashMap<SectionKey, BlockId>,
+  child_order: usize,
 ) -> Result<Block, PalabritasError> {
   match_rule(&token, Rule::Section, &parsing_data.file)?;
   if parsing_data.blocks.is_empty() {
     parsing_data.blocks.push(Vec::default());
   }
 
-  parsing_data.blocks[0].push(Block::default());
-  let block_id = parsing_data.blocks[0].len() - 1;
+  parsing_data.blocks[child_order].push(Block::default());
+  let block_id = parsing_data.blocks[child_order].len() - 1;
   let error_info = ErrorInfo {
     line: token.line_col().0,
     col: token.line_col().1,
@@ -407,27 +423,24 @@ fn parse_section(
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
-          parse_block(inner_blocks_token, parsing_data, 1)?;
-          settings.children.push(parsing_data.blocks[1].len() - 1);
+          parse_block(inner_blocks_token, parsing_data, child_order + 1)?;
+          settings
+            .children
+            .push(parsing_data.blocks[child_order + 1].len() - 1);
         }
       }
       Rule::Subsection => {
-        parse_subsection(inner_token, parsing_data, section_map)?;
+        parse_subsection(inner_token, parsing_data, child_order + 1)?;
+        settings
+        .children
+        .push(parsing_data.blocks[child_order + 1].len() - 1);
       }
       _ => {}
     }
   }
 
-  section_map.insert(
-    SectionKey {
-      section: id.clone(),
-      subsection: None,
-    },
-    block_id,
-  );
-
   let section = Block::Section { id, settings };
-  check_invalid_frequency(&section, error_info, &parsing_data.blocks, 0)?;
+  check_invalid_frequency(&section, error_info, &parsing_data.blocks, child_order)?;
   parsing_data.blocks[0][block_id] = section.clone();
 
   Ok(section)
@@ -436,15 +449,15 @@ fn parse_section(
 fn parse_subsection(
   token: Pair<Rule>,
   parsing_data: &mut ParsingData,
-  section_map: &mut HashMap<SectionKey, BlockId>,
+  child_order: usize,
 ) -> Result<(), PalabritasError> {
   match_rule(&token, Rule::Subsection, &parsing_data.file)?;
-  if parsing_data.blocks.is_empty() {
+  while parsing_data.blocks.len() < 2 {
     parsing_data.blocks.push(Vec::default());
   }
 
-  parsing_data.blocks[0].push(Block::default());
-  let block_id = parsing_data.blocks[0].len() - 1;
+  parsing_data.blocks[child_order].push(Block::default());
+  let block_id = parsing_data.blocks[child_order].len() - 1;
   let error_info = ErrorInfo {
     line: token.line_col().0,
     col: token.line_col().1,
@@ -478,28 +491,25 @@ fn parse_subsection(
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
-          parse_block(inner_blocks_token, parsing_data, 1)?;
-          settings.children.push(parsing_data.blocks[1].len() - 1);
+          parse_block(inner_blocks_token, parsing_data, child_order + 1)?;
+          settings
+            .children
+            .push(parsing_data.blocks[child_order + 1].len() - 1);
         }
       }
       Rule::Subsection => {
-        parse_subsection(inner_token, parsing_data, section_map)?;
+        parse_subsection(inner_token, parsing_data, child_order + 1)?;
+        settings
+        .children
+        .push(parsing_data.blocks[child_order + 1].len() - 1);
       }
       _ => {}
     }
   }
 
-  section_map.insert(
-    SectionKey {
-      section: parsing_data.current_section.clone().unwrap(),
-      subsection: Some(id.clone()),
-    },
-    block_id,
-  );
-
   let subsection = Block::Subsection { id, settings };
-  check_invalid_frequency(&subsection, error_info, &parsing_data.blocks, 0)?;
-  parsing_data.blocks[0][block_id] = subsection;
+  check_invalid_frequency(&subsection, error_info, &parsing_data.blocks, child_order)?;
+  parsing_data.blocks[child_order][block_id] = subsection;
 
   Ok(())
 }
@@ -1730,20 +1740,23 @@ mod test {
 
     let token = parse_str(&section_string, Rule::Section).unwrap();
     let mut parsing_data = ParsingData::default();
-    parse_section(token, &mut parsing_data, &mut HashMap::default()).unwrap();
+    parse_section(token, &mut parsing_data, 0).unwrap();
 
     let section = parsing_data.blocks[0][0].clone();
 
     let expected_value = Block::Section {
-      id: section_identifier,
-      settings: BlockSettings::default(),
+      id: section_identifier.clone(),
+      settings: BlockSettings{
+        children: vec![0,1],
+        ..Default::default()
+      },
     };
     assert_eq!(section, expected_value);
 
-    let sub_section_1 = parsing_data.blocks[0][1].clone();
+    let sub_section_1 = parsing_data.blocks[1][0].clone();
 
     let expected_value = Block::Subsection {
-      id: subsection_identifier_1,
+      id: subsection_identifier_1.clone(),
       settings: BlockSettings {
         script: Script {
           file: String::default(),
@@ -1755,10 +1768,10 @@ mod test {
     };
     assert_eq!(sub_section_1, expected_value);
 
-    let sub_section_2 = parsing_data.blocks[0][2].clone();
+    let sub_section_2 = parsing_data.blocks[1][1].clone();
 
     let expected_value = Block::Subsection {
-      id: subsection_identifier_2,
+      id: subsection_identifier_2.clone(),
       settings: BlockSettings {
         script: Script {
           file: String::default(),
@@ -1769,6 +1782,33 @@ mod test {
       },
     };
     assert_eq!(sub_section_2, expected_value);
+    let token = parse_str(&section_string, Rule::Database).unwrap();
+    let parsing_data = ParsingData::default();
+    let database = parse_database(token, parsing_data).unwrap();
+
+    let section_key = SectionKey {
+      section: section_identifier.clone(),
+      subsection: None,
+    };
+
+    let id = *database.sections.get(&section_key).unwrap();
+    assert_eq!(id, 0);
+
+    let section_key = SectionKey {
+      section: section_identifier.clone(),
+      subsection: Some(subsection_identifier_1),
+    };
+    
+    let id = *database.sections.get(&section_key).unwrap();
+    assert_eq!(id, 2);
+
+    let section_key = SectionKey {
+      section: section_identifier,
+      subsection: Some(subsection_identifier_2),
+    };
+
+    let id = *database.sections.get(&section_key).unwrap();
+    assert_eq!(id, 3);
   }
   #[test]
   fn parse_text_correctly() {
