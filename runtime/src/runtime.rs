@@ -535,6 +535,38 @@ impl Runtime {
     Ok(modified_variables)
   }
 
+  fn update_section(&mut self) 
+  {
+    self.game_state.current_section = None;
+    self.game_state.current_subsection = None;
+
+    for block in self.block_stack.iter().rev()
+    {
+      match self.get_block(*block)
+      {
+        cuentitos_common::Block::Section { id, settings:_ } => {
+          self.game_state.current_section = Some(id.clone());
+        },
+        cuentitos_common::Block::Subsection { id, settings:_ } => {
+          self.game_state.current_subsection = Some(id.clone());
+        },
+        cuentitos_common::Block::Divert { next, settings:_ } => {
+          if  let NextBlock::Section(section_key) =  next{
+            if section_key.subsection.is_some()
+            {
+              self.game_state.current_section = Some(section_key.section.clone());
+            }
+          }
+        },
+        _=>{}
+      }
+
+      if  self.game_state.current_section.is_some()
+      {
+        return;
+      }
+    }
+  }
   fn push_stack(runtime: &mut Runtime, id: BlockId) -> Result<ModifiedVariables, RuntimeError> {
     runtime.block_stack.push(id);
 
@@ -551,17 +583,15 @@ impl Runtime {
     }
 
     let mut modified_variables = runtime.apply_modifiers()?;
+    runtime.update_section();
 
     let block = runtime.get_block(id).clone();
     match block {
-      cuentitos_common::Block::Section { id, settings: _ } => {
-        runtime.game_state.current_section = Some(id);
-        runtime.game_state.current_subsection = None;
+      cuentitos_common::Block::Section { id:_, settings: _ } => {
         modified_variables.append(&mut Self::update_stack(runtime)?);
         Ok(modified_variables)
       }
-      cuentitos_common::Block::Subsection { id, settings: _ } => {
-        runtime.game_state.current_subsection = Some(id);
+      cuentitos_common::Block::Subsection { id:_, settings: _ } => {
         modified_variables.append(&mut Self::update_stack(runtime)?);
         Ok(modified_variables)
       }
