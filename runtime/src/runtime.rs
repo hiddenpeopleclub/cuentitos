@@ -548,7 +548,10 @@ impl Runtime {
           self.game_state.current_section = Some(id.clone());
         },
         cuentitos_common::Block::Subsection { id, settings:_ } => {
-          self.game_state.current_subsection = Some(id.clone());
+          if  self.game_state.current_subsection.is_none()
+          {
+            self.game_state.current_subsection = Some(id.clone());
+          }
         },
         cuentitos_common::Block::Divert { next, settings:_ } => {
           if  let NextBlock::Section(section_key) =  next{
