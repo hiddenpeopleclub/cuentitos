@@ -93,6 +93,17 @@ impl Runtime {
     Ok(modified_variables)
   }
 
+  pub fn boomerang_divert(&mut self, section: &Section) -> Result<ModifiedVariables, RuntimeError> {
+    let new_stack = self.get_section_blocks_stack(section)?;
+    let mut modified_variables = ModifiedVariables::default();
+
+    for block in new_stack {
+      modified_variables.append(&mut Self::push_stack(self, block)?);
+    }
+
+    Ok(modified_variables)
+  }
+
   fn get_section_blocks_stack(&mut self, section: &Section) -> Result<Vec<BlockId>, RuntimeError> {
     let mut section = section.clone();
     let section_id = match self.database.sections.get(&section) {
@@ -206,6 +217,13 @@ impl Runtime {
       } => Err(RuntimeError::UnexpectedBlock {
         expected_block: "text".to_string(),
         block_found: "divert".to_string(),
+      }),
+      cuentitos_common::Block::BoomerangDivert {
+        next: _,
+        settings: _,
+      } => Err(RuntimeError::UnexpectedBlock {
+        expected_block: "text".to_string(),
+        block_found: "boomerang divert".to_string(),
       }),
     }
   }
@@ -604,6 +622,22 @@ impl Runtime {
           }
           NextBlock::Section(section) => {
             modified_variables.append(&mut runtime.divert(&section)?);
+            modified_variables.append(&mut Self::update_stack(runtime)?)
+          }
+        }
+        Ok(modified_variables)
+      }
+      cuentitos_common::Block::BoomerangDivert { next, settings: _ } => {
+        match next {
+          NextBlock::BlockId(id) => {
+            modified_variables.append(&mut Self::push_stack_until_text(runtime, id)?)
+          }
+          NextBlock::EndOfFile => {
+            runtime.reset();
+            return Err(RuntimeError::StoryFinished);
+          }
+          NextBlock::Section(section) => {
+            modified_variables.append(&mut runtime.boomerang_divert(&section)?);
             modified_variables.append(&mut Self::update_stack(runtime)?)
           }
         }

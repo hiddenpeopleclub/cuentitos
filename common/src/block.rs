@@ -105,6 +105,10 @@ pub enum Block {
     next: NextBlock,
     settings: BlockSettings,
   },
+  BoomerangDivert {
+    next: NextBlock,
+    settings: BlockSettings,
+  },
 }
 
 impl Block {
@@ -116,6 +120,7 @@ impl Block {
       Block::Section { id: _, settings } => settings,
       Block::Subsection { id: _, settings } => settings,
       Block::Divert { next: _, settings } => settings,
+      Block::BoomerangDivert { next: _, settings } => settings,
     }
   }
   pub fn get_settings(&self) -> &BlockSettings {
@@ -126,22 +131,14 @@ impl Block {
       Block::Section { id: _, settings } => settings,
       Block::Subsection { id: _, settings } => settings,
       Block::Divert { next: _, settings } => settings,
+      Block::BoomerangDivert { next: _, settings } => settings,
     }
   }
   pub fn get_i18n_id(&self) -> Option<I18nId> {
     match self {
       Block::Text { id, settings: _ } => Some(id.clone()),
       Block::Choice { id, settings: _ } => Some(id.clone()),
-      Block::Bucket {
-        name: _,
-        settings: _,
-      } => None,
-      Block::Section { id: _, settings: _ } => None,
-      Block::Subsection { id: _, settings: _ } => None,
-      Block::Divert {
-        next: _,
-        settings: _,
-      } => None,
+      _ => None,
     }
   }
 }

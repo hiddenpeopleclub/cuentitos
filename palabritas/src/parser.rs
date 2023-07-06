@@ -269,6 +269,14 @@ pub fn parse_divert_str(input: &str, section_list: &[Section]) -> Result<Block, 
   parse_divert(token, section_list, &None, &String::default())
 }
 
+pub fn parse_boomerang_divert_str(
+  input: &str,
+  section_list: &[Section],
+) -> Result<Block, PalabritasError> {
+  let token = parse_str(input, Rule::BoomerangDivert)?;
+  parse_boomerang_divert(token, section_list, &None, &String::default())
+}
+
 pub fn parse_modifier_str(input: &str, config: &Config) -> Result<Modifier, PalabritasError> {
   let token = parse_str(input, Rule::Modifier)?;
   parse_modifier(token, config, &String::default())
@@ -556,6 +564,14 @@ fn parse_block(
       }
       Rule::Divert => {
         block = parse_divert(
+          inner_token,
+          &parsing_data.section_list,
+          &parsing_data.current_section,
+          &parsing_data.file,
+        )?;
+      }
+      Rule::BoomerangDivert => {
+        block = parse_boomerang_divert(
           inner_token,
           &parsing_data.section_list,
           &parsing_data.current_section,
@@ -1123,6 +1139,52 @@ fn parse_divert(
   };
 
   Ok(Block::Divert {
+    next,
+    settings: BlockSettings::default(),
+  })
+}
+
+fn parse_boomerang_divert(
+  token: Pair<Rule>,
+  section_list: &[Section],
+  current_section: &Option<Section>,
+  file: &str,
+) -> Result<Block, PalabritasError> {
+  match_rule(&token, Rule::BoomerangDivert, file)?;
+
+  let mut section: Option<String> = None;
+  let mut subsection: Option<String> = None;
+
+  let error_info = ErrorInfo {
+    line: token.line_col().0,
+    col: token.line_col().1,
+    string: token.as_str().to_string(),
+    file: file.to_string(),
+  };
+
+  for inner_token in token.into_inner() {
+    if inner_token.as_rule() == Rule::Identifier {
+      if section.is_none() {
+        section = Some(inner_token.as_str().to_string());
+      } else {
+        subsection = Some(inner_token.as_str().to_string());
+      }
+    }
+  }
+
+  let next = match section.is_some() && subsection.is_none() && section.clone().unwrap() == "END" {
+    true => NextBlock::EndOfFile,
+    false => {
+      let section_key = Section {
+        section_name: section.unwrap(),
+        subsection_name: subsection,
+      };
+      check_section_existance(&section_key, section_list, &error_info, current_section)?;
+      NextBlock::Section(section_key)
+    }
+  };
+
+  Ok(Block::BoomerangDivert {
     next,
     settings: BlockSettings::default(),
   })
@@ -2466,6 +2528,42 @@ mod test {
   }
 
   #[test]
+  fn parse_boomerang_divert_correctly() {
+    //Section
+    let section = make_random_identifier();
+    let divert_string = format!("<-> {}", section);
+    let section_key = Section {
+      section_name: section.clone(),
+      subsection_name: None,
+    };
+    let expected_value = Block::BoomerangDivert {
+      next: NextBlock::Section(section_key.clone()),
+      settings: BlockSettings::default(),
+    };
+    let mut section_list = vec![section_key];
+
+    let divert = parse_boomerang_divert_str(&divert_string, &section_list).unwrap();
+    assert_eq!(divert, expected_value);
+
+    //Subsection
+    let subsection = make_random_identifier();
+    let divert_string = format!("<-> {}/{}", section, subsection);
+    let section_key = Section {
+      section_name: section.clone(),
+      subsection_name: Some(subsection.clone()),
+    };
+
+    let expected_value = Block::BoomerangDivert {
+      next: NextBlock::Section(section_key.clone()),
+      settings: BlockSettings::default(),
+    };
+    section_list.push(section_key);
+
+    let divert = parse_boomerang_divert_str(&divert_string, &section_list).unwrap();
+    assert_eq!(divert, expected_value);
+  }
+
+  #[test]
   fn parse_modifier_correctly() {
     //Modifier = { "set" ~ " "+ ~ ( (Identifier ~ " "+ ~ Value) | (NotOperator? ~ " "* ~ Identifier) ) ~ " "* }
     let variable = make_random_identifier();
@@ -2797,6 +2895,19 @@ mod test {
     assert_parse_rule(
       Rule::Divert,
       &("->".to_string() + &section + "/" + &subsection),
+    );
+  }
+
+  #[test]
+  fn parse_boomerang_divert_rule() {
+    //BoomerangDivert = { Chance? ~ "<->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)? }
+    let section = make_random_identifier();
+    let subsection = make_random_identifier();
+
+    assert_parse_rule(Rule::BoomerangDivert, &("<->".to_string() + &section));
+    assert_parse_rule(
+      Rule::BoomerangDivert,
+      &("<->".to_string() + &section + "/" + &subsection),
     );
   }
 
