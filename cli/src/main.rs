@@ -30,7 +30,13 @@ where
   T: AsRef<Path>,
   U: AsRef<Path>,
 {
-  cuentitos_compiler::compile(&source_path, destination_path)
+  match cuentitos_compiler::compile(&source_path, destination_path) {
+    Ok(_) => Ok(()),
+    Err(err) => {
+      println!("{}\n", err);
+      Err(err)
+    }
+  }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
