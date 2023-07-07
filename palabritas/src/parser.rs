@@ -2189,9 +2189,12 @@ mod test {
         line: 2,
         col: 1,
       }),
-      section_name: Section { section_name: section_1, subsection_name: None },
+      section_name: Section {
+        section_name: section_1,
+        subsection_name: None,
+      },
     };
-    
+
     assert_eq!(err, expected_error);
   }
 
@@ -2217,9 +2220,12 @@ mod test {
         line: 3,
         col: 1,
       }),
-      section_name: Section { section_name: section, subsection_name: Some(subsection_1)},
+      section_name: Section {
+        section_name: section,
+        subsection_name: Some(subsection_1),
+      },
     };
-    
+
     assert_eq!(err, expected_error);
   }
 
@@ -2247,7 +2253,7 @@ mod test {
       }),
       section_name: section_2,
     };
-    
+
     assert_eq!(err, expected_error);
   }
   #[test]
