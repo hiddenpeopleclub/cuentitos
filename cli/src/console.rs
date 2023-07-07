@@ -1,18 +1,20 @@
 use cuentitos_runtime::*;
 use palabritas::parse_modifier_str;
+use rustyline::{error::ReadlineError, history::FileHistory};
+use rustyline::{DefaultEditor, Editor};
 use std::fs;
 use std::fs::File;
 use std::io::Read;
-use std::io::Write;
 
 use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct Console {}
 impl Console {
-  fn prompt(section: &Option<Section>) -> String {
-    let mut line = String::new();
-
+  fn prompt(
+    rl: &mut Editor<(), FileHistory>,
+    section: &Option<Section>,
+  ) -> Result<String, ReadlineError> {
     let mut prompt_str = String::from("\n");
 
     if let Some(section) = section {
@@ -25,13 +27,7 @@ impl Console {
 
     prompt_str.push_str(" > ");
 
-    print!("{}", prompt_str);
-    std::io::stdout().flush().unwrap();
-    std::io::stdin()
-      .read_line(&mut line)
-      .expect("Error: Could not read a line");
-
-    return line.trim().to_string();
+    rl.readline(&prompt_str)
   }
 
   pub fn start(path: PathBuf) {
@@ -43,109 +39,126 @@ impl Console {
 
     let mut runtime = Runtime::new(file);
 
-    loop {
-      let input = Self::prompt(&runtime.game_state.section);
+    let mut rl = DefaultEditor::new().unwrap();
+    rl.load_history("history.txt").unwrap_or_default();
 
-      match input.as_str() {
-        "" => match runtime.next_block() {
+    loop {
+      let read_line = Self::prompt(&mut rl, &runtime.game_state.section);
+
+      match read_line {
+        Ok(line) => {
+          rl.add_history_entry(line.as_str()).unwrap();
+          run_command(line, &mut runtime);
+        }
+        Err(ReadlineError::Interrupted) => break,
+        Err(ReadlineError::Eof) => break,
+        Err(err) => {
+          println!("{:?}", err);
+          break;
+        }
+      }
+    }
+
+    rl.save_history("history.txt").unwrap();
+  }
+}
+
+fn run_command(input: String, runtime: &mut Runtime) {
+  match input.trim() {
+    "" => match runtime.next_block() {
+      Ok((block, variables)) => {
+        print_block(block);
+        print_variables(&variables, runtime)
+      }
+      Err(error) => print_runtime_error(error, runtime),
+    },
+    "sections" => {
+      println!("Sections:");
+      for section in runtime.database.sections.keys() {
+        println!("{:?}", section);
+      }
+    }
+    "?" => {
+      if !runtime.block_stack.is_empty() {
+        match runtime.current_block() {
+          Ok(block) => {
+            println!("Current Block:");
+            println!("  Text: {}", block.text);
+            println!("  Script: {}", block.script);
+          }
+          Err(error) => print_runtime_error(error, runtime),
+        }
+        match runtime.peek_next_block() {
+          Ok((block, _)) => {
+            println!("Next Block:");
+            println!("  Text: {}", block.text);
+            println!("  Script: {}", block.script);
+          }
+          Err(error) => print_runtime_error(error, runtime),
+        }
+      }
+      println!("Variables: ");
+      print_all_variables(runtime)
+    }
+    "variables" => print_all_variables(runtime),
+    str => {
+      if str.starts_with("set") {
+        match parse_modifier_str(str, &runtime.database.config) {
+          Ok(modifier) => match runtime.apply_modifier(&modifier) {
+            Ok(_) => {
+              print_variable(&modifier.variable, runtime);
+            }
+            Err(error) => println!("{}", error),
+          },
+          Err(error) => println!("{}", error),
+        }
+      } else if str.starts_with("->") {
+        let substr: String = str.chars().skip(2).collect();
+        let mut splitted = substr.trim().split('/');
+        if let Some(section_str) = splitted.next() {
+          let subsection = splitted.next();
+          let section = match subsection {
+            Some(subsection) => Section {
+              section_name: section_str.to_string(),
+              subsection_name: Some(subsection.to_string()),
+            },
+            None => Section {
+              section_name: section_str.to_string(),
+              subsection_name: None,
+            },
+          };
+          match runtime.divert(&section) {
+            Ok(_) => match runtime.next_block() {
+              Ok((block, choices)) => {
+                print_block(block);
+                print_choices(choices);
+              }
+              Err(error) => print_runtime_error(error, runtime),
+            },
+            Err(error) => print_runtime_error(error, runtime),
+          }
+        }
+      } else if let Ok(choice) = str.parse::<usize>() {
+        if choice == 0 {
+          println!("invalid option");
+        }
+        match runtime.pick_choice(choice - 1) {
           Ok((block, variables)) => {
             print_block(block);
-            print_variables(&variables, &runtime)
+            print_variables(&variables, runtime)
           }
-          Err(error) => print_runtime_error(error, &runtime),
-        },
-        "sections" => {
-          println!("Sections:");
-          for section in runtime.database.sections.keys() {
-            println!("{:?}", section);
-          }
+          Err(error) => print_runtime_error(error, runtime),
         }
-        "?" => {
-          if !runtime.block_stack.is_empty() {
-            match runtime.current_block() {
-              Ok(block) => {
-                println!("Current Block:");
-                println!("  Text: {}", block.text);
-                println!("  Script: {}", block.script);
-              }
-              Err(error) => print_runtime_error(error, &runtime),
-            }
-            match runtime.peek_next_block() {
-              Ok((block, _)) => {
-                println!("Next Block:");
-                println!("  Text: {}", block.text);
-                println!("  Script: {}", block.script);
-              }
-              Err(error) => print_runtime_error(error, &runtime),
-            }
-          }
-          println!("Variables: ");
-          print_all_variables(&runtime)
-        }
-        "q" => break,
-        "variables" => print_all_variables(&runtime),
-        str => {
-          if str.starts_with("set") {
-            match parse_modifier_str(str, &runtime.database.config) {
-              Ok(modifier) => match runtime.apply_modifier(&modifier) {
-                Ok(_) => {
-                  print_variable(&modifier.variable, &runtime);
-                }
-                Err(error) => println!("{}", error),
-              },
-              Err(error) => println!("{}", error),
-            }
-          } else if str.starts_with("->") {
-            let substr: String = str.chars().skip(2).collect();
-            let mut splitted = substr.trim().split('/');
-            if let Some(section_str) = splitted.next() {
-              let subsection = splitted.next();
-              let section = match subsection {
-                Some(subsection) => Section {
-                  section_name: section_str.to_string(),
-                  subsection_name: Some(subsection.to_string()),
-                },
-                None => Section {
-                  section_name: section_str.to_string(),
-                  subsection_name: None,
-                },
-              };
-              match runtime.divert(&section) {
-                Ok(_) => match runtime.next_block() {
-                  Ok((block, choices)) => {
-                    print_block(block);
-                    print_choices(choices);
-                  }
-                  Err(error) => print_runtime_error(error, &runtime),
-                },
-                Err(error) => print_runtime_error(error, &runtime),
-              }
-            }
-          } else if let Ok(choice) = str.parse::<usize>() {
-            if choice == 0 {
-              println!("invalid option");
-              continue;
-            }
-            match runtime.pick_choice(choice - 1) {
-              Ok((block, variables)) => {
-                print_block(block);
-                print_variables(&variables, &runtime)
-              }
-              Err(error) => print_runtime_error(error, &runtime),
-            }
-          } else {
-            println!("Unkown command: {}", str);
-          }
-        }
+      } else {
+        println!("Unkown command: {}", str);
       }
     }
   }
 }
-
 fn print_all_variables(runtime: &Runtime) {
   let mut variables = Vec::default();
 
-  for (variable, _) in &runtime.database.config.variables {
+  for variable in runtime.database.config.variables.keys() {
     variables.push(variable.clone());
   }
 

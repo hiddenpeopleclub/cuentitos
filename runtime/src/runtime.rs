@@ -924,7 +924,6 @@ mod test {
     assert_eq!(runtime.block_stack, vec![0]);
   }
 
-  
   #[test]
   fn boomerang_divert_works_correctly() {
     let section_1 = Block::Section {
@@ -1003,7 +1002,7 @@ mod test {
         subsection_name: None,
       })
       .unwrap();
-    assert_eq!(runtime.block_stack, vec![1 , 2 , 0]);
+    assert_eq!(runtime.block_stack, vec![1, 2, 0]);
   }
 
   #[test]
