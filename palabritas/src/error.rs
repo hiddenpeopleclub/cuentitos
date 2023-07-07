@@ -1,13 +1,12 @@
+use crate::parser::Rule;
+use cuentitos_common::{Script, Section, SectionName, VariableKind};
 use std::{error::Error, fmt::Display, path::PathBuf};
 
-use cuentitos_common::{Section, VariableKind};
-
-use crate::parser::Rule;
 #[derive(Debug, PartialEq, Eq)]
 pub enum PalabritasError {
   FileIsEmpty,
   ParseError {
-    info: ErrorInfo,
+    script: Script,
     reason: String,
   },
   PathIsNotAFile(PathBuf),
@@ -16,56 +15,52 @@ pub enum PalabritasError {
     path: PathBuf,
     message: String,
   },
-  BucketSumIsNot1(ErrorInfo),
-  BucketHasFrequenciesAndChances(ErrorInfo),
-  BucketMissingProbability(ErrorInfo),
+  BucketSumIsNot1(Script, String),
+  BucketHasFrequenciesAndChances(Script, String),
+  BucketMissingProbability(Script, String),
   UnexpectedRule {
-    info: ErrorInfo,
+    script: Script,
     expected_rule: Rule,
     rule_found: Rule,
   },
-  DivisionByZero(ErrorInfo),
+  DivisionByZero(Script, String),
   SectionDoesntExist {
-    info: ErrorInfo,
+    script: Script,
     section: Section,
   },
+  DuplicatedSection {
+    first_appearance: Box<Script>,
+    second_appearance: Box<Script>,
+    section_name: Section,
+  },
+  SubsectioNamedAfterSection {
+    subsection_script: Box<Script>,
+    section_script: Box<Script>,
+    section_name: SectionName,
+  },
   VariableDoesntExist {
-    info: ErrorInfo,
+    script: Script,
+    string: String,
     variable: String,
   },
   InvalidVariableValue {
-    info: Box<ErrorInfo>,
+    script: Box<Script>,
+    string: String,
     variable: String,
     value: String,
     variable_type: VariableKind,
   },
   InvalidVariableOperator {
-    info: Box<ErrorInfo>,
+    script: Box<Script>,
+    string: String,
     variable: String,
     operator: String,
     variable_type: VariableKind,
   },
-  FrequencyOutOfBucket(ErrorInfo),
-  FrequencyModifierWithoutFrequencyChance(ErrorInfo),
+  FrequencyOutOfBucket(Script, String),
+  FrequencyModifierWithoutFrequencyChance(Script, String),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct ErrorInfo {
-  pub line: usize,
-  pub col: usize,
-  pub string: String,
-  pub file: String,
-}
-
-impl Display for ErrorInfo {
-  fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-    write!(
-      f,
-      "{}:{}:{}  {}",
-      self.file, self.line, self.col, self.string
-    )
-  }
-}
 impl Error for PalabritasError {}
 impl Display for PalabritasError {
   fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -73,36 +68,41 @@ impl Display for PalabritasError {
       PalabritasError::FileIsEmpty => {
         write!(f, "File provided is empty.")
       }
-      PalabritasError::ParseError { info, reason } => {
-        write!(f, "{}\n{}", info, reason)
+      PalabritasError::ParseError { script, reason } => {
+        write!(f, "{}\n{}", script, reason)
       }
-      PalabritasError::BucketSumIsNot1(info) => {
+      PalabritasError::BucketSumIsNot1(script, string) => {
         write!(
           f,
-          "{}\n  The sum of the probabilities in a bucket must be 100%.",
-          info
+          "{}  {}\n  The sum of the probabilities in a bucket must be 100%.",
+          script, string
         )
       }
-      PalabritasError::BucketHasFrequenciesAndChances(info) => {
+      PalabritasError::BucketHasFrequenciesAndChances(script, string) => {
         write!(
           f,
-          "{}\n  Buckets can't have frequency notations and percentage notations at the same time.",
-          info
+          "{}  {}\n  Buckets can't have frequency notations and percentage notations at the same time.",
+          script,
+          string
         )
       }
       PalabritasError::UnexpectedRule {
-        info,
+        script,
         expected_rule,
         rule_found,
       } => {
         write!(
           f,
           "{}\n  Expected {:?} but found {:?}.",
-          info, expected_rule, rule_found
+          script, expected_rule, rule_found
         )
       }
-      PalabritasError::BucketMissingProbability(info) => {
-        write!(f, "{}\n  Missing probability for bucket element.\n", info)
+      PalabritasError::BucketMissingProbability(script, string) => {
+        write!(
+          f,
+          "{}  {}\n  Missing probability for bucket element.\n",
+          script, string
+        )
       }
       PalabritasError::CantReadFile { path, message } => {
         write!(f, "Can't read file {:?}\n{}", path, message)
@@ -113,52 +113,87 @@ impl Display for PalabritasError {
       PalabritasError::PathDoesntExist(path) => {
         write!(f, "Path provided doesn't exist: {:?}", path)
       }
-      PalabritasError::DivisionByZero(info) => {
-        write!(f, "{}\n  Can't divide by zero.", info)
+      PalabritasError::DivisionByZero(script, string) => {
+        write!(f, "{}  {}\n  Can't divide by zero.", script, string)
       }
-      PalabritasError::VariableDoesntExist { info, variable } => {
-        write!(f, "{}\n  Variable '{}' doesn't exist.", info, variable)
+      PalabritasError::VariableDoesntExist {
+        script,
+        string,
+        variable,
+      } => {
+        write!(
+          f,
+          "{}  {}\n  Variable '{}' doesn't exist.",
+          script, string, variable
+        )
       }
-      PalabritasError::SectionDoesntExist { info, section } => {
-        write!(f, "{}\n  Section '{}' doesn't exist.", info, section)
+      PalabritasError::SectionDoesntExist { script, section } => {
+        write!(f, "{}\n  Section '{}' doesn't exist.", script, section)
       }
       PalabritasError::InvalidVariableValue {
-        info,
+        script,
+        string,
         variable,
         value,
         variable_type,
       } => {
         write!(
           f,
-          "{}\n  Invalid value for variable '{}'. Expected {}, but found '{}'",
-          info, variable, variable_type, value,
+          "{}  {}\n  Invalid value for variable '{}'. Expected {}, but found '{}'",
+          script, string, variable, variable_type, value,
         )
       }
       PalabritasError::InvalidVariableOperator {
-        info,
+        script,
+        string,
         variable,
         operator,
         variable_type,
       } => {
         write!(
           f,
-          "{}\n  Invalid operator for variable '{}'. Operator '{}' can't be applied to {}",
-          info, variable, operator, variable_type
+          "{}  {}\n  Invalid operator for variable '{}'. Operator '{}' can't be applied to {}",
+          script, string, variable, operator, variable_type
         )
       }
-      PalabritasError::FrequencyOutOfBucket(info) => {
+      PalabritasError::FrequencyOutOfBucket(script, string) => {
         write!(
           f,
-          "{}\n  Frequency notation is only allowed in buckets.",
-          info
+          "{}  {}\n  Frequency notation is only allowed in buckets.",
+          script, string
         )
       }
-      PalabritasError::FrequencyModifierWithoutFrequencyChance(info) => {
+      PalabritasError::FrequencyModifierWithoutFrequencyChance(script, string) => {
         write!(
           f,
-          "{}\n  Frequency modifiers are only allowed for blocks with probabilistic chance and frequency notation.",
-          info
+          "{}  {}\n  Frequency modifiers are only allowed for blocks with probabilistic chance and frequency notation.",
+          script,
+          string
         )
+      }
+      PalabritasError::DuplicatedSection {
+        first_appearance,
+        second_appearance,
+        section_name,
+      } => {
+        write!(
+          f,
+          "{}\n  Tried to define a new section named `{}` but it was already defined in {}
+            ",
+          second_appearance, section_name, first_appearance
+        )
+      }
+      PalabritasError::SubsectioNamedAfterSection {
+        subsection_script,
+        section_script,
+        section_name,
+      } => {
+        write!(
+            f,
+            "{}\n  Tried to define a subsection named `{}` but there is a section with the same name defined in {}
+              ",
+              subsection_script, section_name, section_script
+          )
       }
     }
   }

@@ -34,7 +34,7 @@ pub enum NextBlock {
   Section(Section),
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Eq)]
 pub struct Script {
   pub file: String,
   pub line: usize,
