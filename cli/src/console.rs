@@ -143,26 +143,14 @@ impl Console {
 }
 
 fn print_all_variables(runtime: &Runtime) {
-  for (variable, kind) in &runtime.database.config.variables {
-    match kind {
-      VariableKind::Integer => {
-        let int: i32 = runtime.get_variable(variable).unwrap();
-        println!("  - {}: {}", variable, int);
-      }
-      VariableKind::Float => {
-        let float: f32 = runtime.get_variable(variable).unwrap();
-        println!("  - {}: {}", variable, float);
-      }
-      VariableKind::Bool => {
-        let bool: bool = runtime.get_variable(variable).unwrap();
-        println!("  - {}: {}", variable, bool);
-      }
-      _ => {
-        let string: String = runtime.get_variable(variable).unwrap();
-        println!("  - {}: {}", variable, string);
-      }
-    }
+  let mut variables = Vec::default();
+
+  for (variable, _) in &runtime.database.config.variables {
+    variables.push(variable.clone());
   }
+
+  variables.sort();
+  print_variables(&variables, runtime);
 }
 
 fn print_variables(variables: &ModifiedVariables, runtime: &Runtime) {
