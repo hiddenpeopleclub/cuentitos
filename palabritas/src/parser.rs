@@ -351,8 +351,7 @@ fn parse_section(
       }
       Rule::Chance => {
         settings.chance = parse_chance(inner_token, &parsing_data.file)?;
-        if let Chance::Frequency(_) = settings.chance
-        {
+        if let Chance::Frequency(_) = settings.chance {
           return Err(PalabritasError::FrequencyOutOfBucket(script, string));
         }
       }
@@ -439,8 +438,7 @@ fn parse_subsection(
       }
       Rule::Chance => {
         settings.chance = parse_chance(inner_token, &parsing_data.file)?;
-        if let Chance::Frequency(_) = settings.chance
-        {
+        if let Chance::Frequency(_) = settings.chance {
           return Err(PalabritasError::FrequencyOutOfBucket(script, string));
         }
       }

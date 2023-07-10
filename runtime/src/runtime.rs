@@ -242,7 +242,7 @@ impl Runtime {
 
     let mut peek_runtime = self.clone();
     let blocks = peek_runtime.update_stack()?;
-    Ok(Output::from_blocks(blocks, self)?)
+    Output::from_blocks(blocks, self)
   }
 
   pub fn progress_story(&mut self) -> Result<Output, RuntimeError> {
@@ -251,7 +251,7 @@ impl Runtime {
     }
 
     let blocks = Self::update_stack(self)?;
-    Ok(Output::from_blocks(blocks, self)?)
+    Output::from_blocks(blocks, self)
   }
 
   pub fn get_block(&self, stack_data: &BlockStackData) -> Result<Block, RuntimeError> {
@@ -735,7 +735,7 @@ impl Runtime {
 
   fn apply_modifiers(&mut self, modifiers: &Vec<Modifier>) -> Result<(), RuntimeError> {
     for modifier in modifiers {
-      self.apply_modifier(&modifier)?;
+      self.apply_modifier(modifier)?;
     }
     Ok(())
   }
@@ -788,7 +788,6 @@ impl Runtime {
             return Err(RuntimeError::StoryFinished);
           }
           NextBlock::Section(section) => {
-            
             blocks.append(&mut self.divert(&section)?);
             blocks.append(&mut self.update_stack()?)
           }

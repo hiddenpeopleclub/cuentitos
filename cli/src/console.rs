@@ -74,10 +74,28 @@ fn run_command(input: String, runtime: &mut Runtime) {
     }
     "?" => {
       if !runtime.block_stack.is_empty() {
-        println!("Current Block:");
-        print_output_result(runtime.current(), runtime);
-        println!("Next Block:");
-        print_output_result(runtime.peek_next(), runtime);
+        match runtime.current() {
+          Ok(result) => {
+            println!("Current Block:");
+            println!("  Text: {}", result.text);
+            println!(
+              "  Script: {}",
+              result.blocks.last().unwrap().get_settings().script
+            );
+          }
+          Err(error) => print_runtime_error(error, runtime),
+        }
+        match runtime.peek_next() {
+          Ok(result) => {
+            println!("Next Block:");
+            println!("  Text: {}", result.text);
+            println!(
+              "  Script: {}",
+              result.blocks.last().unwrap().get_settings().script
+            );
+          }
+          Err(error) => print_runtime_error(error, runtime),
+        }
       }
       println!("Variables: ");
       print_all_variables(runtime)
@@ -177,7 +195,6 @@ fn print_output(output: Output, runtime: &Runtime) {
 }
 
 fn print_block(block: Block, runtime: &Runtime) {
-
   let settings = block.get_settings();
   print_variables(&settings.changed_variables, runtime);
   if !settings.tags.is_empty() {
@@ -189,20 +206,20 @@ fn print_block(block: Block, runtime: &Runtime) {
   }
 
   match &block {
-    Block::Text { text, settings } =>
-    {
+    Block::Text { text, settings } => {
       let chance = get_change_string(&settings.chance);
       println!("{}{}", chance, text);
-    },
-    Block::Bucket { name, settings} => {
-      if let Some(name) = name {
-        let chance = get_change_string(&settings.chance);
-        println!("{}Entered bucket '{}'", chance, name);
-      }
+    }
+    Block::Bucket {
+      name: Some(name),
+      settings,
+    } => {
+      let chance = get_change_string(&settings.chance);
+      println!("{}Entered bucket '{}'", chance, name);
     }
     Block::Section { name, settings } => {
       let chance = get_change_string(&settings.chance);
-      println!("{}Entered section '{}'",chance, name);
+      println!("{}Entered section '{}'", chance, name);
     }
     Block::Subsection {
       section,
@@ -214,12 +231,11 @@ fn print_block(block: Block, runtime: &Runtime) {
     }
     _ => {}
   }
-
 }
 
 fn get_change_string(chance: &Chance) -> String {
   match chance {
-    Chance::None => {String::default()}
+    Chance::None => String::default(),
     Chance::Probability(value) => {
       format!("🎲 ({}%)", value)
     }
