@@ -66,9 +66,8 @@ impl Console {
 fn run_command(input: String, runtime: &mut Runtime) {
   match input.trim() {
     "" => match runtime.progress_story() {
-      Ok((block, variables)) => {
-        print_block(block);
-        print_variables(&variables, runtime)
+      Ok(output) => {
+        print_output(output);
       }
       Err(error) => print_runtime_error(error, runtime),
     },
@@ -80,22 +79,10 @@ fn run_command(input: String, runtime: &mut Runtime) {
     }
     "?" => {
       if !runtime.block_stack.is_empty() {
-        match runtime.current_block() {
-          Ok(block) => {
-            println!("Current Block:");
-            println!("  Text: {}", block.text);
-            println!("  Script: {}", block.script);
-          }
-          Err(error) => print_runtime_error(error, runtime),
-        }
-        match runtime.peek_next_block() {
-          Ok((block, _)) => {
-            println!("Next Block:");
-            println!("  Text: {}", block.text);
-            println!("  Script: {}", block.script);
-          }
-          Err(error) => print_runtime_error(error, runtime),
-        }
+        println!("Current Block:");
+        print_output_result(runtime.current(), runtime);
+        println!("Next Block:");
+        print_output_result(runtime.peek_next(), runtime);
       }
       println!("Variables: ");
       print_all_variables(runtime)
@@ -128,13 +115,7 @@ fn run_command(input: String, runtime: &mut Runtime) {
             },
           };
           match runtime.divert(&section) {
-            Ok(_) => match runtime.progress_story() {
-              Ok((block, choices)) => {
-                print_block(block);
-                print_choices(choices);
-              }
-              Err(error) => print_runtime_error(error, runtime),
-            },
+            Ok(_) => print_output_result(runtime.progress_story(), runtime),
             Err(error) => print_runtime_error(error, runtime),
           }
         }
@@ -142,13 +123,7 @@ fn run_command(input: String, runtime: &mut Runtime) {
         if choice == 0 {
           println!("invalid option");
         }
-        match runtime.pick_choice(choice - 1) {
-          Ok((block, variables)) => {
-            print_block(block);
-            print_variables(&variables, runtime)
-          }
-          Err(error) => print_runtime_error(error, runtime),
-        }
+        print_output_result(runtime.pick_choice(choice - 1), runtime)
       } else {
         println!("Unkown command: {}", str);
       }
@@ -166,9 +141,15 @@ fn print_all_variables(runtime: &Runtime) {
   print_variables(&variables, runtime);
 }
 
-fn print_variables(variables: &ModifiedVariables, runtime: &Runtime) {
+fn print_variables(variables: &Vec<String>, runtime: &Runtime) {
   for variable in variables {
     print_variable(variable, runtime);
+  }
+}
+
+fn print_changed_variables(changed_variables: &Vec<VariableChange>) {
+  for variable in changed_variables {
+    println!("{} = {}", variable.variable, variable.new_value);
   }
 }
 
@@ -199,16 +180,47 @@ fn print_variable(variable: &String, runtime: &Runtime) {
   println!("Variable {} doesn't exist", variable)
 }
 
+fn print_output(output: Output) {
+  for block in output.blocks {
+    print_block(block);
+  }
+  println!("{}", output.text);
+  print_choices(output.choices);
+}
+
 fn print_block(block: Block) {
-  println!("{}", block.text);
-  print_choices(block.choices);
+  //println!("Script:{:?}", block.script);
+  print_chance(block.chance);
+  print_changed_variables(&block.changed_variables);
+  if !block.tags.is_empty() {
+    println!("Tags:{:?}", block.tags);
+  }
+
+  if !block.functions.is_empty() {
+    println!("Functions:{:?}", block.tags);
+  }
+}
+
+fn print_chance(chance: Chance) {
+  match chance {
+    Chance::None => {}
+    Chance::Probability(value) => {
+      println!("🎲 ({}%)", value)
+    }
+    Chance::Frequency {
+      value,
+      total_frequency,
+    } => {
+      println!("🎲 ({}/{})", value, total_frequency)
+    }
+  }
 }
 
 fn print_runtime_error(error: RuntimeError, runtime: &Runtime) {
   match error {
     RuntimeError::WaitingForChoice(_) => {
       println!("Make a choice:\n");
-      print_block(runtime.current_block().unwrap());
+      print_output(runtime.current().unwrap());
     }
     RuntimeError::InvalidChoice {
       total_choices,
@@ -220,7 +232,7 @@ fn print_runtime_error(error: RuntimeError, runtime: &Runtime) {
         total_choices
       );
       println!("Make a choice:\n");
-      print_block(runtime.current_block().unwrap());
+      print_output(runtime.current().unwrap());
     }
     _ => {
       println!("{}", error)
@@ -231,5 +243,12 @@ fn print_runtime_error(error: RuntimeError, runtime: &Runtime) {
 fn print_choices(choices: Vec<String>) {
   for (i, choice) in choices.iter().enumerate() {
     println!("  ({}){}", i + 1, choice);
+  }
+}
+
+fn print_output_result(result: Result<Output, RuntimeError>, runtime: &Runtime) {
+  match result {
+    Ok(output) => print_output(output),
+    Err(error) => print_runtime_error(error, runtime),
   }
 }

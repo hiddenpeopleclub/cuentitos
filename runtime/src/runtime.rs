@@ -32,7 +32,10 @@ impl Output {
     if let Some(last_block) = blocks.last() {
       match runtime.get_cuentitos_block(last_block.id)? {
         cuentitos_common::Block::Text { id, settings: _ } => Ok(Output {
-          text: id.clone(),
+          text: runtime
+            .database
+            .i18n
+            .get_translation(&runtime.current_locale, id),
           choices: runtime.get_choices_strings()?,
           blocks,
         }),
@@ -85,11 +88,46 @@ impl Output {
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Block {
   pub id: BlockId,
+  pub block_type: BlockType,
   pub script: Script,
   pub chance: Chance,
   pub tags: Vec<String>,
   pub functions: Vec<Function>,
-  pub modified_variables: Vec<String>,
+  pub changed_variables: Vec<VariableChange>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
+pub enum BlockType{
+  #[default]
+  Text,
+  Choice,
+  Bucket,
+  Section,
+  Subsection,
+  Divert,
+  BoomerangDivert
+}
+
+impl BlockType
+{
+  fn from_cuentitos_block(block: &cuentitos_common::Block) -> Self
+  {
+    match block{
+        cuentitos_common::Block::Text { id:_, settings:_ } => BlockType::Text,
+        cuentitos_common::Block::Choice { id:_, settings:_ } => BlockType::Choice,
+        cuentitos_common::Block::Bucket { name:_, settings:_ } => BlockType::Bucket,
+        cuentitos_common::Block::Section { id:_, settings:_ } => BlockType::Section,
+        cuentitos_common::Block::Subsection { id:_, settings:_ } => BlockType::Subsection,
+        cuentitos_common::Block::Divert { next:_, settings:_ } => BlockType::Divert,
+        cuentitos_common::Block::BoomerangDivert { next:_, settings:_ } => BlockType::BoomerangDivert,
+    }
+  }
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
+pub struct VariableChange {
+  pub variable: String,
+  pub new_value: String,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
@@ -205,14 +243,16 @@ impl Runtime {
     let tags = settings.tags.clone();
     let functions = settings.functions.clone();
     let chance = stack_data.chance.clone();
-    let modified_variables = self.get_modified_variables(settings);
+    let changed_variables = self.get_changed_variables(settings)?;
 
+    let block_type = BlockType::from_cuentitos_block(block);
     Ok(Block {
       id,
+      block_type,
       tags,
       functions,
       script: settings.script.clone(),
-      modified_variables,
+      changed_variables,
       chance,
     })
   }
@@ -312,9 +352,8 @@ impl Runtime {
       if (t == "i32" && self.database.config.variables[&variable] == VariableKind::Integer)
         || (t == "f32" && self.database.config.variables[&variable] == VariableKind::Float)
         || (t == "bool" && self.database.config.variables[&variable] == VariableKind::Bool)
-        || (t == "alloc::string::String"
-          && self.database.config.variables[&variable] == VariableKind::String)
-        || (t == "&str" && self.database.config.variables[&variable] == VariableKind::String)
+        || t == "alloc::string::String"
+        || t == "&str"
         || self.is_valid_enum::<T>(&value)
       {
         match value.parse::<T>() {
@@ -379,12 +418,27 @@ impl Runtime {
     }
   }
 
-  fn get_modified_variables(&self, settings: &BlockSettings) -> Vec<String> {
+  fn get_changed_variables(
+    &self,
+    settings: &BlockSettings,
+  ) -> Result<Vec<VariableChange>, RuntimeError> {
     let mut variables = Vec::default();
     for modifier in &settings.modifiers {
-      variables.push(modifier.variable.clone());
+      let variable = modifier.variable.clone();
+      if !variables.contains(&variable) {
+        variables.push(variable);
+      }
     }
-    variables
+
+    let mut changed_variables = Vec::default();
+    for variable in variables {
+      let variable_change = VariableChange {
+        variable: variable.clone(),
+        new_value: self.get_variable(variable.clone())?,
+      };
+      changed_variables.push(variable_change);
+    }
+    Ok(changed_variables)
   }
 
   fn get_section_block_ids(&mut self, section: &Section) -> Result<Vec<BlockId>, RuntimeError> {
@@ -628,13 +682,8 @@ impl Runtime {
     }
   }
 
-  fn apply_modifiers(&mut self) -> Result<(), RuntimeError> {
-    let id = match self.block_stack.last() {
-      Some(stack_data) => stack_data.id,
-      None => return Err(RuntimeError::EmptyStack),
-    };
-    let block = self.get_cuentitos_block(id)?;
-    for modifier in block.get_settings().modifiers.clone() {
+  fn apply_modifiers(&mut self, modifiers: &Vec<Modifier>) -> Result<(), RuntimeError> {
+    for modifier in modifiers {
       self.apply_modifier(&modifier)?;
     }
     Ok(())
@@ -735,8 +784,6 @@ impl Runtime {
     let parent_id = self.block_stack.last().map(|stack_data| stack_data.id);
     let chance = self.get_chance(id, parent_id)?;
     let block_stack_data = BlockStackData { id, chance };
-    let block = self.get_block(&block_stack_data)?;
-    self.block_stack.push(block_stack_data);
 
     let cuentitos_block = self.get_cuentitos_block(id)?.clone();
     if cuentitos_block.get_settings().unique {
@@ -744,7 +791,16 @@ impl Runtime {
     }
 
     self.game_state.section = cuentitos_block.get_settings().section.clone();
-    self.apply_modifiers()?;
+    let modifiers = self
+      .get_cuentitos_block(block_stack_data.id)?
+      .get_settings()
+      .modifiers
+      .clone();
+    self.apply_modifiers(&modifiers)?;
+
+    let block = self.get_block(&block_stack_data)?;
+    self.block_stack.push(block_stack_data);
+
     Ok(block)
   }
 
@@ -1657,8 +1713,9 @@ mod test {
       operator: ModifierOperator::Divide,
     };
 
+    let modifiers = vec![modifier_1, modifier_2, modifier_3, modifier_4];
     let settings = BlockSettings {
-      modifiers: vec![modifier_1, modifier_2, modifier_3, modifier_4],
+      modifiers: modifiers.clone(),
       ..Default::default()
     };
     let block = Block::Text {
@@ -1680,7 +1737,7 @@ mod test {
     let current_health: i32 = runtime.get_variable("health").unwrap();
     let expected_value = variable_kind.get_default_value().parse().unwrap();
     assert_eq!(current_health, expected_value);
-    runtime.apply_modifiers().unwrap();
+    runtime.apply_modifiers(&modifiers).unwrap();
     let current_health: i32 = runtime.get_variable("health").unwrap();
     assert_eq!(current_health, 75);
   }
@@ -1719,8 +1776,9 @@ mod test {
       operator: ModifierOperator::Divide,
     };
 
+    let modifiers = vec![modifier_1, modifier_2, modifier_3, modifier_4];
     let settings = BlockSettings {
-      modifiers: vec![modifier_1, modifier_2, modifier_3, modifier_4],
+      modifiers: modifiers.clone(),
       ..Default::default()
     };
     let block = Block::Text {
@@ -1742,7 +1800,7 @@ mod test {
     let current_speed: f32 = runtime.get_variable("speed").unwrap();
     let expected_value = variable_kind.get_default_value().parse().unwrap();
     assert_eq!(current_speed, expected_value);
-    runtime.apply_modifiers().unwrap();
+    runtime.apply_modifiers(&modifiers).unwrap();
     let current_speed: f32 = runtime.get_variable("speed").unwrap();
     assert_eq!(current_speed, 0.75);
   }
@@ -1764,7 +1822,7 @@ mod test {
       ..Default::default()
     };
     let settings = BlockSettings {
-      modifiers: vec![modifier],
+      modifiers: vec![modifier.clone()],
       ..Default::default()
     };
     let block = Block::Text {
@@ -1786,7 +1844,7 @@ mod test {
     let current_bike: bool = runtime.get_variable("bike").unwrap();
     let expected_value = variable_kind.get_default_value().parse().unwrap();
     assert_eq!(current_bike, expected_value);
-    runtime.apply_modifiers().unwrap();
+    runtime.apply_modifiers(&vec![modifier]).unwrap();
     let current_bike: bool = runtime.get_variable("bike").unwrap();
     assert_eq!(current_bike, true);
   }
@@ -1808,7 +1866,7 @@ mod test {
       ..Default::default()
     };
     let settings = BlockSettings {
-      modifiers: vec![modifier],
+      modifiers: vec![modifier.clone()],
       ..Default::default()
     };
     let block = Block::Text {
@@ -1831,7 +1889,7 @@ mod test {
     let expected_value = variable_kind.get_default_value();
     assert_eq!(current_message, expected_value);
 
-    runtime.apply_modifiers().unwrap();
+    runtime.apply_modifiers(&vec![modifier]).unwrap();
     let current_message: String = runtime.get_variable("message").unwrap();
     assert_eq!(current_message, "hello".to_string());
   }
@@ -1853,7 +1911,7 @@ mod test {
       ..Default::default()
     };
     let settings = BlockSettings {
-      modifiers: vec![modifier],
+      modifiers: vec![modifier.clone()],
       ..Default::default()
     };
     let block = Block::Text {
@@ -1877,7 +1935,7 @@ mod test {
     let expected_value = variable_kind.get_default_value().parse().unwrap();
     assert_eq!(current_time_of_day, expected_value);
 
-    runtime.apply_modifiers().unwrap();
+    runtime.apply_modifiers(&vec![modifier]).unwrap();
     let current_time_of_day: TimeOfDay = runtime.get_variable("time_of_day").unwrap();
     assert_eq!(current_time_of_day, TimeOfDay::Night);
   }
@@ -3179,22 +3237,6 @@ mod test {
     };
     let runtime = Runtime::new(database);
     let err = runtime.current().unwrap_err();
-    assert_eq!(err, RuntimeError::EmptyStack);
-  }
-
-  #[test]
-  fn apply_modifiers_throws_error_on_empty_stack() {
-    let text = Block::Text {
-      id: String::default(),
-      settings: BlockSettings::default(),
-    };
-
-    let database = Database {
-      blocks: vec![text],
-      ..Default::default()
-    };
-    let mut runtime = Runtime::new(database);
-    let err = runtime.apply_modifiers().unwrap_err();
     assert_eq!(err, RuntimeError::EmptyStack);
   }
 
