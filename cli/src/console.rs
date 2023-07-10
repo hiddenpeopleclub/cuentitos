@@ -65,12 +65,7 @@ impl Console {
 
 fn run_command(input: String, runtime: &mut Runtime) {
   match input.trim() {
-    "" => match runtime.progress_story() {
-      Ok(output) => {
-        print_output(output);
-      }
-      Err(error) => print_runtime_error(error, runtime),
-    },
+    "" => print_output_result(runtime.progress_story(), runtime),
     "sections" => {
       println!("Sections:");
       for section in runtime.database.sections.keys() {
@@ -147,12 +142,6 @@ fn print_variables(variables: &Vec<String>, runtime: &Runtime) {
   }
 }
 
-fn print_changed_variables(changed_variables: &Vec<VariableChange>) {
-  for variable in changed_variables {
-    println!("{} = {}", variable.variable, variable.new_value);
-  }
-}
-
 fn print_variable(variable: &String, runtime: &Runtime) {
   for (runtime_variable, kind) in &runtime.database.config.variables {
     if runtime_variable == variable {
@@ -180,38 +169,65 @@ fn print_variable(variable: &String, runtime: &Runtime) {
   println!("Variable {} doesn't exist", variable)
 }
 
-fn print_output(output: Output) {
+fn print_output(output: Output, runtime: &Runtime) {
   for block in output.blocks {
-    print_block(block);
+    print_block(block, runtime);
   }
-  println!("{}", output.text);
   print_choices(output.choices);
 }
 
-fn print_block(block: Block) {
-  //println!("Script:{:?}", block.script);
-  print_chance(block.chance);
-  print_changed_variables(&block.changed_variables);
-  if !block.tags.is_empty() {
-    println!("Tags:{:?}", block.tags);
+fn print_block(block: Block, runtime: &Runtime) {
+
+  let settings = block.get_settings();
+  print_variables(&settings.changed_variables, runtime);
+  if !settings.tags.is_empty() {
+    println!("Tags:{:?}", settings.tags);
   }
 
-  if !block.functions.is_empty() {
-    println!("Functions:{:?}", block.tags);
+  if !settings.functions.is_empty() {
+    println!("Functions:{:?}", settings.tags);
   }
+
+  match &block {
+    Block::Text { text, settings } =>
+    {
+      let chance = get_change_string(&settings.chance);
+      println!("{}{}", chance, text);
+    },
+    Block::Bucket { name, settings} => {
+      if let Some(name) = name {
+        let chance = get_change_string(&settings.chance);
+        println!("{}Entered bucket '{}'", chance, name);
+      }
+    }
+    Block::Section { name, settings } => {
+      let chance = get_change_string(&settings.chance);
+      println!("{}Entered section '{}'",chance, name);
+    }
+    Block::Subsection {
+      section,
+      name,
+      settings,
+    } => {
+      let chance = get_change_string(&settings.chance);
+      println!("{}Entered section '{}/{}'", chance, section, name);
+    }
+    _ => {}
+  }
+
 }
 
-fn print_chance(chance: Chance) {
+fn get_change_string(chance: &Chance) -> String {
   match chance {
-    Chance::None => {}
+    Chance::None => {String::default()}
     Chance::Probability(value) => {
-      println!("🎲 ({}%)", value)
+      format!("🎲 ({}%)", value)
     }
     Chance::Frequency {
       value,
       total_frequency,
     } => {
-      println!("🎲 ({}/{})", value, total_frequency)
+      format!("🎲 ({}/{})", value, total_frequency)
     }
   }
 }
@@ -220,7 +236,7 @@ fn print_runtime_error(error: RuntimeError, runtime: &Runtime) {
   match error {
     RuntimeError::WaitingForChoice(_) => {
       println!("Make a choice:\n");
-      print_output(runtime.current().unwrap());
+      print_output(runtime.current().unwrap(), runtime);
     }
     RuntimeError::InvalidChoice {
       total_choices,
@@ -232,7 +248,7 @@ fn print_runtime_error(error: RuntimeError, runtime: &Runtime) {
         total_choices
       );
       println!("Make a choice:\n");
-      print_output(runtime.current().unwrap());
+      print_output(runtime.current().unwrap(), runtime);
     }
     _ => {
       println!("{}", error)
@@ -248,7 +264,7 @@ fn print_choices(choices: Vec<String>) {
 
 fn print_output_result(result: Result<Output, RuntimeError>, runtime: &Runtime) {
   match result {
-    Ok(output) => print_output(output),
+    Ok(output) => print_output(output, runtime),
     Err(error) => print_runtime_error(error, runtime),
   }
 }

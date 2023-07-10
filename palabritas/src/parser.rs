@@ -349,6 +349,13 @@ fn parse_section(
         });
         settings.section = parsing_data.current_section.clone();
       }
+      Rule::Chance => {
+        settings.chance = parse_chance(inner_token, &parsing_data.file)?;
+        if let Chance::Frequency(_) = settings.chance
+        {
+          return Err(PalabritasError::FrequencyOutOfBucket(script, string));
+        }
+      }
       Rule::Command => {
         add_command_to_settings(
           inner_token,
@@ -429,6 +436,13 @@ fn parse_subsection(
           &parsing_data.config,
           &parsing_data.file,
         )?;
+      }
+      Rule::Chance => {
+        settings.chance = parse_chance(inner_token, &parsing_data.file)?;
+        if let Chance::Frequency(_) = settings.chance
+        {
+          return Err(PalabritasError::FrequencyOutOfBucket(script, string));
+        }
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {

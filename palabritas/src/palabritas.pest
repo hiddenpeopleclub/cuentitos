@@ -25,8 +25,8 @@ Command = {NewLine+ ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier
 
 Chance = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
 
-Section = {"#" ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
-Subsection = { "##" ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
+Section = {"#"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
+Subsection = { "##"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
 
 Text = { !Indentation ~ !ReservedKeywords ~ Chance? ~ String }
 Choice = { "*" ~ " "* ~ Chance? ~ String }

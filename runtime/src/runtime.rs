@@ -5,7 +5,6 @@ use crate::RuntimeError;
 use cuentitos_common::condition::ComparisonOperator;
 use cuentitos_common::modifier::ModifierOperator;
 use cuentitos_common::BlockId;
-use cuentitos_common::BlockSettings;
 use cuentitos_common::Condition;
 use cuentitos_common::Database;
 use cuentitos_common::Function;
@@ -20,6 +19,8 @@ use rand::SeedableRng;
 use rand_pcg::Pcg32;
 use serde::{Deserialize, Serialize};
 
+type BucketName = String;
+
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Output {
   pub text: String,
@@ -30,13 +31,13 @@ pub struct Output {
 impl Output {
   pub fn from_blocks(blocks: Vec<Block>, runtime: &Runtime) -> Result<Self, RuntimeError> {
     if let Some(last_block) = blocks.last() {
-      match runtime.get_cuentitos_block(last_block.id)? {
+      match runtime.get_cuentitos_block(last_block.get_settings().id)? {
         cuentitos_common::Block::Text { id, settings: _ } => Ok(Output {
           text: runtime
             .database
             .i18n
             .get_translation(&runtime.current_locale, id),
-          choices: runtime.get_choices_strings()?,
+          choices: runtime.get_current_choices_strings()?,
           blocks,
         }),
         cuentitos_common::Block::Choice { id: _, settings: _ } => {
@@ -85,49 +86,66 @@ impl Output {
   }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
-pub struct Block {
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub enum Block {
+  Text {
+    text: String,
+    settings: BlockSettings,
+  },
+  Choice {
+    text: String,
+    settings: BlockSettings,
+  },
+  Bucket {
+    name: Option<BucketName>,
+    settings: BlockSettings,
+  },
+  Section {
+    name: String,
+    settings: BlockSettings,
+  },
+  Subsection {
+    section: String,
+    name: String,
+    settings: BlockSettings,
+  },
+  Divert {
+    next: NextBlock,
+    settings: BlockSettings,
+  },
+  BoomerangDivert {
+    next: NextBlock,
+    settings: BlockSettings,
+  },
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct BlockSettings {
   pub id: BlockId,
-  pub block_type: BlockType,
   pub script: Script,
   pub chance: Chance,
   pub tags: Vec<String>,
   pub functions: Vec<Function>,
-  pub changed_variables: Vec<VariableChange>,
+  pub changed_variables: Vec<String>,
+  pub section: Option<Section>,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
-pub enum BlockType{
-  #[default]
-  Text,
-  Choice,
-  Bucket,
-  Section,
-  Subsection,
-  Divert,
-  BoomerangDivert
-}
-
-impl BlockType
-{
-  fn from_cuentitos_block(block: &cuentitos_common::Block) -> Self
-  {
-    match block{
-        cuentitos_common::Block::Text { id:_, settings:_ } => BlockType::Text,
-        cuentitos_common::Block::Choice { id:_, settings:_ } => BlockType::Choice,
-        cuentitos_common::Block::Bucket { name:_, settings:_ } => BlockType::Bucket,
-        cuentitos_common::Block::Section { id:_, settings:_ } => BlockType::Section,
-        cuentitos_common::Block::Subsection { id:_, settings:_ } => BlockType::Subsection,
-        cuentitos_common::Block::Divert { next:_, settings:_ } => BlockType::Divert,
-        cuentitos_common::Block::BoomerangDivert { next:_, settings:_ } => BlockType::BoomerangDivert,
+impl Block {
+  pub fn get_settings(&self) -> &BlockSettings {
+    match self {
+      Block::Text { text: _, settings } => settings,
+      Block::Choice { text: _, settings } => settings,
+      Block::Bucket { name: _, settings } => settings,
+      Block::Section { name: _, settings } => settings,
+      Block::Subsection {
+        section: _,
+        name: _,
+        settings,
+      } => settings,
+      Block::Divert { next: _, settings } => settings,
+      Block::BoomerangDivert { next: _, settings } => settings,
     }
   }
-}
-
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
-pub struct VariableChange {
-  pub variable: String,
-  pub new_value: String,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
@@ -238,23 +256,61 @@ impl Runtime {
 
   pub fn get_block(&self, stack_data: &BlockStackData) -> Result<Block, RuntimeError> {
     let id = stack_data.id;
-    let block = self.get_cuentitos_block(id)?;
-    let settings = block.get_settings();
-    let tags = settings.tags.clone();
-    let functions = settings.functions.clone();
+    let cuentitos_block = self.get_cuentitos_block(id)?;
+    let cuentitos_settings = cuentitos_block.get_settings();
+    let script = cuentitos_settings.script.clone();
+    let tags = cuentitos_settings.tags.clone();
+    let functions = cuentitos_settings.functions.clone();
     let chance = stack_data.chance.clone();
-    let changed_variables = self.get_changed_variables(settings)?;
+    let changed_variables = self.get_changed_variables(cuentitos_settings)?;
+    let section = cuentitos_settings.section.clone();
 
-    let block_type = BlockType::from_cuentitos_block(block);
-    Ok(Block {
+    let settings = BlockSettings {
       id,
-      block_type,
+      script,
       tags,
       functions,
-      script: settings.script.clone(),
-      changed_variables,
       chance,
-    })
+      changed_variables,
+      section,
+    };
+
+    let block = match cuentitos_block {
+      cuentitos_common::Block::Text { id, settings: _ } => Block::Text {
+        text: self.database.i18n.get_translation(&self.current_locale, id),
+        settings,
+      },
+      cuentitos_common::Block::Choice { id, settings: _ } => Block::Choice {
+        text: self.database.i18n.get_translation(&self.current_locale, id),
+        settings,
+      },
+      cuentitos_common::Block::Bucket { name, settings: _ } => Block::Bucket {
+        name: name.clone(),
+        settings,
+      },
+      cuentitos_common::Block::Section { id, settings: _ } => Block::Section {
+        name: id.clone(),
+        settings,
+      },
+      cuentitos_common::Block::Subsection { id, settings: _ } => {
+        let section = settings.section.clone().unwrap_or_default().section_name;
+        Block::Subsection {
+          name: id.clone(),
+          settings,
+          section,
+        }
+      }
+      cuentitos_common::Block::Divert { next, settings: _ } => Block::Divert {
+        next: next.clone(),
+        settings,
+      },
+      cuentitos_common::Block::BoomerangDivert { next, settings: _ } => Block::BoomerangDivert {
+        next: next.clone(),
+        settings,
+      },
+    };
+
+    Ok(block)
   }
 
   pub fn current(&self) -> Result<Output, RuntimeError> {
@@ -397,7 +453,7 @@ impl Runtime {
     }
   }
 
-  pub fn get_choices_strings(&self) -> Result<Vec<String>, RuntimeError> {
+  pub fn get_current_choices_strings(&self) -> Result<Vec<String>, RuntimeError> {
     let mut choices_strings = Vec::default();
     for choice in &self.choices {
       if let cuentitos_common::Block::Choice { id, settings: _ } =
@@ -420,8 +476,8 @@ impl Runtime {
 
   fn get_changed_variables(
     &self,
-    settings: &BlockSettings,
-  ) -> Result<Vec<VariableChange>, RuntimeError> {
+    settings: &cuentitos_common::BlockSettings,
+  ) -> Result<Vec<String>, RuntimeError> {
     let mut variables = Vec::default();
     for modifier in &settings.modifiers {
       let variable = modifier.variable.clone();
@@ -430,15 +486,7 @@ impl Runtime {
       }
     }
 
-    let mut changed_variables = Vec::default();
-    for variable in variables {
-      let variable_change = VariableChange {
-        variable: variable.clone(),
-        new_value: self.get_variable(variable.clone())?,
-      };
-      changed_variables.push(variable_change);
-    }
-    Ok(changed_variables)
+    Ok(variables)
   }
 
   fn get_section_block_ids(&mut self, section: &Section) -> Result<Vec<BlockId>, RuntimeError> {
@@ -626,7 +674,10 @@ impl Runtime {
     num
   }
 
-  fn get_frequency_with_modifier(&self, settings: &BlockSettings) -> Result<u32, RuntimeError> {
+  fn get_frequency_with_modifier(
+    &self,
+    settings: &cuentitos_common::BlockSettings,
+  ) -> Result<u32, RuntimeError> {
     match settings.chance {
       cuentitos_common::Chance::None => Ok(0),
       cuentitos_common::Chance::Frequency(frequency) => {
@@ -737,6 +788,7 @@ impl Runtime {
             return Err(RuntimeError::StoryFinished);
           }
           NextBlock::Section(section) => {
+            
             blocks.append(&mut self.divert(&section)?);
             blocks.append(&mut self.update_stack()?)
           }
@@ -838,7 +890,7 @@ impl Runtime {
 
   fn get_next_child_in_stack(
     &mut self,
-    settings: &BlockSettings,
+    settings: &cuentitos_common::BlockSettings,
     next_child: usize,
   ) -> Result<Option<BlockId>, RuntimeError> {
     if next_child >= settings.children.len() {
@@ -849,7 +901,9 @@ impl Runtime {
     match self.get_cuentitos_block(id)? {
       cuentitos_common::Block::Choice { id: _, settings: _ } => {
         if self.choices.contains(&id) {
-          Err(RuntimeError::WaitingForChoice(self.get_choices_strings()?))
+          Err(RuntimeError::WaitingForChoice(
+            self.get_current_choices_strings()?,
+          ))
         } else {
           self.get_next_child_in_stack(settings, next_child + 1)
         }
@@ -902,7 +956,10 @@ impl Runtime {
     self.find_next(last_block_id)
   }
 
-  fn get_total_frequency(&self, bucket_settings: &BlockSettings) -> Result<u32, RuntimeError> {
+  fn get_total_frequency(
+    &self,
+    bucket_settings: &cuentitos_common::BlockSettings,
+  ) -> Result<u32, RuntimeError> {
     let mut total_frequency = 0;
     for child in &bucket_settings.children {
       if self.meets_requirements(*child)? {
@@ -916,7 +973,7 @@ impl Runtime {
 
   fn get_random_block_from_bucket(
     &mut self,
-    settings: &BlockSettings,
+    settings: &cuentitos_common::BlockSettings,
   ) -> Result<Option<BlockId>, RuntimeError> {
     let total_frequency = self.get_total_frequency(settings)?;
     let mut random_number = self.random_with_max(total_frequency);
@@ -971,7 +1028,6 @@ impl Runtime {
         }
       }
     }
-
     Ok(())
   }
 }
@@ -1002,32 +1058,32 @@ mod test {
   fn divert_works_correctly() {
     let section_1 = Block::Section {
       id: "section_1".to_string(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         children: vec![3],
         ..Default::default()
       },
     };
     let section_2 = Block::Section {
       id: "section_2".to_string(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         children: vec![2],
         ..Default::default()
       },
     };
     let subsection = Block::Subsection {
       id: "subsection".to_string(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         children: vec![4],
         ..Default::default()
       },
     };
     let text_1 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
     let text_2 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let mut sections: HashMap<Section, usize> = HashMap::default();
@@ -1101,32 +1157,32 @@ mod test {
   fn boomerang_divert_works_correctly() {
     let section_1 = Block::Section {
       id: "section_1".to_string(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         children: vec![3],
         ..Default::default()
       },
     };
     let section_2 = Block::Section {
       id: "section_2".to_string(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         children: vec![2],
         ..Default::default()
       },
     };
     let subsection = Block::Subsection {
       id: "subsection".to_string(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         children: vec![4],
         ..Default::default()
       },
     };
     let text_1 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
     let text_2 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let mut sections: HashMap<Section, usize> = HashMap::default();
@@ -1208,7 +1264,7 @@ mod test {
 
   #[test]
   fn get_choices_works_correctly() {
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       children: vec![1, 2, 3],
       ..Default::default()
     };
@@ -1220,17 +1276,17 @@ mod test {
 
     let choice_1 = Block::Choice {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let choice_2 = Block::Choice {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let child_text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -1253,7 +1309,7 @@ mod test {
   }
   #[test]
   fn get_choices_strings_works_correctly() {
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       children: vec![1, 2, 3],
       ..Default::default()
     };
@@ -1265,17 +1321,17 @@ mod test {
 
     let choice_1 = Block::Choice {
       id: "a".to_string(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let choice_2 = Block::Choice {
       id: "b".to_string(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let child_text = Block::Text {
       id: "c".to_string(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let mut en: LanguageDb = HashMap::default();
@@ -1307,14 +1363,14 @@ mod test {
       ..Default::default()
     };
     runtime.update_choices().unwrap();
-    let choices = runtime.get_choices_strings().unwrap();
+    let choices = runtime.get_current_choices_strings().unwrap();
     let expected_result = vec!["a".to_string(), "b".to_string()];
     assert_eq!(choices, expected_result);
   }
 
   #[test]
   fn updates_stack_to_first_child_correctly() {
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       children: vec![1, 2],
       ..Default::default()
     };
@@ -1325,12 +1381,12 @@ mod test {
 
     let child_1 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let child_2 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -1358,7 +1414,7 @@ mod test {
 
   #[test]
   fn update_stack_to_next_sibling_correctly() {
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       children: vec![2, 3, 4],
       ..Default::default()
     };
@@ -1370,22 +1426,22 @@ mod test {
 
     let sibling = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let child_1 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let child_2 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let child_3 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -1442,7 +1498,7 @@ mod test {
 
   #[test]
   fn current_block_works_correctly() {
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       children: vec![1, 2],
       ..Default::default()
     };
@@ -1453,12 +1509,12 @@ mod test {
 
     let choice_1 = Block::Choice {
       id: "1".to_string(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let choice_2 = Block::Choice {
       id: "2".to_string(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let mut en: LanguageDb = HashMap::default();
@@ -1510,7 +1566,7 @@ mod test {
 
   #[test]
   fn next_block_works_correctly() {
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       children: vec![1, 2],
       ..Default::default()
     };
@@ -1522,12 +1578,12 @@ mod test {
 
     let choice_1 = Block::Choice {
       id: "1".to_string(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let choice_2 = Block::Choice {
       id: "2".to_string(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let mut en: LanguageDb = HashMap::default();
@@ -1582,7 +1638,7 @@ mod test {
 
   #[test]
   fn get_random_block_from_bucket_works_correctly() {
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       children: vec![1, 2],
       ..Default::default()
     };
@@ -1592,7 +1648,7 @@ mod test {
       settings,
     };
 
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       chance: cuentitos_common::Chance::Frequency(50),
       ..Default::default()
     };
@@ -1602,7 +1658,7 @@ mod test {
       settings,
     };
 
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       chance: cuentitos_common::Chance::Frequency(50),
       ..Default::default()
     };
@@ -1714,7 +1770,7 @@ mod test {
     };
 
     let modifiers = vec![modifier_1, modifier_2, modifier_3, modifier_4];
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       modifiers: modifiers.clone(),
       ..Default::default()
     };
@@ -1777,7 +1833,7 @@ mod test {
     };
 
     let modifiers = vec![modifier_1, modifier_2, modifier_3, modifier_4];
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       modifiers: modifiers.clone(),
       ..Default::default()
     };
@@ -1821,7 +1877,7 @@ mod test {
       value: "true".to_string(),
       ..Default::default()
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       modifiers: vec![modifier.clone()],
       ..Default::default()
     };
@@ -1865,7 +1921,7 @@ mod test {
       value: "hello".to_string(),
       ..Default::default()
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       modifiers: vec![modifier.clone()],
       ..Default::default()
     };
@@ -1910,7 +1966,7 @@ mod test {
       value: "Night".to_string(),
       ..Default::default()
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       modifiers: vec![modifier.clone()],
       ..Default::default()
     };
@@ -2074,7 +2130,7 @@ mod test {
         value: "100".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2122,7 +2178,7 @@ mod test {
         value: "100".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2170,7 +2226,7 @@ mod test {
         value: "100".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2218,7 +2274,7 @@ mod test {
         value: "100".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2265,7 +2321,7 @@ mod test {
         value: "100".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2312,7 +2368,7 @@ mod test {
         value: "100".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2359,7 +2415,7 @@ mod test {
         value: "1.5".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2407,7 +2463,7 @@ mod test {
         value: "1.5".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2455,7 +2511,7 @@ mod test {
         value: "1.5".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2503,7 +2559,7 @@ mod test {
         value: "1.5".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2550,7 +2606,7 @@ mod test {
         value: "1.5".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2597,7 +2653,7 @@ mod test {
         value: "1.5".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2645,7 +2701,7 @@ mod test {
         value: "true".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2690,7 +2746,7 @@ mod test {
         value: "true".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2735,7 +2791,7 @@ mod test {
         value: "hello".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2782,7 +2838,7 @@ mod test {
         value: "hello".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2829,7 +2885,7 @@ mod test {
         value: "Night".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2876,7 +2932,7 @@ mod test {
         value: "Night".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2924,7 +2980,7 @@ mod test {
       },
       value: -100,
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       frequency_modifiers: vec![freq_mod],
       chance: cuentitos_common::Chance::Frequency(100),
       ..Default::default()
@@ -2956,7 +3012,7 @@ mod test {
   fn unique_only_plays_once() {
     let section = Block::Section {
       id: "section".to_string(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         children: vec![1, 2, 3],
         ..Default::default()
       },
@@ -2973,7 +3029,7 @@ mod test {
 
     let text_1 = Block::Text {
       id: String::default(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         unique: true,
         ..Default::default()
       },
@@ -2981,7 +3037,7 @@ mod test {
 
     let text_2 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let divert = Block::Divert {
@@ -2989,7 +3045,7 @@ mod test {
         section_name: "section".to_string(),
         subsection_name: None,
       }),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -3012,7 +3068,7 @@ mod test {
     let tags = vec!["a_tag".to_string()];
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         tags: tags.clone(),
         ..Default::default()
       },
@@ -3029,6 +3085,7 @@ mod test {
       .blocks
       .last()
       .unwrap()
+      .get_settings()
       .clone()
       .tags;
     assert_eq!(tags, output_tags);
@@ -3043,7 +3100,7 @@ mod test {
 
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         functions: functions.clone(),
         ..Default::default()
       },
@@ -3061,6 +3118,8 @@ mod test {
       .last()
       .unwrap()
       .clone()
+      .get_settings()
+      .clone()
       .functions;
     assert_eq!(functions, output_functions);
   }
@@ -3069,7 +3128,7 @@ mod test {
   fn invalid_id_in_stack_throws_error() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -3089,7 +3148,7 @@ mod test {
   fn invalid_id_in_choice_throws_error() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -3106,7 +3165,7 @@ mod test {
   fn next_block_throws_error_if_theres_a_choice() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         children: vec![2],
         ..Default::default()
       },
@@ -3114,12 +3173,12 @@ mod test {
 
     let choice = Block::Choice {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let text_2 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -3139,7 +3198,7 @@ mod test {
   fn section_at_lower_level_throws_error() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         children: vec![1],
         ..Default::default()
       },
@@ -3147,7 +3206,7 @@ mod test {
 
     let section = Block::Section {
       id: "section".to_string(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -3166,7 +3225,7 @@ mod test {
   fn throws_error_when_story_finishes() {
     let text: Block = Block::Divert {
       next: NextBlock::EndOfFile,
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -3186,7 +3245,7 @@ mod test {
     };
     let divert = Block::Divert {
       next: NextBlock::Section(section_key.clone()),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
     let database = Database {
       blocks: vec![divert],
@@ -3201,7 +3260,7 @@ mod test {
   fn current_block_can_only_be_text() {
     let choice = Block::Choice {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -3228,7 +3287,7 @@ mod test {
   fn current_block_throws_error_on_empty_stack() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -3258,7 +3317,7 @@ mod test {
   fn picking_choice_when_no_options_throws_error() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -3275,7 +3334,7 @@ mod test {
   fn picking_invalid_choice_throws_error() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -3298,7 +3357,7 @@ mod test {
   fn setting_unsupported_variable_type_throws_error() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let mut config = Config::default();
@@ -3328,7 +3387,7 @@ mod test {
   fn getting_unsupported_variable_type_throws_error() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let mut config = Config::default();
@@ -3358,7 +3417,7 @@ mod test {
   fn setting_non_existent_variable_throws_error() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -3378,7 +3437,7 @@ mod test {
   fn getting_non_existent_variable_throws_error() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -3398,7 +3457,7 @@ mod test {
   fn getting_non_existent_variable_kind_throws_error() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
