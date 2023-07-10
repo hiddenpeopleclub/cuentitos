@@ -35,6 +35,7 @@ pub enum RuntimeError {
   ParseBoolError(ParseBoolError),
   UnknownParsingError,
   FrequencyModifierWithProbability,
+  FrequencyOutOfBucket,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -129,6 +130,9 @@ impl Display for RuntimeError {
       }
       RuntimeError::FrequencyModifierWithProbability => {
         write!(f, "Can't apply a frequency modifier to a probability.")
+      }
+      RuntimeError::FrequencyOutOfBucket => {
+        write!(f, "Frequencies are only allowed inside of buckets.")
       }
     }
   }

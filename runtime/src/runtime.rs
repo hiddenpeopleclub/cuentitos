@@ -20,21 +20,99 @@ use rand::SeedableRng;
 use rand_pcg::Pcg32;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
-pub struct Block {
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
+pub struct Output {
   pub text: String,
   pub choices: Vec<String>,
-  pub tags: Vec<String>,
-  pub functions: Vec<Function>,
-  pub script: Script,
+  pub blocks: Vec<Block>,
 }
 
-pub type ModifiedVariables = Vec<String>;
+impl Output {
+  pub fn from_blocks(blocks: Vec<Block>, runtime: &Runtime) -> Result<Self, RuntimeError> {
+    if let Some(last_block) = blocks.last() {
+      match runtime.get_cuentitos_block(last_block.id)? {
+        cuentitos_common::Block::Text { id, settings: _ } => Ok(Output {
+          text: id.clone(),
+          choices: runtime.get_choices_strings()?,
+          blocks,
+        }),
+        cuentitos_common::Block::Choice { id: _, settings: _ } => {
+          Err(RuntimeError::UnexpectedBlock {
+            expected_block: "text".to_string(),
+            block_found: "choice".to_string(),
+          })
+        }
+        cuentitos_common::Block::Bucket {
+          name: _,
+          settings: _,
+        } => Err(RuntimeError::UnexpectedBlock {
+          expected_block: "text".to_string(),
+          block_found: "bucket".to_string(),
+        }),
+        cuentitos_common::Block::Section { id: _, settings: _ } => {
+          Err(RuntimeError::UnexpectedBlock {
+            expected_block: "text".to_string(),
+            block_found: "section".to_string(),
+          })
+        }
+        cuentitos_common::Block::Subsection { id: _, settings: _ } => {
+          Err(RuntimeError::UnexpectedBlock {
+            expected_block: "text".to_string(),
+            block_found: "subsection".to_string(),
+          })
+        }
+        cuentitos_common::Block::Divert {
+          next: _,
+          settings: _,
+        } => Err(RuntimeError::UnexpectedBlock {
+          expected_block: "text".to_string(),
+          block_found: "divert".to_string(),
+        }),
+        cuentitos_common::Block::BoomerangDivert {
+          next: _,
+          settings: _,
+        } => Err(RuntimeError::UnexpectedBlock {
+          expected_block: "text".to_string(),
+          block_found: "boomerang divert".to_string(),
+        }),
+      }
+    } else {
+      Err(RuntimeError::EmptyStack)
+    }
+  }
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
+pub struct Block {
+  pub id: BlockId,
+  pub script: Script,
+  pub chance: Chance,
+  pub tags: Vec<String>,
+  pub functions: Vec<Function>,
+  pub modified_variables: Vec<String>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
+pub enum Chance {
+  #[default]
+  None,
+  Probability(f32),
+  Frequency {
+    value: u32,
+    total_frequency: u32,
+  },
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
+pub struct BlockStackData {
+  pub id: BlockId,
+  pub chance: Chance,
+}
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Runtime {
   pub database: Database,
-  pub block_stack: Vec<BlockId>,
+  pub block_stack: Vec<BlockStackData>,
   pub choices: Vec<BlockId>,
   #[serde(skip)]
   pub game_state: GameState,
@@ -81,153 +159,74 @@ impl Runtime {
     self.rng = Some(Pcg32::seed_from_u64(seed));
   }
 
-  pub fn divert(&mut self, section: &Section) -> Result<ModifiedVariables, RuntimeError> {
-    let new_stack = self.get_section_blocks_stack(section)?;
+  pub fn divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError> {
+    let new_stack = self.get_section_block_ids(section)?;
     self.block_stack.clear();
-    let mut modified_variables = ModifiedVariables::default();
+    let mut blocks_added = Vec::default();
+    for block in new_stack {
+      blocks_added.push(Self::push_stack(self, block)?);
+    }
+    Ok(blocks_added)
+  }
+
+  pub fn boomerang_divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError> {
+    let new_stack = self.get_section_block_ids(section)?;
+    let mut blocks_added = Vec::default();
 
     for block in new_stack {
-      modified_variables.append(&mut Self::push_stack(self, block)?);
+      blocks_added.push(Self::push_stack(self, block)?);
     }
-
-    Ok(modified_variables)
+    Ok(blocks_added)
   }
 
-  pub fn boomerang_divert(&mut self, section: &Section) -> Result<ModifiedVariables, RuntimeError> {
-    let new_stack = self.get_section_blocks_stack(section)?;
-    let mut modified_variables = ModifiedVariables::default();
-
-    for block in new_stack {
-      modified_variables.append(&mut Self::push_stack(self, block)?);
-    }
-    Ok(modified_variables)
-  }
-
-  fn get_section_blocks_stack(&mut self, section: &Section) -> Result<Vec<BlockId>, RuntimeError> {
-    let mut section = section.clone();
-    let section_id = match self.database.sections.get(&section) {
-      Some(id) => Some(id),
-      None => {
-        if let Some(current_section) = &self.game_state.section {
-          section = Section {
-            section_name: current_section.section_name.clone(),
-            subsection_name: Some(section.section_name.clone()),
-          };
-          self.database.sections.get(&section)
-        } else {
-          return Err(RuntimeError::SectionDoesntExist(section.clone()));
-        }
-      }
-    };
-
-    let mut stack: Vec<usize> = Vec::default();
-
-    if let Some(block_id) = section_id {
-      if section.subsection_name.is_some() {
-        let parent = Section {
-          section_name: section.section_name.clone(),
-          subsection_name: None,
-        };
-        if let Some(parent_id) = self.database.sections.get(&parent) {
-          stack.push(*parent_id);
-        } else {
-          return Err(RuntimeError::SectionDoesntExist(parent.clone()));
-        }
-      }
-      stack.push(*block_id);
-    }
-
-    Ok(stack)
-  }
-
-  pub fn peek_next_block(&mut self) -> Result<(Block, ModifiedVariables), RuntimeError> {
+  pub fn peek_next(&mut self) -> Result<Output, RuntimeError> {
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
     }
 
     let mut peek_runtime = self.clone();
-    let modified_variables = Self::update_stack(&mut peek_runtime)?;
-    let block = peek_runtime.current_block()?;
-
-    Ok((block, modified_variables))
+    let blocks = peek_runtime.update_stack()?;
+    Ok(Output::from_blocks(blocks, self)?)
   }
 
-  pub fn next_block(&mut self) -> Result<(Block, ModifiedVariables), RuntimeError> {
+  pub fn progress_story(&mut self) -> Result<Output, RuntimeError> {
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
     }
 
-    let modified_variables = Self::update_stack(self)?;
-    let block = self.current_block()?;
-
-    Ok((block, modified_variables))
+    let blocks = Self::update_stack(self)?;
+    Ok(Output::from_blocks(blocks, self)?)
   }
 
-  pub fn get_block(&self, id: BlockId) -> &cuentitos_common::Block {
-    &self.database.blocks[id]
-  }
-
-  pub fn current_block(&self) -> Result<Block, RuntimeError> {
-    let id = match self.block_stack.last() {
-      Some(id) => id,
-      None => return Err(RuntimeError::EmptyStack),
-    };
-
-    let block = self.get_block(*id);
+  pub fn get_block(&self, stack_data: &BlockStackData) -> Result<Block, RuntimeError> {
+    let id = stack_data.id;
+    let block = self.get_cuentitos_block(id)?;
     let settings = block.get_settings();
     let tags = settings.tags.clone();
     let functions = settings.functions.clone();
-    match block {
-      cuentitos_common::Block::Text { id, settings: _ } => Ok(Block {
-        text: self.database.i18n.get_translation(&self.current_locale, id),
-        choices: self.get_choices_strings(),
-        tags,
-        functions,
-        script: settings.script.clone(),
-      }),
-      cuentitos_common::Block::Choice { id: _, settings: _ } => {
-        Err(RuntimeError::UnexpectedBlock {
-          expected_block: "text".to_string(),
-          block_found: "choice".to_string(),
-        })
-      }
-      cuentitos_common::Block::Bucket {
-        name: _,
-        settings: _,
-      } => Err(RuntimeError::UnexpectedBlock {
-        expected_block: "text".to_string(),
-        block_found: "bucket".to_string(),
-      }),
-      cuentitos_common::Block::Section { id: _, settings: _ } => {
-        Err(RuntimeError::UnexpectedBlock {
-          expected_block: "text".to_string(),
-          block_found: "section".to_string(),
-        })
-      }
-      cuentitos_common::Block::Subsection { id: _, settings: _ } => {
-        Err(RuntimeError::UnexpectedBlock {
-          expected_block: "text".to_string(),
-          block_found: "subsection".to_string(),
-        })
-      }
-      cuentitos_common::Block::Divert {
-        next: _,
-        settings: _,
-      } => Err(RuntimeError::UnexpectedBlock {
-        expected_block: "text".to_string(),
-        block_found: "divert".to_string(),
-      }),
-      cuentitos_common::Block::BoomerangDivert {
-        next: _,
-        settings: _,
-      } => Err(RuntimeError::UnexpectedBlock {
-        expected_block: "text".to_string(),
-        block_found: "boomerang divert".to_string(),
-      }),
-    }
+    let chance = stack_data.chance.clone();
+    let modified_variables = self.get_modified_variables(settings);
+
+    Ok(Block {
+      id,
+      tags,
+      functions,
+      script: settings.script.clone(),
+      modified_variables,
+      chance,
+    })
   }
 
-  pub fn pick_choice(&mut self, choice: usize) -> Result<(Block, ModifiedVariables), RuntimeError> {
+  pub fn current(&self) -> Result<Output, RuntimeError> {
+    let stack_data = match self.block_stack.last() {
+      Some(id) => id,
+      None => return Err(RuntimeError::EmptyStack),
+    };
+    let blocks = vec![self.get_block(stack_data)?];
+    Output::from_blocks(blocks, self)
+  }
+
+  pub fn pick_choice(&mut self, choice: usize) -> Result<Output, RuntimeError> {
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
     }
@@ -250,7 +249,7 @@ impl Runtime {
     }
 
     Self::push_stack_until_text(self, choices[choice])?;
-    self.next_block()
+    self.progress_story()
   }
 
   pub fn set_variable<R, T>(&mut self, variable: R, value: T) -> Result<(), RuntimeError>
@@ -359,24 +358,93 @@ impl Runtime {
     }
   }
 
-  pub fn get_choices_strings(&self) -> Vec<String> {
+  pub fn get_choices_strings(&self) -> Result<Vec<String>, RuntimeError> {
     let mut choices_strings = Vec::default();
     for choice in &self.choices {
-      if let cuentitos_common::Block::Choice { id, settings: _ } = self.get_block(*choice) {
+      if let cuentitos_common::Block::Choice { id, settings: _ } =
+        self.get_cuentitos_block(*choice)?
+      {
         choices_strings.push(self.database.i18n.get_translation(&self.current_locale, id));
       }
     }
 
-    choices_strings
+    Ok(choices_strings)
   }
 
-  fn meets_requirements(&mut self, id: BlockId) -> Result<bool, RuntimeError> {
-    for requirement in &self.get_block(id).get_settings().requirements {
+  fn get_cuentitos_block(&self, id: BlockId) -> Result<&cuentitos_common::Block, RuntimeError> {
+    if id < self.database.blocks.len() {
+      Ok(&self.database.blocks[id])
+    } else {
+      Err(RuntimeError::InvalidBlockId(id))
+    }
+  }
+
+  fn get_modified_variables(&self, settings: &BlockSettings) -> Vec<String> {
+    let mut variables = Vec::default();
+    for modifier in &settings.modifiers {
+      variables.push(modifier.variable.clone());
+    }
+    variables
+  }
+
+  fn get_section_block_ids(&mut self, section: &Section) -> Result<Vec<BlockId>, RuntimeError> {
+    let mut section = section.clone();
+    let section_id = match self.database.sections.get(&section) {
+      Some(id) => Some(id),
+      None => {
+        if let Some(current_section) = &self.game_state.section {
+          section = Section {
+            section_name: current_section.section_name.clone(),
+            subsection_name: Some(section.section_name.clone()),
+          };
+          self.database.sections.get(&section)
+        } else {
+          return Err(RuntimeError::SectionDoesntExist(section.clone()));
+        }
+      }
+    };
+
+    let mut stack: Vec<usize> = Vec::default();
+
+    if let Some(block_id) = section_id {
+      if section.subsection_name.is_some() {
+        let parent = Section {
+          section_name: section.section_name.clone(),
+          subsection_name: None,
+        };
+        if let Some(parent_id) = self.database.sections.get(&parent) {
+          stack.push(*parent_id);
+        } else {
+          return Err(RuntimeError::SectionDoesntExist(parent.clone()));
+        }
+      }
+      stack.push(*block_id);
+    }
+
+    Ok(stack)
+  }
+
+  fn meets_requirements_and_chance(&mut self, id: BlockId) -> Result<bool, RuntimeError> {
+    if self.meets_requirements(id)? {
+      Ok(self.roll_chances_for_block(id)?)
+    } else {
+      Ok(false)
+    }
+  }
+
+  fn meets_requirements(&self, id: BlockId) -> Result<bool, RuntimeError> {
+    let settings = self.get_cuentitos_block(id)?.get_settings();
+
+    if settings.unique && self.game_state.uniques_played.contains(&id) {
+      return Ok(false);
+    }
+
+    for requirement in &settings.requirements {
       if !self.meets_condition(&requirement.condition)? {
         return Ok(false);
       }
     }
-    Ok(self.roll_chances_for_block(id))
+    Ok(true)
   }
 
   fn meets_condition(&self, condition: &Condition) -> Result<bool, RuntimeError> {
@@ -442,11 +510,11 @@ impl Runtime {
     Ok(false)
   }
 
-  fn roll_chances_for_block(&mut self, id: BlockId) -> bool {
-    match self.get_block(id).get_settings().chance {
-      cuentitos_common::Chance::None => true,
-      cuentitos_common::Chance::Frequency(_) => true,
-      cuentitos_common::Chance::Probability(probability) => self.random_float() < probability,
+  fn roll_chances_for_block(&mut self, id: BlockId) -> Result<bool, RuntimeError> {
+    match self.get_cuentitos_block(id)?.get_settings().chance {
+      cuentitos_common::Chance::None => Ok(true),
+      cuentitos_common::Chance::Frequency(_) => Ok(true),
+      cuentitos_common::Chance::Probability(probability) => Ok(self.random_float() < probability),
     }
   }
 
@@ -560,137 +628,156 @@ impl Runtime {
     }
   }
 
-  fn apply_modifiers(&mut self) -> Result<ModifiedVariables, RuntimeError> {
-    let mut modified_variables = ModifiedVariables::default();
+  fn apply_modifiers(&mut self) -> Result<(), RuntimeError> {
     let id = match self.block_stack.last() {
-      Some(id) => id,
+      Some(stack_data) => stack_data.id,
       None => return Err(RuntimeError::EmptyStack),
     };
-    let block = self.get_block(*id);
+    let block = self.get_cuentitos_block(id)?;
     for modifier in block.get_settings().modifiers.clone() {
       self.apply_modifier(&modifier)?;
-      modified_variables.push(modifier.variable);
     }
-    Ok(modified_variables)
+    Ok(())
   }
 
-  fn push_stack_until_text(
-    runtime: &mut Runtime,
-    id: BlockId,
-  ) -> Result<ModifiedVariables, RuntimeError> {
-    let mut modified_variables = Self::push_stack(runtime, id)?;
-    let block = runtime.get_block(id).clone();
+  fn push_stack_until_text(&mut self, id: BlockId) -> Result<Vec<Block>, RuntimeError> {
+    if !self.meets_requirements_and_chance(id)? {
+      return self.find_next(id);
+    }
+    let mut blocks = Vec::default();
+    blocks.push(self.push_stack(id)?);
+    let block = self.get_cuentitos_block(id)?.clone();
 
     match block {
       cuentitos_common::Block::Section { id: _, settings: _ } => {
-        modified_variables.append(&mut Self::update_stack(runtime)?);
-        Ok(modified_variables)
+        blocks.append(&mut self.update_stack()?);
+        Ok(blocks)
       }
       cuentitos_common::Block::Subsection { id: _, settings: _ } => {
-        modified_variables.append(&mut Self::update_stack(runtime)?);
-        Ok(modified_variables)
+        blocks.append(&mut self.update_stack()?);
+        Ok(blocks)
       }
       cuentitos_common::Block::Text { id: _, settings: _ } => {
-        runtime.update_choices()?;
-        Ok(modified_variables)
+        self.update_choices()?;
+        Ok(blocks)
       }
       cuentitos_common::Block::Choice { id: _, settings: _ } => {
-        runtime.update_choices()?;
-        Ok(modified_variables)
+        self.update_choices()?;
+        Ok(blocks)
       }
       cuentitos_common::Block::Bucket {
         name: _,
         settings: _,
       } => {
-        if let Some(next) = runtime.get_random_block_from_bucket(block.get_settings())? {
-          modified_variables.append(&mut Self::push_stack_until_text(runtime, next)?);
-          Ok(modified_variables)
+        if let Some(next) = self.get_random_block_from_bucket(block.get_settings())? {
+          blocks.append(&mut self.push_stack_until_text(next)?);
+          Ok(blocks)
         } else {
-          runtime.update_choices()?;
-          Ok(modified_variables)
+          blocks.append(&mut self.update_stack()?);
+          Ok(blocks)
         }
       }
       cuentitos_common::Block::Divert { next, settings: _ } => {
         match next {
           NextBlock::BlockId(id) => {
-            modified_variables.append(&mut Self::push_stack_until_text(runtime, id)?)
+            self.block_stack.clear();
+            blocks.append(&mut self.push_stack_until_text(id)?)
           }
           NextBlock::EndOfFile => {
-            runtime.reset();
+            self.reset();
             return Err(RuntimeError::StoryFinished);
           }
           NextBlock::Section(section) => {
-            modified_variables.append(&mut runtime.divert(&section)?);
-            modified_variables.append(&mut Self::update_stack(runtime)?)
+            blocks.append(&mut self.divert(&section)?);
+            blocks.append(&mut self.update_stack()?)
           }
         }
-        Ok(modified_variables)
+        Ok(blocks)
       }
       cuentitos_common::Block::BoomerangDivert { next, settings: _ } => {
         match next {
-          NextBlock::BlockId(id) => {
-            modified_variables.append(&mut Self::push_stack_until_text(runtime, id)?)
-          }
+          NextBlock::BlockId(id) => blocks.append(&mut self.push_stack_until_text(id)?),
           NextBlock::EndOfFile => {
-            runtime.reset();
+            self.reset();
             return Err(RuntimeError::StoryFinished);
           }
           NextBlock::Section(section) => {
-            modified_variables.append(&mut runtime.boomerang_divert(&section)?);
-            modified_variables.append(&mut Self::update_stack(runtime)?)
+            blocks.append(&mut self.boomerang_divert(&section)?);
+            blocks.append(&mut self.update_stack()?)
           }
         }
-        Ok(modified_variables)
+        Ok(blocks)
       }
     }
   }
 
-  fn push_stack(runtime: &mut Runtime, id: BlockId) -> Result<ModifiedVariables, RuntimeError> {
-    runtime.block_stack.push(id);
-
-    if !runtime.meets_requirements(id)? {
-      return Self::pop_stack_and_find_next(runtime);
-    }
-
-    if runtime.get_block(id).get_settings().unique {
-      if runtime.game_state.uniques_played.contains(&id) {
-        return Self::pop_stack_and_find_next(runtime);
-      } else {
-        runtime.game_state.uniques_played.push(id);
+  fn get_chance(&self, id: BlockId, parent_id: Option<BlockId>) -> Result<Chance, RuntimeError> {
+    let block = self.get_cuentitos_block(id)?;
+    match block.get_settings().chance {
+      cuentitos_common::Chance::None => Ok(Chance::None),
+      cuentitos_common::Chance::Frequency(_) => {
+        let parent = match parent_id {
+          Some(parent_id) => self.get_cuentitos_block(parent_id)?,
+          None => return Err(RuntimeError::FrequencyOutOfBucket),
+        };
+        let total_frequency = self.get_total_frequency(parent.get_settings())?;
+        let value = self.get_frequency_with_modifier(block.get_settings())?;
+        Ok(Chance::Frequency {
+          value,
+          total_frequency,
+        })
       }
+      cuentitos_common::Chance::Probability(value) => Ok(Chance::Probability(value * 100.)),
     }
-
-    runtime.game_state.section = runtime.get_block(id).get_settings().section.clone();
-    runtime.apply_modifiers()
   }
 
-  fn update_stack(runtime: &mut Runtime) -> Result<ModifiedVariables, RuntimeError> {
-    if runtime.database.blocks.is_empty() {
+  fn push_stack(&mut self, id: BlockId) -> Result<Block, RuntimeError> {
+    let parent_id = self.block_stack.last().map(|stack_data| stack_data.id);
+    let chance = self.get_chance(id, parent_id)?;
+    let block_stack_data = BlockStackData { id, chance };
+    let block = self.get_block(&block_stack_data)?;
+    self.block_stack.push(block_stack_data);
+
+    let cuentitos_block = self.get_cuentitos_block(id)?.clone();
+    if cuentitos_block.get_settings().unique {
+      self.game_state.uniques_played.push(id);
+    }
+
+    self.game_state.section = cuentitos_block.get_settings().section.clone();
+    self.apply_modifiers()?;
+    Ok(block)
+  }
+
+  fn update_stack(&mut self) -> Result<Vec<Block>, RuntimeError> {
+    if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
     }
 
-    if runtime.block_stack.is_empty() {
-      return Self::push_stack_until_text(runtime, 0);
+    if self.block_stack.is_empty() {
+      return self.push_stack_until_text(0);
     }
 
-    let last_block_id = match runtime.block_stack.last() {
-      Some(id) => id,
+    let last_block_id = match self.block_stack.last() {
+      Some(block_stack_data) => block_stack_data.id,
       None => return Err(RuntimeError::EmptyStack),
     };
 
-    if last_block_id >= &runtime.database.blocks.len() {
-      return Err(RuntimeError::InvalidBlockId(*last_block_id));
+    if last_block_id >= self.database.blocks.len() {
+      return Err(RuntimeError::InvalidBlockId(last_block_id));
     }
 
-    let settings = runtime.get_block(*last_block_id).get_settings().clone();
+    let settings = self
+      .get_cuentitos_block(last_block_id)?
+      .get_settings()
+      .clone();
 
     if !settings.children.is_empty() {
-      if let Some(child) = runtime.get_next_child_in_stack(&settings, 0)? {
-        return Self::push_stack_until_text(runtime, child);
+      if let Some(child) = self.get_next_child_in_stack(&settings, 0)? {
+        return self.push_stack_until_text(child);
       }
     }
 
-    Self::pop_stack_and_find_next(runtime)
+    self.pop_stack_and_find_next()
   }
 
   fn get_next_child_in_stack(
@@ -703,10 +790,10 @@ impl Runtime {
     }
 
     let id = settings.children[next_child];
-    match self.get_block(id) {
+    match self.get_cuentitos_block(id)? {
       cuentitos_common::Block::Choice { id: _, settings: _ } => {
         if self.choices.contains(&id) {
-          Err(RuntimeError::WaitingForChoice(self.get_choices_strings()))
+          Err(RuntimeError::WaitingForChoice(self.get_choices_strings()?))
         } else {
           self.get_next_child_in_stack(settings, next_child + 1)
         }
@@ -718,60 +805,69 @@ impl Runtime {
     }
   }
 
-  fn pop_stack_and_find_next(runtime: &mut Runtime) -> Result<ModifiedVariables, RuntimeError> {
-    let last_block_id: usize = match runtime.block_stack.last() {
-      Some(id) => *id,
-      None => return Err(RuntimeError::EmptyStack),
-    };
-
-    runtime.block_stack.pop();
-    if runtime.block_stack.is_empty() {
-      return Self::push_stack_until_text(runtime, last_block_id + 1);
+  fn find_next(&mut self, previous_id: BlockId) -> Result<Vec<Block>, RuntimeError> {
+    if self.block_stack.is_empty() {
+      return self.push_stack_until_text(previous_id + 1);
     }
 
-    let new_block_id: &usize = match runtime.block_stack.last() {
-      Some(id) => id,
+    let new_block_id: usize = match self.block_stack.last() {
+      Some(block_stack_data) => block_stack_data.id,
       None => return Err(RuntimeError::EmptyStack),
     };
 
-    let parent = &runtime.database.blocks[*new_block_id].clone();
+    let parent = self.database.blocks[new_block_id].clone();
 
     let parent_settings = parent.get_settings();
     let mut previous_block_found = false;
     for sibling in &parent_settings.children {
       if previous_block_found {
-        if let cuentitos_common::Block::Choice { id: _, settings: _ } = runtime.get_block(*sibling)
+        if let cuentitos_common::Block::Choice { id: _, settings: _ } =
+          self.get_cuentitos_block(*sibling)?
         {
           continue;
         }
-        return Self::push_stack_until_text(runtime, *sibling);
+        return self.push_stack_until_text(*sibling);
       }
-      if *sibling == last_block_id {
+      if *sibling == previous_id {
         previous_block_found = true;
       }
     }
 
-    Self::pop_stack_and_find_next(runtime)
+    self.pop_stack_and_find_next()
+  }
+
+  fn pop_stack_and_find_next(&mut self) -> Result<Vec<Block>, RuntimeError> {
+    let last_block_id: usize = match self.block_stack.last() {
+      Some(block_stack_data) => block_stack_data.id,
+      None => return Err(RuntimeError::EmptyStack),
+    };
+
+    self.block_stack.pop();
+    self.find_next(last_block_id)
+  }
+
+  fn get_total_frequency(&self, bucket_settings: &BlockSettings) -> Result<u32, RuntimeError> {
+    let mut total_frequency = 0;
+    for child in &bucket_settings.children {
+      if self.meets_requirements(*child)? {
+        let child_settings = self.get_cuentitos_block(*child)?.get_settings();
+        let frequency = self.get_frequency_with_modifier(child_settings)?;
+        total_frequency += frequency;
+      }
+    }
+    Ok(total_frequency)
   }
 
   fn get_random_block_from_bucket(
     &mut self,
     settings: &BlockSettings,
   ) -> Result<Option<BlockId>, RuntimeError> {
-    let mut total_frequency = 0;
-    for child in &settings.children {
-      if self.meets_requirements(*child)? {
-        let child_settings = self.get_block(*child).get_settings();
-        let frequency = self.get_frequency_with_modifier(child_settings)?;
-        total_frequency += frequency;
-      }
-    }
-
+    let total_frequency = self.get_total_frequency(settings)?;
     let mut random_number = self.random_with_max(total_frequency);
 
     for child in &settings.children {
       if self.meets_requirements(*child)? {
-        let child_settings = self.get_block(*child).get_settings();
+        let child_settings = self.get_cuentitos_block(*child)?.get_settings();
         let frequency = self.get_frequency_with_modifier(child_settings)?;
         if random_number <= frequency {
           return Ok(Some(*child));
@@ -789,27 +885,27 @@ impl Runtime {
       return Err(RuntimeError::EmptyStack);
     }
 
-    let last_block_id: &usize = match self.block_stack.last() {
-      Some(id) => id,
+    let last_block_id: usize = match self.block_stack.last() {
+      Some(block_stack_data) => block_stack_data.id,
       None => return Err(RuntimeError::EmptyStack),
     };
 
-    let last_block = self.get_block(*last_block_id).clone();
+    let last_block = self.get_cuentitos_block(last_block_id)?.clone();
 
     let settings = last_block.get_settings();
 
     for child in &settings.children {
       if *child < self.database.blocks.len() {
-        match self.get_block(*child) {
+        match self.get_cuentitos_block(*child)? {
           cuentitos_common::Block::Choice { id: _, settings: _ } => {
-            if self.meets_requirements(*child)? {
+            if self.meets_requirements_and_chance(*child)? {
               self.choices.push(*child)
             }
           }
           cuentitos_common::Block::Bucket { name: _, settings } => {
             if let Some(picked_block) = self.get_random_block_from_bucket(&settings.clone())? {
               if let cuentitos_common::Block::Choice { id: _, settings: _ } =
-                self.get_block(picked_block)
+                self.get_cuentitos_block(picked_block)?
               {
                 self.choices.push(picked_block);
               }
@@ -829,11 +925,14 @@ mod test {
 
   use std::{collections::HashMap, fmt::Display, str::FromStr, vec};
 
-  use crate::{Runtime, RuntimeError};
+  use crate::{
+    runtime::{BlockStackData, Chance},
+    Runtime, RuntimeError,
+  };
   use cuentitos_common::{
-    condition::ComparisonOperator, modifier::ModifierOperator, Block, BlockSettings, Chance,
-    Condition, Config, Database, FrequencyModifier, Function, I18n, LanguageDb, LanguageId,
-    Modifier, NextBlock, Requirement, Section, VariableKind,
+    condition::ComparisonOperator, modifier::ModifierOperator, Block, BlockSettings, Condition,
+    Config, Database, FrequencyModifier, Function, I18n, LanguageDb, LanguageId, Modifier,
+    NextBlock, Requirement, Section, VariableKind,
   };
 
   #[test]
@@ -913,7 +1012,19 @@ mod test {
         subsection_name: Some("subsection".to_string()),
       })
       .unwrap();
-    assert_eq!(runtime.block_stack, vec![1, 2]);
+    assert_eq!(
+      runtime.block_stack,
+      vec![
+        BlockStackData {
+          id: 1,
+          chance: Chance::None
+        },
+        BlockStackData {
+          id: 2,
+          chance: Chance::None
+        },
+      ]
+    );
 
     runtime
       .divert(&Section {
@@ -921,7 +1032,13 @@ mod test {
         subsection_name: None,
       })
       .unwrap();
-    assert_eq!(runtime.block_stack, vec![0]);
+    assert_eq!(
+      runtime.block_stack,
+      vec![BlockStackData {
+        id: 0,
+        chance: Chance::None
+      }]
+    );
   }
 
   #[test]
@@ -994,7 +1111,19 @@ mod test {
         subsection_name: Some("subsection".to_string()),
       })
       .unwrap();
-    assert_eq!(runtime.block_stack, vec![1, 2]);
+    assert_eq!(
+      runtime.block_stack,
+      vec![
+        BlockStackData {
+          id: 1,
+          chance: Chance::None
+        },
+        BlockStackData {
+          id: 2,
+          chance: Chance::None
+        },
+      ]
+    );
 
     runtime
       .boomerang_divert(&Section {
@@ -1002,7 +1131,23 @@ mod test {
         subsection_name: None,
       })
       .unwrap();
-    assert_eq!(runtime.block_stack, vec![1, 2, 0]);
+    assert_eq!(
+      runtime.block_stack,
+      vec![
+        BlockStackData {
+          id: 1,
+          chance: Chance::None
+        },
+        BlockStackData {
+          id: 2,
+          chance: Chance::None
+        },
+        BlockStackData {
+          id: 0,
+          chance: Chance::None
+        }
+      ]
+    );
   }
 
   #[test]
@@ -1039,7 +1184,10 @@ mod test {
 
     let mut runtime = Runtime {
       database,
-      block_stack: vec![0],
+      block_stack: vec![BlockStackData {
+        id: 0,
+        chance: Chance::None,
+      }],
       ..Default::default()
     };
 
@@ -1095,12 +1243,15 @@ mod test {
 
     let mut runtime = Runtime {
       database,
-      block_stack: vec![0],
+      block_stack: vec![BlockStackData {
+        id: 0,
+        chance: Chance::None,
+      }],
       current_locale: "en".to_string(),
       ..Default::default()
     };
     runtime.update_choices().unwrap();
-    let choices = runtime.get_choices_strings();
+    let choices = runtime.get_choices_strings().unwrap();
     let expected_result = vec!["a".to_string(), "b".to_string()];
     assert_eq!(choices, expected_result);
   }
@@ -1133,11 +1284,20 @@ mod test {
 
     let mut runtime = Runtime {
       database,
-      block_stack: vec![0],
+      block_stack: vec![BlockStackData {
+        id: 0,
+        chance: Chance::None,
+      }],
       ..Default::default()
     };
     Runtime::update_stack(&mut runtime).unwrap();
-    assert_eq!(*runtime.block_stack.last().unwrap(), 1);
+    assert_eq!(
+      *runtime.block_stack.last().unwrap(),
+      BlockStackData {
+        id: 1,
+        chance: Chance::None
+      }
+    );
   }
 
   #[test]
@@ -1185,16 +1345,43 @@ mod test {
 
     let mut runtime = Runtime {
       database,
-      block_stack: vec![0, 2],
+      block_stack: vec![
+        BlockStackData {
+          id: 0,
+          chance: Chance::None,
+        },
+        BlockStackData {
+          id: 2,
+          chance: Chance::None,
+        },
+      ],
       ..Default::default()
     };
 
     Runtime::update_stack(&mut runtime).unwrap();
-    assert_eq!(*runtime.block_stack.last().unwrap(), 3);
+    assert_eq!(
+      *runtime.block_stack.last().unwrap(),
+      BlockStackData {
+        id: 3,
+        chance: Chance::None
+      }
+    );
     Runtime::update_stack(&mut runtime).unwrap();
-    assert_eq!(*runtime.block_stack.last().unwrap(), 4);
+    assert_eq!(
+      *runtime.block_stack.last().unwrap(),
+      BlockStackData {
+        id: 4,
+        chance: Chance::None
+      }
+    );
     Runtime::update_stack(&mut runtime).unwrap();
-    assert_eq!(*runtime.block_stack.last().unwrap(), 1);
+    assert_eq!(
+      *runtime.block_stack.last().unwrap(),
+      BlockStackData {
+        id: 1,
+        chance: Chance::None
+      }
+    );
   }
 
   #[test]
@@ -1239,16 +1426,26 @@ mod test {
 
     let mut runtime = Runtime {
       database,
-      block_stack: vec![0],
+      block_stack: vec![BlockStackData {
+        id: 0,
+        chance: Chance::None,
+      }],
       current_locale: "en".to_string(),
       ..Default::default()
     };
 
     runtime.update_choices().unwrap();
-    let output = runtime.current_block().unwrap();
-    let expected_output = crate::Block {
+    let output = runtime.current().unwrap();
+    let block = runtime
+      .get_block(&BlockStackData {
+        id: 0,
+        chance: Chance::None,
+      })
+      .unwrap();
+    let expected_output = crate::Output {
       text: "parent".to_string(),
       choices: vec!["1".to_string(), "2".to_string()],
+      blocks: vec![block],
       ..Default::default()
     };
 
@@ -1302,25 +1499,30 @@ mod test {
       ..Default::default()
     };
 
-    let output = runtime.next_block().unwrap();
-    let expected_output = (
-      crate::Block {
-        text: "parent".to_string(),
-        choices: vec!["1".to_string(), "2".to_string()],
-        ..Default::default()
-      },
-      Vec::default(),
-    );
+    let output = runtime.progress_story().unwrap();
+    let block = runtime
+      .get_block(&BlockStackData {
+        id: 0,
+        chance: Chance::None,
+      })
+      .unwrap();
+
+    let expected_output = crate::Output {
+      text: "parent".to_string(),
+      choices: vec!["1".to_string(), "2".to_string()],
+      blocks: vec![block],
+      ..Default::default()
+    };
 
     assert_eq!(output, expected_output);
-    assert_eq!(runtime.block_stack, vec![0]);
+    assert_eq!(
+      runtime.block_stack,
+      vec![BlockStackData {
+        id: 0,
+        chance: Chance::None
+      }]
+    );
   }
-  /*
-  #[test]
-  fn next_output_doesnt_work_with_empty_file() {
-    let mut runtime = Runtime::new(Database::default());
-    assert_eq!(runtime.next_block(), None);
-  } */
 
   #[test]
   fn get_random_block_from_bucket_works_correctly() {
@@ -1360,20 +1562,31 @@ mod test {
     };
     let mut runtime = Runtime {
       database,
-      block_stack: vec![0],
+      block_stack: vec![BlockStackData {
+        id: 0,
+        chance: Chance::None,
+      }],
       ..Default::default()
     };
 
     runtime.set_seed(2);
 
-    let bucket_settings = runtime.get_block(0).get_settings().clone();
+    let bucket_settings = runtime
+      .get_cuentitos_block(0)
+      .unwrap()
+      .get_settings()
+      .clone();
     let id = runtime
       .get_random_block_from_bucket(&bucket_settings)
       .unwrap()
       .unwrap();
     assert_eq!(id, 1);
     Runtime::push_stack_until_text(&mut runtime, 1).unwrap();
-    let bucket_settings = runtime.get_block(0).get_settings().clone();
+    let bucket_settings = runtime
+      .get_cuentitos_block(0)
+      .unwrap()
+      .get_settings()
+      .clone();
     let id = runtime
       .get_random_block_from_bucket(&bucket_settings)
       .unwrap()
@@ -1460,7 +1673,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let current_health: i32 = runtime.get_variable("health").unwrap();
     let expected_value = variable_kind.get_default_value().parse().unwrap();
     assert_eq!(current_health, expected_value);
@@ -1519,7 +1735,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let current_speed: f32 = runtime.get_variable("speed").unwrap();
     let expected_value = variable_kind.get_default_value().parse().unwrap();
     assert_eq!(current_speed, expected_value);
@@ -1560,7 +1779,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let current_bike: bool = runtime.get_variable("bike").unwrap();
     let expected_value = variable_kind.get_default_value().parse().unwrap();
     assert_eq!(current_bike, expected_value);
@@ -1601,7 +1823,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let current_message: String = runtime.get_variable("message").unwrap();
     let expected_value = variable_kind.get_default_value();
     assert_eq!(current_message, expected_value);
@@ -1643,7 +1868,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
 
     let current_time_of_day: TimeOfDay = runtime.get_variable("time_of_day").unwrap();
     let expected_value = variable_kind.get_default_value().parse().unwrap();
@@ -1804,7 +2032,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("health", 100).unwrap();
@@ -1849,7 +2080,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("health", 100).unwrap();
@@ -1894,7 +2128,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("health", 100).unwrap();
@@ -1939,7 +2176,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("health", 100).unwrap();
@@ -1983,7 +2223,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("health", 100).unwrap();
@@ -2027,7 +2270,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("health", 100).unwrap();
@@ -2071,7 +2317,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("speed", 1.5 as f32).unwrap();
@@ -2116,7 +2365,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("speed", 1.5 as f32).unwrap();
@@ -2161,7 +2413,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("speed", 1.5 as f32).unwrap();
@@ -2206,7 +2461,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("speed", 1.5 as f32).unwrap();
@@ -2250,7 +2508,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("speed", 1.5 as f32).unwrap();
@@ -2294,7 +2555,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("speed", 1.5 as f32).unwrap();
@@ -2339,7 +2603,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("bike", true).unwrap();
@@ -2381,7 +2648,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("bike", true).unwrap();
@@ -2423,7 +2693,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime
@@ -2467,7 +2740,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime
@@ -2511,7 +2787,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime
@@ -2555,7 +2834,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime
@@ -2586,7 +2868,7 @@ mod test {
     };
     let settings = BlockSettings {
       frequency_modifiers: vec![freq_mod],
-      chance: Chance::Frequency(100),
+      chance: cuentitos_common::Chance::Frequency(100),
       ..Default::default()
     };
     let block = Block::Text {
@@ -2601,7 +2883,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let frequency_with_modifier = runtime.get_frequency_with_modifier(&settings).unwrap();
     assert_eq!(frequency_with_modifier, 100);
     runtime.set_variable("bike", true).unwrap();
@@ -2657,11 +2942,11 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     Runtime::update_stack(&mut runtime).unwrap();
-    assert_eq!(1, *runtime.block_stack.last().unwrap());
+    assert_eq!(1, runtime.block_stack.last().unwrap().id);
     Runtime::update_stack(&mut runtime).unwrap();
-    assert_eq!(2, *runtime.block_stack.last().unwrap());
+    assert_eq!(2, runtime.block_stack.last().unwrap().id);
     Runtime::update_stack(&mut runtime).unwrap();
-    assert_eq!(2, *runtime.block_stack.last().unwrap());
+    assert_eq!(2, runtime.block_stack.last().unwrap().id);
   }
 
   #[test]
@@ -2680,7 +2965,14 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(database);
-    let output_tags = runtime.next_block().unwrap().0.tags;
+    let output_tags = runtime
+      .progress_story()
+      .unwrap()
+      .blocks
+      .last()
+      .unwrap()
+      .clone()
+      .tags;
     assert_eq!(tags, output_tags);
   }
 
@@ -2704,7 +2996,14 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(database);
-    let output_functions = runtime.next_block().unwrap().0.functions;
+    let output_functions = runtime
+      .progress_story()
+      .unwrap()
+      .blocks
+      .last()
+      .unwrap()
+      .clone()
+      .functions;
     assert_eq!(functions, output_functions);
   }
 
@@ -2720,7 +3019,10 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(database);
-    runtime.block_stack.push(1);
+    runtime.block_stack.push(BlockStackData {
+      id: 1,
+      chance: Chance::None,
+    });
     let err = Runtime::update_stack(&mut runtime).unwrap_err();
     assert_eq!(err, RuntimeError::InvalidBlockId(1));
   }
@@ -2849,8 +3151,11 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(database);
-    runtime.block_stack.push(0);
-    let err = runtime.current_block().unwrap_err();
+    runtime.block_stack.push(BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    });
+    let err = runtime.current().unwrap_err();
 
     assert_eq!(
       err,
@@ -2873,7 +3178,7 @@ mod test {
       ..Default::default()
     };
     let runtime = Runtime::new(database);
-    let err = runtime.current_block().unwrap_err();
+    let err = runtime.current().unwrap_err();
     assert_eq!(err, RuntimeError::EmptyStack);
   }
 
@@ -2899,7 +3204,7 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(database);
-    let err = runtime.next_block().unwrap_err();
+    let err = runtime.progress_story().unwrap_err();
     assert_eq!(err, RuntimeError::EmptyDatabase);
     let err = Runtime::update_stack(&mut runtime).unwrap_err();
     assert_eq!(err, RuntimeError::EmptyDatabase);

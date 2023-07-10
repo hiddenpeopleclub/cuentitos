@@ -65,7 +65,7 @@ impl Console {
 
 fn run_command(input: String, runtime: &mut Runtime) {
   match input.trim() {
-    "" => match runtime.next_block() {
+    "" => match runtime.progress_story() {
       Ok((block, variables)) => {
         print_block(block);
         print_variables(&variables, runtime)
@@ -128,7 +128,7 @@ fn run_command(input: String, runtime: &mut Runtime) {
             },
           };
           match runtime.divert(&section) {
-            Ok(_) => match runtime.next_block() {
+            Ok(_) => match runtime.progress_story() {
               Ok((block, choices)) => {
                 print_block(block);
                 print_choices(choices);
