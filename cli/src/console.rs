@@ -198,11 +198,11 @@ fn print_block(block: Block, runtime: &Runtime) {
   let settings = block.get_settings();
   print_variables(&settings.changed_variables, runtime);
   if !settings.tags.is_empty() {
-    println!("Tags:{:?}", settings.tags);
+    println!("Tags:{:?}\n", settings.tags);
   }
 
   if !settings.functions.is_empty() {
-    println!("Functions:{:?}", settings.tags);
+    println!("Functions:{:?}\n", settings.functions);
   }
 
   match &block {
@@ -215,11 +215,11 @@ fn print_block(block: Block, runtime: &Runtime) {
       settings,
     } => {
       let chance = get_change_string(&settings.chance);
-      println!("{}Entered bucket '{}'", chance, name);
+      println!("{}Entered bucket '{}\n'", chance, name);
     }
     Block::Section { name, settings } => {
       let chance = get_change_string(&settings.chance);
-      println!("{}Entered section '{}'", chance, name);
+      println!("{}Entered section '{}'\n", chance, name);
     }
     Block::Subsection {
       section,
@@ -227,7 +227,7 @@ fn print_block(block: Block, runtime: &Runtime) {
       settings,
     } => {
       let chance = get_change_string(&settings.chance);
-      println!("{}Entered section '{}/{}'", chance, section, name);
+      println!("{}Entered section '{}/{}'\n", chance, section, name);
     }
     _ => {}
   }
