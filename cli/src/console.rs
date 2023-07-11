@@ -5,7 +5,6 @@ use rustyline::{DefaultEditor, Editor};
 use std::fs;
 use std::fs::File;
 use std::io::Read;
-
 use std::path::PathBuf;
 
 #[derive(Debug)]
@@ -64,75 +63,38 @@ impl Console {
 }
 
 fn run_command(input: String, runtime: &mut Runtime) {
-  match input.trim() {
+  let mut input = input.split_whitespace();
+  let command = input.next().unwrap_or_default();
+  let mut parameters = Vec::default();
+  for parameter in input {
+    parameters.push(parameter.to_string());
+  }
+
+  match command {
     "" => print_output_result(runtime.progress_story(), runtime),
     "sections" => {
-      println!("Sections:");
-      for section in runtime.database.sections.keys() {
-        println!("{:?}", section);
-      }
+      print_sections(parameters, runtime);
     }
     "?" => {
-      if !runtime.block_stack.is_empty() {
-        match runtime.current() {
-          Ok(result) => {
-            println!("Current Block:");
-            println!("  Text: {}", result.text);
-            println!(
-              "  Script: {}",
-              result.blocks.last().unwrap().get_settings().script
-            );
-          }
-          Err(error) => print_runtime_error(error, runtime),
-        }
-        match runtime.peek_next() {
-          Ok(result) => {
-            println!("Next Block:");
-            println!("  Text: {}", result.text);
-            println!(
-              "  Script: {}",
-              result.blocks.last().unwrap().get_settings().script
-            );
-          }
-          Err(error) => print_runtime_error(error, runtime),
-        }
-      }
-      println!("Variables: ");
-      print_all_variables(runtime)
+      print_state(parameters, runtime);
     }
     "variables" => print_all_variables(runtime),
+    "set" => {
+      set(parameters, runtime);
+    }
+    "->" => {
+      if parameters.is_empty() {
+        println!("Provide a section");
+      } else {
+        divert(parameters[0].clone(), runtime);
+      }
+    }
     str => {
-      if str.starts_with("set") {
-        match parse_modifier_str(str, &runtime.database.config) {
-          Ok(modifier) => match runtime.apply_modifier(&modifier) {
-            Ok(_) => {
-              print_variable(&modifier.variable, runtime);
-            }
-            Err(error) => println!("{}", error),
-          },
-          Err(error) => println!("{}", error),
-        }
-      } else if str.starts_with("->") {
+      if str.starts_with("->") {
         let substr: String = str.chars().skip(2).collect();
-        let mut splitted = substr.trim().split('/');
-        if let Some(section_str) = splitted.next() {
-          let subsection = splitted.next();
-          let section = match subsection {
-            Some(subsection) => Section {
-              section_name: section_str.to_string(),
-              subsection_name: Some(subsection.to_string()),
-            },
-            None => Section {
-              section_name: section_str.to_string(),
-              subsection_name: None,
-            },
-          };
-          match runtime.divert(&section) {
-            Ok(_) => print_output_result(runtime.progress_story(), runtime),
-            Err(error) => print_runtime_error(error, runtime),
-          }
-        }
-      } else if let Ok(choice) = str.parse::<usize>() {
+        divert(substr, runtime);
+      }
+      if let Ok(choice) = str.parse::<usize>() {
         if choice == 0 {
           println!("invalid option");
         }
@@ -281,6 +243,150 @@ fn print_choices(choices: Vec<String>) {
 fn print_output_result(result: Result<Output, RuntimeError>, runtime: &Runtime) {
   match result {
     Ok(output) => print_output(output, runtime),
+    Err(error) => print_runtime_error(error, runtime),
+  }
+}
+
+fn grep(pattern: &str, source: &str) -> String {
+  let mut final_string = String::default();
+
+  for line in source.split('\n') {
+    if line.to_lowercase().contains(&pattern.to_lowercase()) {
+      final_string.push_str(line);
+      final_string.push('\n');
+    }
+  }
+
+  if final_string.is_empty() {
+    final_string = "no results".to_string();
+  }
+
+  final_string
+}
+
+fn print_sections(parameters: Vec<String>, runtime: &Runtime) {
+  println!("Sections:");
+  let mut string = String::default();
+  for section in runtime.database.sections.keys() {
+    string.push_str(&(section.to_string() + "\n"));
+  }
+
+  let pattern = parameters_to_pattern(parameters);
+  println!("{}", grep(&pattern, &string));
+}
+
+fn parameters_to_pattern(parameters: Vec<String>) -> String {
+  let mut pattern = String::default();
+  for parameter in parameters {
+    pattern.push_str(&(parameter + " "));
+  }
+  pattern.trim().to_string()
+}
+
+fn print_state(parameters: Vec<String>, runtime: &Runtime) {
+  let mut string = String::default();
+  if !runtime.block_stack.is_empty() {
+    match runtime.current() {
+      Ok(result) => {
+        string.push_str("Current Block:\n");
+        string.push_str(&format!("  Text: {}\n", result.text));
+        string.push_str(&format!(
+          "  Script: {}\n",
+          result.blocks.last().unwrap().get_settings().script
+        ));
+      }
+      Err(error) => print_runtime_error(error, runtime),
+    }
+    match runtime.peek_next() {
+      Ok(result) => {
+        string.push_str("Next Block:");
+        string.push_str(&format!("  Text: {}\n", result.text));
+        string.push_str(&format!(
+          "  Script: {}\n",
+          result.blocks.last().unwrap().get_settings().script
+        ));
+      }
+      Err(error) => print_runtime_error(error, runtime),
+    }
+  }
+  string.push_str("Variables: \n");
+  string.push_str(&get_all_variables_string(runtime));
+
+  let pattern = parameters_to_pattern(parameters);
+  println!("{}", grep(&pattern, &string));
+}
+
+fn get_all_variables_string(runtime: &Runtime) -> String {
+  let mut variables = Vec::default();
+  for variable in runtime.database.config.variables.keys() {
+    variables.push(variable.clone());
+  }
+
+  variables.sort();
+
+  let mut string = String::default();
+  for variable in variables {
+    if let Some(str) = get_variable_string(&variable, runtime) {
+      string.push_str(&(str + "\n"));
+    }
+  }
+  string
+}
+
+fn get_variable_string(variable: &String, runtime: &Runtime) -> Option<String> {
+  for (runtime_variable, kind) in &runtime.database.config.variables {
+    if runtime_variable == variable {
+      match kind {
+        VariableKind::Integer => {
+          let int: i32 = runtime.get_variable(variable).unwrap();
+          return Some(format!("{}: {}", variable, int));
+        }
+        VariableKind::Float => {
+          let float: f32 = runtime.get_variable(variable).unwrap();
+          return Some(format!("{}: {}", variable, float));
+        }
+        VariableKind::Bool => {
+          let bool: bool = runtime.get_variable(variable).unwrap();
+          return Some(format!("{}: {}", variable, bool));
+        }
+        _ => {
+          let string: String = runtime.get_variable(variable).unwrap();
+          return Some(format!("{}: {}", variable, string));
+        }
+      }
+    }
+  }
+  None
+}
+
+fn set(parameters: Vec<String>, runtime: &mut Runtime) {
+  let mut modifier_str = "set".to_string();
+  for parameter in parameters {
+    modifier_str += &format!(" {}", parameter);
+  }
+  match parse_modifier_str(&modifier_str, &runtime.database.config) {
+    Ok(modifier) => match runtime.apply_modifier(&modifier) {
+      Ok(_) => {
+        print_variable(&modifier.variable, runtime);
+      }
+      Err(error) => println!("{}", error),
+    },
+    Err(error) => println!("{}", error),
+  }
+}
+
+fn divert(section: String, runtime: &mut Runtime) {
+  let mut splitted = section.split('/');
+  let section_name = splitted.next().unwrap().to_string();
+  let subsection_name = splitted.next().map(|str| str.to_string());
+
+  let section = Section {
+    section_name,
+    subsection_name,
+  };
+
+  match runtime.divert(&section) {
+    Ok(_) => print_output_result(runtime.progress_story(), runtime),
     Err(error) => print_runtime_error(error, runtime),
   }
 }

@@ -235,7 +235,7 @@ impl Runtime {
     Ok(blocks_added)
   }
 
-  pub fn peek_next(&mut self) -> Result<Output, RuntimeError> {
+  pub fn peek_next(&self) -> Result<Output, RuntimeError> {
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
     }
