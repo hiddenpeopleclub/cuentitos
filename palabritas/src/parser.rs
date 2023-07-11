@@ -3080,16 +3080,26 @@ mod test {
 
   #[test]
   fn parse_section_rule() {
-    //Knot = {"===" ~ " "* ~ Identifier ~ " "* ~"===" ~ " "* ~ NEWLINE ~ ( NEWLINE | BlockBlock | Stitch | NamedBucket )* }
+    //Section = {"#"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
     let identifier = make_random_identifier();
-    assert_parse_rule(Rule::Section, &("#".to_string() + &identifier + "\n"));
+    assert_parse_rule(Rule::Section, &("#".to_string() + &identifier));
+    let percentage = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string() + "%";
+    assert_parse_rule(
+      Rule::Section,
+      &(format!("# ({}) {}", percentage, identifier)),
+    );
   }
 
   #[test]
   fn parse_subsection_rule() {
-    //stitch = {"=" ~ " "* ~ identifier ~ " "*}
+    //Subsection = { "##"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
     let identifier = make_random_identifier();
     assert_parse_rule(Rule::Subsection, &("##".to_string() + &identifier));
+    let percentage = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string() + "%";
+    assert_parse_rule(
+      Rule::Subsection,
+      &(format!("## ({}) {}", percentage, identifier)),
+    );
   }
 
   #[test]
@@ -3123,6 +3133,52 @@ mod test {
       Rule::NamedBucket,
       &("[".to_string() + &probability + &make_random_snake_case() + "]"),
     );
+  }
+
+  #[test]
+  fn parse_section_with_chance() {
+    //Section = {"#"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
+    let identifier = make_random_identifier();
+    let percentage = rand::thread_rng().gen_range(0..100);
+    let section_str = format!("# ({}%) {}", percentage, identifier);
+    let section = parse_section_str(&section_str, &Config::default()).unwrap();
+
+    let expected_value = Block::Section {
+      id: identifier.clone(),
+      settings: BlockSettings {
+        section: Some(Section {
+          section_name: identifier,
+          subsection_name: None,
+        }),
+        chance: Chance::Probability(percentage as f32 / 100.),
+        ..Default::default()
+      },
+    };
+
+    assert_eq!(section, expected_value);
+  }
+
+  #[test]
+  fn parse_subsection_with_chance() {
+    //Subsection = { "##"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
+    let identifier = make_random_identifier();
+    let percentage = rand::thread_rng().gen_range(0..100);
+    let subsection_str = format!("## ({}%) {}", percentage, identifier);
+
+    let token = parse_str(&subsection_str, Rule::Subsection).unwrap();
+    let mut parsing_data = ParsingData::new(Config::default(), String::default());
+    parse_subsection(token, &mut parsing_data, 0).unwrap();
+
+    let subsection = parsing_data.blocks[0][0].clone();
+    let expected_value = Block::Subsection {
+      id: identifier.clone(),
+      settings: BlockSettings {
+        chance: Chance::Probability(percentage as f32 / 100.),
+        ..Default::default()
+      },
+    };
+
+    assert_eq!(subsection, expected_value);
   }
 
   #[test]
