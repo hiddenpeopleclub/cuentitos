@@ -3301,6 +3301,11 @@ mod test {
   }
 
   #[test]
+  fn subsections_can_start_with_indentation() {
+    let identifier = make_random_identifier();
+    assert_parse_rule(Rule::Subsection, &format!("  ## {}", identifier));
+  }
+  #[test]
   fn choices_with_empty_lines() {
     let text = make_random_string();
     let choice_text_1 = make_random_identifier();

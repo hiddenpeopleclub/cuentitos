@@ -26,7 +26,7 @@ Command = {NewLine+ ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier
 Chance = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
 
 Section = {"#"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ ( NewLine | NewBlock | Subsection )* }
-Subsection = { "##"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
+Subsection = { Indentation* ~ "##"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
 
 Text = { !Indentation ~ !ReservedKeywords ~ Chance? ~ String }
 Choice = { "*" ~ " "* ~ Chance? ~ String }
@@ -44,7 +44,7 @@ NewBlock = {
 }
 
 Block = {
-    (NamedBucket | Choice | Text | Divert | BoomerangDivert)  ~  " "* ~ Command* ~ " "* ~ (NewLine+ | EOI) ~ NewBlock*
+    (NamedBucket | Choice | Text | Divert | BoomerangDivert )  ~  " "* ~ Command* ~ " "* ~ (NewLine+ | EOI) ~ NewBlock*
 }
 
 Database = { SOI ~ (NewLine | Block | Section )* ~ EOI }
