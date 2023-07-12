@@ -10,7 +10,7 @@ pub type SectionName = String;
 #[derive(Debug, Default, Serialize, Deserialize, Eq, PartialEq, Clone, Hash)]
 pub struct Section {
   pub section_name: SectionName,
-  pub subsection_name: Option<SectionName>,
+  pub subsections: Vec<SectionName>,
 }
 impl fmt::Display for Section {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -18,7 +18,7 @@ impl fmt::Display for Section {
 
     key.push_str(&self.section_name);
 
-    if let Some(subsection) = &self.subsection_name {
+    for subsection in &self.subsections{
       key.push('/');
       key.push_str(subsection);
     }

@@ -162,7 +162,7 @@ fn parse_database(
     {
       let section_key = Section {
         section_name: section_id.clone(),
-        subsection_name: None,
+        subsections: Vec::default(),
       };
 
       section_map.insert(section_key, i);
@@ -393,8 +393,26 @@ fn parse_subsection(
   parsing_data: &mut ParsingData,
   child_order: usize,
 ) -> Result<(), PalabritasError> {
-  match_rule(&token, Rule::Subsection, &parsing_data.file)?;
-  while parsing_data.blocks.len() < 2 {
+
+  match token.as_rule()
+  {
+    Rule::Subsection => {},
+    Rule::Subsubsection => {},
+    Rule::Subsubsubsection => {},
+    _ => {
+      return Err(PalabritasError::UnexpectedRule {
+        script: Script {
+          line: token.line_col().0,
+          col: token.line_col().1,
+          file: parsing_data.file.clone(),
+        },
+        expected_rule: Rule::Subsection,
+        rule_found: token.as_rule(),
+      });
+    },
+  };
+
+  while child_order >= parsing_data.blocks.len(){
     parsing_data.blocks.push(Vec::default());
   }
 
@@ -450,7 +468,13 @@ fn parse_subsection(
             .push(parsing_data.blocks[child_order + 1].len() - 1);
         }
       }
-      Rule::Subsection => {
+      Rule::Subsubsection => {
+        parse_subsection(inner_token, parsing_data, child_order + 1)?;
+        settings
+          .children
+          .push(parsing_data.blocks[child_order + 1].len() - 1);
+      }
+      Rule::Subsubsubsection => {
         parse_subsection(inner_token, parsing_data, child_order + 1)?;
         settings
           .children
@@ -3101,7 +3125,28 @@ mod test {
       &(format!("## ({}) {}", percentage, identifier)),
     );
   }
-
+  #[test]
+  fn parse_subsubsection_rule() {
+    //Subsubsection = { Indentation* ~ "###"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine | Subsubsubsection)*}
+    let identifier = make_random_identifier();
+    assert_parse_rule(Rule::Subsubsection, &("###".to_string() + &identifier));
+    let percentage = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string() + "%";
+    assert_parse_rule(
+      Rule::Subsubsection,
+      &(format!("### ({}) {}", percentage, identifier)),
+    );
+  }
+  #[test]
+  fn parse_subsubsubsection_rule() {
+    //Subsubsection = { Indentation* ~ "###"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine | Subsubsubsection)*}
+    let identifier = make_random_identifier();
+    assert_parse_rule(Rule::Subsubsubsection, &("####".to_string() + &identifier));
+    let percentage = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string() + "%";
+    assert_parse_rule(
+      Rule::Subsubsubsection,
+      &(format!("#### ({}) {}", percentage, identifier)),
+    );
+  }
   #[test]
   fn parse_text_rule() {
     //text = { probability? ~ string }
