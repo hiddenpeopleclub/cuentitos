@@ -3244,6 +3244,113 @@ mod test {
     );
   }
 
+  #[test]
+  fn parse_modifiers_with_empty_lines() {
+    let text = make_random_string();
+    let variable_1 = make_random_identifier();
+    let variable_2 = make_random_identifier();
+    let modifier_1 = format!("set {}", variable_1);
+    let modifier_2 = format!("set {}", variable_2);
+    let mut config = Config::default();
+
+    config
+      .variables
+      .insert(variable_1.clone(), VariableKind::Bool);
+    config
+      .variables
+      .insert(variable_2.clone(), VariableKind::Bool);
+
+    let database = parse_database_str(
+      &format!("{}\n  {}\n\n  {}", text, modifier_1, modifier_2),
+      &config,
+    )
+    .unwrap();
+
+    let modifier_1 = Modifier {
+      variable: variable_1,
+      value: true.to_string(),
+      operator: ModifierOperator::Set,
+    };
+
+    let modifier_2 = Modifier {
+      variable: variable_2,
+      value: true.to_string(),
+      operator: ModifierOperator::Set,
+    };
+
+    let text_block = Block::Text {
+      id: text,
+      settings: BlockSettings {
+        modifiers: vec![modifier_1, modifier_2],
+        ..Default::default()
+      },
+    };
+
+    let eof = Block::Divert {
+      next: NextBlock::EndOfFile,
+      settings: BlockSettings::default(),
+    };
+
+    let expected_database = Database {
+      blocks: vec![text_block, eof],
+      config,
+      ..Default::default()
+    };
+
+    assert_eq!(database, expected_database);
+  }
+
+  #[test]
+  fn choices_with_empty_lines() {
+    let text = make_random_string();
+    let choice_text_1 = make_random_identifier();
+    let choice_text_2 = make_random_identifier();
+    let choice_1 = format!("* {}", choice_text_1);
+    let choice_2 = format!("* {}", choice_text_2);
+
+    let database = parse_database_str(
+      &format!("{}\n  {}\n\n  {}", text, choice_1, choice_2),
+      &Config::default(),
+    )
+    .unwrap();
+
+    let choice_1 = Block::Choice {
+      id: choice_text_1,
+      settings: BlockSettings {
+        script: Script { file: "".to_string(), line: 2, col: 3 },
+        ..Default::default()
+      },
+    };
+
+    let choice_2 = Block::Choice {
+      id: choice_text_2,
+      settings: BlockSettings {
+        script: Script { file: "".to_string(), line: 4, col: 3 },
+        ..Default::default()
+      },
+    };
+
+    let text_block = Block::Text {
+      id: text,
+      settings: BlockSettings {
+        children: vec![2,3],
+        ..Default::default()
+      },
+    };
+
+    let eof = Block::Divert {
+      next: NextBlock::EndOfFile,
+      settings: BlockSettings::default(),
+    };
+
+    let expected_database = Database {
+      blocks: vec![text_block, eof, choice_1, choice_2],
+      ..Default::default()
+    };
+
+    assert_eq!(database, expected_database);
+  }
+
   fn assert_parse_rule(rule: Rule, input: &str) {
     let pair = PalabritasParser::parse(rule, input)
       .expect("unsuccessful parse")

@@ -44,7 +44,7 @@ NewBlock = {
 }
 
 Block = {
-    (NamedBucket | Choice | Text | Divert | BoomerangDivert)  ~  " "* ~ Command* ~ " "* ~ (NewLine | EOI) ~ NewBlock*
+    (NamedBucket | Choice | Text | Divert | BoomerangDivert)  ~  " "* ~ Command* ~ " "* ~ (NewLine+ | EOI) ~ NewBlock*
 }
 
 Database = { SOI ~ (NewLine | Block | Section )* ~ EOI }
