@@ -3317,7 +3317,11 @@ mod test {
     let choice_1 = Block::Choice {
       id: choice_text_1,
       settings: BlockSettings {
-        script: Script { file: "".to_string(), line: 2, col: 3 },
+        script: Script {
+          file: "".to_string(),
+          line: 2,
+          col: 3,
+        },
         ..Default::default()
       },
     };
@@ -3325,7 +3329,11 @@ mod test {
     let choice_2 = Block::Choice {
       id: choice_text_2,
       settings: BlockSettings {
-        script: Script { file: "".to_string(), line: 4, col: 3 },
+        script: Script {
+          file: "".to_string(),
+          line: 4,
+          col: 3,
+        },
         ..Default::default()
       },
     };
@@ -3333,7 +3341,7 @@ mod test {
     let text_block = Block::Text {
       id: text,
       settings: BlockSettings {
-        children: vec![2,3],
+        children: vec![2, 3],
         ..Default::default()
       },
     };
