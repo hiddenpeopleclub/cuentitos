@@ -898,9 +898,6 @@ impl Runtime {
           self.get_next_child_in_stack(settings, next_child + 1)
         }
       }
-      cuentitos_common::Block::Section { id, settings: _ } => {
-        Err(RuntimeError::SectionAtLowerLevel(id.clone()))
-      }
       _ => Ok(Some(settings.children[0])),
     }
   }
@@ -3174,33 +3171,6 @@ mod test {
     );
   }
 
-  #[test]
-  fn section_at_lower_level_throws_error() {
-    let text = Block::Text {
-      id: String::default(),
-      settings: cuentitos_common::BlockSettings {
-        children: vec![1],
-        ..Default::default()
-      },
-    };
-
-    let section = Block::Section {
-      id: "section".to_string(),
-      settings: cuentitos_common::BlockSettings::default(),
-    };
-
-    let database = Database {
-      blocks: vec![text, section],
-      ..Default::default()
-    };
-    let mut runtime = Runtime::new(database);
-    Runtime::update_stack(&mut runtime).unwrap();
-    let err = Runtime::update_stack(&mut runtime).unwrap_err();
-    assert_eq!(
-      err,
-      RuntimeError::SectionAtLowerLevel("section".to_string())
-    );
-  }
   #[test]
   fn throws_error_when_story_finishes() {
     let text: Block = Block::Divert {
