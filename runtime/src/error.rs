@@ -1,14 +1,14 @@
+use cuentitos_common::{BlockId, Section, SectionName};
+use std::fmt::Debug;
 use std::{
   error::Error,
   fmt::Display,
   num::{ParseFloatError, ParseIntError},
   str::ParseBoolError,
 };
-
-use cuentitos_common::{BlockId, Section, SectionName};
 type VariableName = String;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub enum RuntimeError {
   InvalidBlockId(BlockId),
   WaitingForChoice(Vec<String>),
@@ -51,6 +51,11 @@ impl Display for ErrorInfo {
   }
 }
 impl Error for RuntimeError {}
+impl Debug for RuntimeError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{}", self)
+  }
+}
 impl Display for RuntimeError {
   fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
     match self {

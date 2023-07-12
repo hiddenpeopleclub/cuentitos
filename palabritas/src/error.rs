@@ -1,8 +1,9 @@
 use crate::parser::Rule;
 use cuentitos_common::{Script, Section, SectionName, VariableKind};
+use std::fmt::Debug;
 use std::{error::Error, fmt::Display, path::PathBuf};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub enum PalabritasError {
   FileIsEmpty,
   ParseError {
@@ -62,6 +63,11 @@ pub enum PalabritasError {
 }
 
 impl Error for PalabritasError {}
+impl Debug for PalabritasError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{}", self)
+  }
+}
 impl Display for PalabritasError {
   fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
     match self {
