@@ -6,6 +6,7 @@ use std::fs;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use std::str::FromStr;
 
 #[derive(Debug)]
 pub struct Console {}
@@ -17,11 +18,7 @@ impl Console {
     let mut prompt_str = String::from("\n");
 
     if let Some(section) = section {
-      prompt_str.push_str(&section.section_name);
-      if let Some(subsection) = &section.subsection_name {
-        prompt_str.push('/');
-        prompt_str.push_str(subsection);
-      }
+      prompt_str.push_str(&format!("{}", section));
     }
 
     prompt_str.push_str(" > ");
@@ -186,17 +183,14 @@ fn get_block_string(block: Block, runtime: &Runtime) -> String {
       let chance = get_change_string(&settings.chance);
       format!("{}{}Entered bucket '{}'\n", block_string, chance, name)
     }
-    Block::Section { name, settings } => {
+    Block::Section { settings } => {
       let chance = get_change_string(&settings.chance);
-      format!("{}{}Entered section '{}'\n", block_string, chance, name)
-    }
-    Block::Subsection {
-      section: _,
-      name,
-      settings,
-    } => {
-      let chance = get_change_string(&settings.chance);
-      format!("{}{}Entered subsection '{}'\n", block_string, chance, name)
+      format!(
+        "{}{}Entered section '{}'\n",
+        block_string,
+        chance,
+        settings.section.clone().unwrap()
+      )
     }
     _ => block_string,
   }
@@ -377,14 +371,7 @@ fn boomerang_divert(parameters: Vec<&str>, runtime: &mut Runtime) -> String {
     return "Provide a section".to_string();
   }
 
-  let mut splitted = parameters[0].split('/');
-  let section_name = splitted.next().unwrap().to_string();
-  let subsection_name = splitted.next().map(|str| str.to_string());
-
-  let section = Section {
-    section_name,
-    subsection_name,
-  };
+  let section = Section::from_str(parameters[0]).unwrap();
 
   match runtime.boomerang_divert(&section) {
     Ok(blocks) => {
@@ -405,14 +392,7 @@ fn divert(parameters: Vec<&str>, runtime: &mut Runtime) -> String {
     return "Provide a section".to_string();
   }
 
-  let mut splitted = parameters[0].split('/');
-  let section_name = splitted.next().unwrap().to_string();
-  let subsection_name = splitted.next().map(|str| str.to_string());
-
-  let section = Section {
-    section_name,
-    subsection_name,
-  };
+  let section = Section::from_str(parameters[0]).unwrap();
 
   match runtime.divert(&section) {
     Ok(blocks) => {
@@ -444,7 +424,7 @@ mod test {
 
   #[test]
   fn progress_story_command() {
-    let mut runtime = Console::load_runtime("./fixtures/cuentitos.db");
+    let mut runtime = Console::load_runtime("./fixtures/script");
     let mut rl = DefaultEditor::new().unwrap();
 
     let expected_str = "You've just arrived in the bustling city, full of excitement and anticipation for your new job.";
@@ -457,7 +437,7 @@ mod test {
 
   #[test]
   fn sections_command() {
-    let mut runtime = Console::load_runtime("./fixtures/cuentitos.db");
+    let mut runtime = Console::load_runtime("./fixtures/script");
     let mut rl = DefaultEditor::new().unwrap();
 
     let expected_str = "second_day\nsecond_day/farmers_market\nsecond_day/museum";
@@ -468,7 +448,7 @@ mod test {
 
   #[test]
   fn question_mark_command() {
-    let mut runtime = Console::load_runtime("./fixtures/cuentitos.db");
+    let mut runtime = Console::load_runtime("./fixtures/script");
     let mut rl = DefaultEditor::new().unwrap();
 
     let expected_str = "Variables: \nenergy = 0\nitem = tea\ntime = 0\ntime_of_day = morning";
@@ -483,7 +463,7 @@ mod test {
 
   #[test]
   fn variables_command() {
-    let mut runtime = Console::load_runtime("./fixtures/cuentitos.db");
+    let mut runtime = Console::load_runtime("./fixtures/script");
     let mut rl = DefaultEditor::new().unwrap();
 
     let expected_str = "energy = 0\nitem = tea\ntime = 0\ntime_of_day = morning";
@@ -494,7 +474,7 @@ mod test {
 
   #[test]
   fn set_command() {
-    let mut runtime = Console::load_runtime("./fixtures/cuentitos.db");
+    let mut runtime = Console::load_runtime("./fixtures/script");
     let mut rl = DefaultEditor::new().unwrap();
 
     let expected_str = "energy = 10";
@@ -508,7 +488,7 @@ mod test {
 
   #[test]
   fn divert_command() {
-    let mut runtime = Console::load_runtime("./fixtures/cuentitos.db");
+    let mut runtime = Console::load_runtime("./fixtures/script");
     let mut rl = DefaultEditor::new().unwrap();
 
     let expected_str = "Entered section 'second_day'\n\nYou wake up feeling refreshed. Let's see what this day brings.\n  (1)Explore a museum\n  (2)Go to the Farmer's Market\n";
@@ -518,8 +498,8 @@ mod test {
 
     let section_found = runtime.game_state.section.clone().unwrap();
     let expected_section = Section {
-      section_name: "second_day".to_string(),
-      subsection_name: None,
+      name: "second_day".to_string(),
+      parent: None,
     };
     assert_eq!(section_found, expected_section);
 
@@ -536,15 +516,15 @@ mod test {
     let stack_found = runtime.block_stack.clone();
     assert_eq!(expected_stack, stack_found);
 
-    let expected_str = "Entered section 'second_day'\n\nEntered subsection 'museum'\n\nYou get to the museum door. You watch through the window. It seems crowded.";
+    let expected_str = "Entered section 'second_day'\n\nEntered section 'second_day/museum'\n\nYou get to the museum door. You watch through the window. It seems crowded.";
     let str_found =
       Console::process_line(Ok("->second_day/museum".to_string()), &mut rl, &mut runtime).unwrap();
     assert_eq!(expected_str, &str_found);
 
     let section_found = runtime.game_state.section.unwrap();
     let expected_section = Section {
-      section_name: "second_day".to_string(),
-      subsection_name: Some("museum".to_string()),
+      name: "museum".to_string(),
+      parent: Some(Box::new(expected_section)),
     };
     assert_eq!(section_found, expected_section);
 
@@ -568,7 +548,7 @@ mod test {
 
   #[test]
   fn boomerang_divert_command() {
-    let mut runtime = Console::load_runtime("./fixtures/cuentitos.db");
+    let mut runtime = Console::load_runtime("./fixtures/script");
     let mut rl = DefaultEditor::new().unwrap();
 
     let expected_str = "Entered section 'second_day'\n\nYou wake up feeling refreshed. Let's see what this day brings.\n  (1)Explore a museum\n  (2)Go to the Farmer's Market\n";
@@ -578,8 +558,8 @@ mod test {
 
     let section_found = runtime.game_state.section.clone().unwrap();
     let expected_section = Section {
-      section_name: "second_day".to_string(),
-      subsection_name: None,
+      name: "second_day".to_string(),
+      parent: None,
     };
     assert_eq!(section_found, expected_section);
 
@@ -596,7 +576,7 @@ mod test {
     let stack_found = runtime.block_stack.clone();
     assert_eq!(expected_stack, stack_found);
 
-    let expected_str = "Entered section 'second_day'\n\nEntered subsection 'museum'\n\nYou get to the museum door. You watch through the window. It seems crowded.";
+    let expected_str = "Entered section 'second_day'\n\nEntered section 'second_day/museum'\n\nYou get to the museum door. You watch through the window. It seems crowded.";
     let str_found = Console::process_line(
       Ok("<->second_day/museum".to_string()),
       &mut rl,
@@ -607,8 +587,8 @@ mod test {
 
     let section_found = runtime.game_state.section.unwrap();
     let expected_section = Section {
-      section_name: "second_day".to_string(),
-      subsection_name: Some("museum".to_string()),
+      name: "museum".to_string(),
+      parent: Some(Box::new(expected_section)),
     };
     assert_eq!(section_found, expected_section);
 

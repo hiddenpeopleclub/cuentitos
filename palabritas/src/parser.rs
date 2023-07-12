@@ -1,6 +1,7 @@
 extern crate pest;
 use std::collections::HashMap;
 use std::path::Path;
+use std::vec;
 
 use cuentitos_common::condition::ComparisonOperator;
 use cuentitos_common::modifier::ModifierOperator;
@@ -110,6 +111,35 @@ fn parse_database(
   token: Pair<Rule>,
   mut parsing_data: ParsingData,
 ) -> Result<Database, PalabritasError> {
+  fn add_section(
+    name: &str,
+    children: &Vec<BlockId>,
+    parent: Option<Box<Section>>,
+    block_id: BlockId,
+    section_map: &mut HashMap<Section, usize>,
+    blocks: &Vec<Block>,
+  ) {
+    let section_key = Section {
+      name: name.to_string(),
+      parent,
+    };
+
+    section_map.insert(section_key.clone(), block_id);
+
+    for child in children {
+      if let Block::Section { id: name, settings } = &blocks[*child] {
+        add_section(
+          name,
+          &settings.children,
+          Some(Box::new(section_key.clone())),
+          *child,
+          section_map,
+          blocks,
+        );
+      }
+    }
+  }
+
   match_rule(&token, Rule::Database, &parsing_data.file)?;
 
   for inner_token in token.into_inner() {
@@ -134,6 +164,7 @@ fn parse_database(
   };
   parsing_data.blocks[0].push(end_block);
 
+  let level_0_size = parsing_data.blocks[0].len();
   let mut ordered_blocks = Vec::default();
 
   for child_level in 0..parsing_data.blocks.len() {
@@ -154,36 +185,21 @@ fn parse_database(
 
   let mut section_map = HashMap::default();
 
-  for i in 0..ordered_blocks.len() {
-    if let Block::Section {
-      id: section_id,
-      settings,
-    } = &ordered_blocks[i]
-    {
-      let section_key = Section {
-        section_name: section_id.clone(),
-        subsections: Vec::default(),
-      };
-
-      section_map.insert(section_key, i);
-      for child in &settings.children {
-        if let Block::Subsection {
-          id: subsection_id,
-          settings: _,
-        } = &ordered_blocks[*child]
-        {
-          let section_key = Section {
-            section_name: section_id.clone(),
-            subsection_name: Some(subsection_id.clone()),
-          };
-          section_map.insert(section_key, *child);
-        }
-      }
+  for i in 0..level_0_size {
+    if let Block::Section { id: name, settings } = &ordered_blocks[i] {
+      add_section(
+        name,
+        &settings.children,
+        None,
+        i,
+        &mut section_map,
+        &ordered_blocks,
+      );
     }
   }
 
   validate_diverts(&ordered_blocks, &section_map)?;
-  check_duplicate_sections(&ordered_blocks)?;
+  check_duplicate_sections(&ordered_blocks, level_0_size)?;
 
   Ok(Database {
     blocks: ordered_blocks,
@@ -344,8 +360,8 @@ fn parse_section(
       Rule::Identifier => {
         id = inner_token.as_str().to_string();
         parsing_data.current_section = Some(Section {
-          section_name: id.clone(),
-          subsection_name: None,
+          name: id.clone(),
+          parent: None,
         });
         settings.section = parsing_data.current_section.clone();
       }
@@ -373,6 +389,7 @@ fn parse_section(
       }
       Rule::Subsection => {
         parse_subsection(inner_token, parsing_data, child_order + 1)?;
+        parsing_data.current_section = settings.section.clone();
         settings
           .children
           .push(parsing_data.blocks[child_order + 1].len() - 1);
@@ -393,12 +410,10 @@ fn parse_subsection(
   parsing_data: &mut ParsingData,
   child_order: usize,
 ) -> Result<(), PalabritasError> {
-
-  match token.as_rule()
-  {
-    Rule::Subsection => {},
-    Rule::Subsubsection => {},
-    Rule::Subsubsubsection => {},
+  match token.as_rule() {
+    Rule::Subsection => {}
+    Rule::Subsubsection => {}
+    Rule::Subsubsubsection => {}
     _ => {
       return Err(PalabritasError::UnexpectedRule {
         script: Script {
@@ -409,10 +424,10 @@ fn parse_subsection(
         expected_rule: Rule::Subsection,
         rule_found: token.as_rule(),
       });
-    },
+    }
   };
 
-  while child_order >= parsing_data.blocks.len(){
+  while child_order >= parsing_data.blocks.len() {
     parsing_data.blocks.push(Vec::default());
   }
 
@@ -441,8 +456,11 @@ fn parse_subsection(
     match inner_token.as_rule() {
       Rule::Identifier => {
         id = inner_token.as_str().to_string();
-        if let Some(ref mut section) = parsing_data.current_section {
-          section.subsection_name = Some(id.clone());
+        if let Some(section) = &parsing_data.current_section {
+          parsing_data.current_section = Some(Section {
+            name: id.clone(),
+            parent: Some(Box::new(section.clone())),
+          });
         }
         settings.section = parsing_data.current_section.clone();
       }
@@ -484,7 +502,7 @@ fn parse_subsection(
     }
   }
 
-  let subsection = Block::Subsection { id, settings };
+  let subsection = Block::Section { id, settings };
   check_invalid_frequency(
     &subsection,
     script,
@@ -640,15 +658,6 @@ fn check_invalid_frequency(
         Ok(())
       }
     }
-
-    Block::Subsection { id: _, settings: _ } => {
-      if let Chance::Frequency(_) = block.get_settings().chance {
-        Err(PalabritasError::FrequencyOutOfBucket(script, string))
-      } else {
-        Ok(())
-      }
-    }
-
     _ => {
       freq_modifier_matches_chance(block.get_settings(), &script, &string)?;
       if child_order == 0 {
@@ -1061,29 +1070,27 @@ fn parse_tag(token: Pair<Rule>, file: &str) -> Result<String, PalabritasError> {
 }
 fn parse_divert(token: Pair<Rule>, file: &str) -> Result<Block, PalabritasError> {
   match_rule(&token, Rule::Divert, file)?;
-  //Divert = { "->"  ~ " "* ~ Identifier ~ ("." ~ Identifier)? }
+  //Divert = { Chance? ~ "->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)* }
 
-  let mut section: Option<String> = None;
-  let mut subsection: Option<String> = None;
+  let mut section_names = Vec::default();
 
   for inner_token in token.into_inner() {
     if inner_token.as_rule() == Rule::Identifier {
-      if section.is_none() {
-        section = Some(inner_token.as_str().to_string());
-      } else {
-        subsection = Some(inner_token.as_str().to_string());
-      }
+      section_names.push(inner_token.as_str().to_string());
     }
   }
 
-  let next = match section.is_some() && subsection.is_none() && section.clone().unwrap() == "END" {
+  let next = match section_names == vec!["END"] {
     true => NextBlock::EndOfFile,
     false => {
-      let section_key = Section {
-        section_name: section.unwrap(),
-        subsection_name: subsection,
-      };
-      NextBlock::Section(section_key)
+      let mut section = None;
+      for name in section_names {
+        section = Some(Box::new(Section {
+          name,
+          parent: section,
+        }));
+      }
+      NextBlock::Section(*section.unwrap())
     }
   };
 
@@ -1096,27 +1103,25 @@ fn parse_divert(token: Pair<Rule>, file: &str) -> Result<Block, PalabritasError>
 fn parse_boomerang_divert(token: Pair<Rule>, file: &str) -> Result<Block, PalabritasError> {
   match_rule(&token, Rule::BoomerangDivert, file)?;
 
-  let mut section: Option<String> = None;
-  let mut subsection: Option<String> = None;
+  let mut section_names = Vec::default();
 
   for inner_token in token.into_inner() {
     if inner_token.as_rule() == Rule::Identifier {
-      if section.is_none() {
-        section = Some(inner_token.as_str().to_string());
-      } else {
-        subsection = Some(inner_token.as_str().to_string());
-      }
+      section_names.push(inner_token.as_str().to_string());
     }
   }
 
-  let next = match section.is_some() && subsection.is_none() && section.clone().unwrap() == "END" {
+  let next = match section_names == vec!["END"] {
     true => NextBlock::EndOfFile,
     false => {
-      let section_key = Section {
-        section_name: section.unwrap(),
-        subsection_name: subsection,
-      };
-      NextBlock::Section(section_key)
+      let mut section = None;
+      for name in section_names {
+        section = Some(Box::new(Section {
+          name,
+          parent: section,
+        }));
+      }
+      NextBlock::Section(*section.unwrap())
     }
   };
 
@@ -1202,19 +1207,49 @@ fn check_variable_existance(
   }
 }
 
-fn check_duplicate_sections(blocks: &Vec<Block>) -> Result<(), PalabritasError> {
-  fn check_if_subsection_exists(
-    id: &SectionName,
-    script: &Script,
-    sections: &HashMap<Section, Script>,
+fn check_duplicate_sections(
+  blocks: &Vec<Block>,
+  level_0_size: usize,
+) -> Result<(), PalabritasError> {
+  fn check_related_duplicates(
+    settings: &BlockSettings,
+    blocks: &[Block],
   ) -> Result<(), PalabritasError> {
-    for (other_section, other_script) in sections {
-      if let Some(other_subsection) = &other_section.subsection_name {
-        if other_subsection == id {
-          return Err(PalabritasError::SubsectioNamedAfterSection {
-            subsection_script: Box::new(other_script.clone()),
+    let mut names_taken: HashMap<String, Script> = HashMap::default();
+
+    for child in &settings.children {
+      if let Block::Section { id, settings } = &blocks[*child] {
+        names_taken.insert(id.clone(), settings.script.clone());
+      }
+    }
+
+    for child in &settings.children {
+      let grand_children = if let Block::Section {
+        id: _,
+        settings: child_settings,
+      } = &blocks[*child]
+      {
+        &child_settings.children
+      } else {
+        continue;
+      };
+
+      for grand_child in grand_children {
+        let grand_children = if let Block::Section {
+          id,
+          settings: grand_child_settings,
+        } = &blocks[*grand_child]
+        {
+          (id, grand_child_settings)
+        } else {
+          continue;
+        };
+
+        if let Some(script) = names_taken.get(grand_children.0) {
+          return Err(PalabritasError::SubsectioNamedAfterUpperSection {
+            subsection_script: Box::new(grand_children.1.script.clone()),
             section_script: Box::new(script.clone()),
-            section_name: id.clone(),
+            subsection: grand_children.0.clone(),
           });
         }
       }
@@ -1222,17 +1257,17 @@ fn check_duplicate_sections(blocks: &Vec<Block>) -> Result<(), PalabritasError> 
 
     Ok(())
   }
-  fn check_if_section_exists(
+  fn check_if_subsection_exists(
     id: &SectionName,
     script: &Script,
     sections: &HashMap<Section, Script>,
   ) -> Result<(), PalabritasError> {
     for (other_section, other_script) in sections {
-      if other_section.section_name == *id {
-        return Err(PalabritasError::SubsectioNamedAfterSection {
-          subsection_script: Box::new(script.clone()),
-          section_script: Box::new(other_script.clone()),
-          section_name: id.clone(),
+      if other_section.parent.is_some() && other_section.name == *id {
+        return Err(PalabritasError::SubsectioNamedAfterUpperSection {
+          subsection_script: Box::new(other_script.clone()),
+          section_script: Box::new(script.clone()),
+          subsection: id.clone(),
         });
       }
     }
@@ -1250,7 +1285,7 @@ fn check_duplicate_sections(blocks: &Vec<Block>) -> Result<(), PalabritasError> 
         let second_appearance = Box::new(settings.script.clone());
         return Err(PalabritasError::DuplicatedSection {
           first_appearance,
-          section_name: section.clone(),
+          section: section.clone(),
           second_appearance,
         });
       }
@@ -1260,17 +1295,17 @@ fn check_duplicate_sections(blocks: &Vec<Block>) -> Result<(), PalabritasError> 
   }
 
   let mut sections: HashMap<Section, Script> = HashMap::default();
+
   for block in blocks {
-    match block {
-      Block::Section { id, settings } => {
-        check_duplicate(settings, &mut sections)?;
-        check_if_subsection_exists(id, &settings.script, &sections)?;
-      }
-      Block::Subsection { id, settings } => {
-        check_duplicate(settings, &mut sections)?;
-        check_if_section_exists(id, &settings.script, &sections)?;
-      }
-      _ => {}
+    if let Block::Section { id: _, settings } = block {
+      check_duplicate(settings, &mut sections)?;
+    }
+  }
+
+  for i in 0..level_0_size {
+    if let Block::Section { id, settings } = &blocks[i] {
+      check_if_subsection_exists(id, &settings.script, &sections)?;
+      check_related_duplicates(settings, blocks)?;
     }
   }
 
@@ -1280,6 +1315,15 @@ fn validate_diverts(
   blocks: &Vec<Block>,
   section_map: &HashMap<Section, BlockId>,
 ) -> Result<(), PalabritasError> {
+  fn append_to_parent(value: Section, into: &mut Section) {
+    match &mut into.parent {
+      Some(parent) => append_to_parent(value, parent),
+      None => {
+        into.parent = Some(Box::new(value));
+      }
+    }
+  }
+
   for block in blocks {
     if let Block::Divert {
       next: NextBlock::Section(section),
@@ -1290,17 +1334,17 @@ fn validate_diverts(
         continue;
       }
 
-      let current_section = block.get_settings().section.clone();
-      if section.subsection_name.is_none() {
-        if let Some(current_section) = current_section {
-          let key = Section {
-            section_name: current_section.section_name,
-            subsection_name: Some(section.section_name.clone()),
-          };
+      if let Some(current_section) = block.get_settings().section.clone() {
+        let mut section = section.clone();
+        append_to_parent(current_section, &mut section);
+        if section_map.contains_key(&section) {
+          continue;
+        }
 
-          if section_map.contains_key(&key) {
-            continue;
-          }
+        section.parent = section.parent.unwrap().parent;
+
+        if section_map.contains_key(&section) {
+          continue;
         }
       }
 
@@ -1858,8 +1902,8 @@ mod test {
       id: identifier.clone(),
       settings: BlockSettings {
         section: Some(Section {
-          section_name: identifier,
-          subsection_name: None,
+          name: identifier,
+          parent: None,
         }),
         ..Default::default()
       },
@@ -1867,7 +1911,7 @@ mod test {
     assert_eq!(section, expected_value);
   }
   #[test]
-  fn parse_section_with_subsection_list_correctly() {
+  fn parse_section_with_subsection_correctly() {
     //Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
 
     let section_identifier = make_random_snake_case();
@@ -1884,30 +1928,33 @@ mod test {
     let mut parsing_data = ParsingData::default();
     parse_section(token, &mut parsing_data, 0).unwrap();
 
-    let section = parsing_data.blocks[0][0].clone();
+    let section_block = parsing_data.blocks[0][0].clone();
 
+    let section = Section {
+      name: section_identifier.clone(),
+      parent: None,
+    };
     let expected_value = Block::Section {
       id: section_identifier.clone(),
       settings: BlockSettings {
-        section: Some(Section {
-          section_name: section_identifier.clone(),
-          subsection_name: None,
-        }),
+        section: Some(section.clone()),
         children: vec![0, 1],
         ..Default::default()
       },
     };
-    assert_eq!(section, expected_value);
+    assert_eq!(section_block, expected_value);
 
-    let sub_section_1 = parsing_data.blocks[1][0].clone();
+    let subsection_1_block = parsing_data.blocks[1][0].clone();
 
-    let expected_value = Block::Subsection {
+    let subsection_1 = Section {
+      name: subsection_identifier_1.clone(),
+      parent: Some(Box::new(section.clone())),
+    };
+
+    let expected_value = Block::Section {
       id: subsection_identifier_1.clone(),
       settings: BlockSettings {
-        section: Some(Section {
-          section_name: section_identifier.clone(),
-          subsection_name: Some(subsection_identifier_1.clone()),
-        }),
+        section: Some(subsection_1.clone()),
         script: Script {
           file: String::default(),
           line: 2,
@@ -1916,17 +1963,19 @@ mod test {
         ..Default::default()
       },
     };
-    assert_eq!(sub_section_1, expected_value);
+    assert_eq!(subsection_1_block, expected_value);
 
-    let sub_section_2 = parsing_data.blocks[1][1].clone();
+    let subsection_2_block = parsing_data.blocks[1][1].clone();
 
-    let expected_value = Block::Subsection {
+    let subsection_2 = Section {
+      name: subsection_identifier_2.clone(),
+      parent: Some(Box::new(section.clone())),
+    };
+
+    let expected_value = Block::Section {
       id: subsection_identifier_2.clone(),
       settings: BlockSettings {
-        section: Some(Section {
-          section_name: section_identifier.clone(),
-          subsection_name: Some(subsection_identifier_2.clone()),
-        }),
+        section: Some(subsection_2.clone()),
         script: Script {
           file: String::default(),
           line: 3,
@@ -1935,33 +1984,19 @@ mod test {
         ..Default::default()
       },
     };
-    assert_eq!(sub_section_2, expected_value);
+
+    assert_eq!(subsection_2_block, expected_value);
     let token = parse_str(&section_string, Rule::Database).unwrap();
     let parsing_data = ParsingData::default();
     let database = parse_database(token, parsing_data).unwrap();
 
-    let section_key = Section {
-      section_name: section_identifier.clone(),
-      subsection_name: None,
-    };
-
-    let id = *database.sections.get(&section_key).unwrap();
+    let id = *database.sections.get(&section).unwrap();
     assert_eq!(id, 0);
 
-    let section_key = Section {
-      section_name: section_identifier.clone(),
-      subsection_name: Some(subsection_identifier_1),
-    };
-
-    let id = *database.sections.get(&section_key).unwrap();
+    let id = *database.sections.get(&subsection_1).unwrap();
     assert_eq!(id, 2);
 
-    let section_key = Section {
-      section_name: section_identifier,
-      subsection_name: Some(subsection_identifier_2),
-    };
-
-    let id = *database.sections.get(&section_key).unwrap();
+    let id = *database.sections.get(&subsection_2).unwrap();
     assert_eq!(id, 3);
   }
   #[test]
@@ -2225,9 +2260,9 @@ mod test {
         line: 2,
         col: 1,
       }),
-      section_name: Section {
-        section_name: section_1,
-        subsection_name: None,
+      section: Section {
+        name: section_1,
+        parent: None,
       },
     };
 
@@ -2236,15 +2271,25 @@ mod test {
 
   #[test]
   fn duplicate_subsections_throws_error() {
-    let section = make_random_identifier();
-    let subsection_1 = make_random_identifier();
-    let subsection_2 = subsection_1.clone();
+    let section_name = make_random_identifier();
+    let subsection_name = make_random_identifier();
     let err = parse_database_str(
-      &format!("#{}\n##{}\n##{}\n", section, subsection_1, subsection_2),
+      &format!(
+        "#{}\n##{}\n##{}\n",
+        section_name, subsection_name, subsection_name
+      ),
       &Config::default(),
     )
     .unwrap_err();
 
+    let section = Section {
+      name: section_name,
+      parent: None,
+    };
+    let subsection = Section {
+      name: subsection_name,
+      parent: Some(Box::new(section.clone())),
+    };
     let expected_error = PalabritasError::DuplicatedSection {
       first_appearance: Box::new(Script {
         file: String::default(),
@@ -2256,10 +2301,7 @@ mod test {
         line: 3,
         col: 1,
       }),
-      section_name: Section {
-        section_name: section,
-        subsection_name: Some(subsection_1),
-      },
+      section: subsection,
     };
 
     assert_eq!(err, expected_error);
@@ -2276,7 +2318,7 @@ mod test {
     )
     .unwrap_err();
 
-    let expected_error = PalabritasError::SubsectioNamedAfterSection {
+    let expected_error = PalabritasError::SubsectioNamedAfterUpperSection {
       section_script: Box::new(Script {
         file: String::default(),
         line: 3,
@@ -2287,7 +2329,7 @@ mod test {
         line: 2,
         col: 1,
       }),
-      section_name: section_2,
+      subsection: section_2,
     };
 
     assert_eq!(err, expected_error);
@@ -2304,8 +2346,8 @@ mod test {
           file: String::default()
         },
         section: Section {
-          section_name: "Section".to_string(),
-          subsection_name: None
+          name: "Section".to_string(),
+          parent: None
         }
       }
     );
@@ -2654,14 +2696,14 @@ mod test {
   fn parse_divert_correctly() {
     //Divert = { "->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)? }
     //Section
-    let section = make_random_identifier();
-    let divert_string = format!("-> {}", section);
-    let section_key = Section {
-      section_name: section.clone(),
-      subsection_name: None,
+    let section_name = make_random_identifier();
+    let divert_string = format!("-> {}", section_name);
+    let section = Section {
+      name: section_name.clone(),
+      parent: None,
     };
     let expected_value = Block::Divert {
-      next: NextBlock::Section(section_key.clone()),
+      next: NextBlock::Section(section.clone()),
       settings: BlockSettings::default(),
     };
 
@@ -2669,15 +2711,15 @@ mod test {
     assert_eq!(divert, expected_value);
 
     //Subsection
-    let subsection = make_random_identifier();
-    let divert_string = format!("-> {}/{}", section, subsection);
-    let section_key = Section {
-      section_name: section.clone(),
-      subsection_name: Some(subsection.clone()),
+    let subsection_name = make_random_identifier();
+    let divert_string = format!("-> {}/{}", section_name, subsection_name);
+    let subsection = Section {
+      name: subsection_name.clone(),
+      parent: Some(Box::new(section.clone())),
     };
 
     let expected_value = Block::Divert {
-      next: NextBlock::Section(section_key.clone()),
+      next: NextBlock::Section(subsection.clone()),
       settings: BlockSettings::default(),
     };
 
@@ -2688,14 +2730,14 @@ mod test {
   #[test]
   fn parse_boomerang_divert_correctly() {
     //Section
-    let section = make_random_identifier();
-    let divert_string = format!("<-> {}", section);
-    let section_key = Section {
-      section_name: section.clone(),
-      subsection_name: None,
+    let section_name = make_random_identifier();
+    let divert_string = format!("<-> {}", section_name);
+    let section = Section {
+      name: section_name.clone(),
+      parent: None,
     };
     let expected_value = Block::BoomerangDivert {
-      next: NextBlock::Section(section_key.clone()),
+      next: NextBlock::Section(section.clone()),
       settings: BlockSettings::default(),
     };
 
@@ -2703,15 +2745,15 @@ mod test {
     assert_eq!(divert, expected_value);
 
     //Subsection
-    let subsection = make_random_identifier();
-    let divert_string = format!("<-> {}/{}", section, subsection);
-    let section_key = Section {
-      section_name: section.clone(),
-      subsection_name: Some(subsection.clone()),
+    let subsection_name = make_random_identifier();
+    let divert_string = format!("<-> {}/{}", section, subsection_name);
+    let subsection = Section {
+      name: subsection_name.clone(),
+      parent: Some(Box::new(section.clone())),
     };
 
     let expected_value = Block::BoomerangDivert {
-      next: NextBlock::Section(section_key.clone()),
+      next: NextBlock::Section(subsection.clone()),
       settings: BlockSettings::default(),
     };
 
@@ -3192,8 +3234,8 @@ mod test {
       id: identifier.clone(),
       settings: BlockSettings {
         section: Some(Section {
-          section_name: identifier,
-          subsection_name: None,
+          name: identifier,
+          parent: None,
         }),
         chance: Chance::Probability(percentage as f32 / 100.),
         ..Default::default()
@@ -3215,7 +3257,7 @@ mod test {
     parse_subsection(token, &mut parsing_data, 0).unwrap();
 
     let subsection = parsing_data.blocks[0][0].clone();
-    let expected_value = Block::Subsection {
+    let expected_value = Block::Section {
       id: identifier.clone(),
       settings: BlockSettings {
         chance: Chance::Probability(percentage as f32 / 100.),
@@ -3240,8 +3282,8 @@ mod test {
       id: identifier.clone(),
       settings: BlockSettings {
         section: Some(Section {
-          section_name: identifier,
-          subsection_name: None,
+          name: identifier,
+          parent: None,
         }),
         requirements: vec![Requirement {
           condition: Condition {
