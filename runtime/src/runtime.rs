@@ -472,8 +472,8 @@ impl Runtime {
   ) -> Result<(), RuntimeError> {
     match self.database.sections.get(target_section) {
       Some(id) => {
-        if let Some(section) = &self.game_state.section {
-          if section.is_child_of(target_section) {
+        if let Some(current_section) = &self.game_state.section {
+          if current_section.is_child_of(target_section) {
             return Ok(());
           }
         }
@@ -525,10 +525,18 @@ impl Runtime {
     &mut self,
     target_section: &Section,
   ) -> Result<Vec<BlockId>, RuntimeError> {
-    let mut ids: Vec<usize> = Vec::default();
     let target_section = self.get_actual_section(target_section)?;
+    if let Some(current_section) = &self.game_state.section {
+      if current_section == &target_section {
+        if let Some(id) = self.database.sections.get(&target_section) {
+          return Ok(vec![*id]);
+        }
+      }
+    }
 
+    let mut ids: Vec<usize> = Vec::default();
     self.get_section_block_ids_recursive(&target_section, &mut ids)?;
+
     Ok(ids)
   }
 
