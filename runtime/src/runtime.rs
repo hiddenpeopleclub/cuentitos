@@ -463,18 +463,23 @@ impl Runtime {
 
   fn get_section_block_ids_recursive(
     &self,
-    section: &Section,
+    target_section: &Section,
     ids: &mut Vec<BlockId>,
   ) -> Result<(), RuntimeError> {
-    match self.database.sections.get(section) {
+    match self.database.sections.get(target_section) {
       Some(id) => {
-        if let Some(parent) = &section.parent {
+        if let Some(section) = &self.game_state.section {
+          if section.is_child_of(target_section) {
+            return Ok(());
+          }
+        }
+        if let Some(parent) = &target_section.parent {
           self.get_section_block_ids_recursive(parent, ids)?;
         }
         ids.push(*id);
         Ok(())
       }
-      None => Err(RuntimeError::SectionDoesntExist(section.clone())),
+      None => Err(RuntimeError::SectionDoesntExist(target_section.clone())),
     }
   }
 
@@ -512,12 +517,14 @@ impl Runtime {
       false => Err(RuntimeError::SectionDoesntExist(section.clone())),
     }
   }
-  fn get_section_block_ids(&mut self, section: &Section) -> Result<Vec<BlockId>, RuntimeError> {
+  fn get_section_block_ids(
+    &mut self,
+    target_section: &Section,
+  ) -> Result<Vec<BlockId>, RuntimeError> {
     let mut ids: Vec<usize> = Vec::default();
-    let section = self.get_actual_section(section)?;
+    let target_section = self.get_actual_section(target_section)?;
 
-    self.get_section_block_ids_recursive(&section, &mut ids)?;
-
+    self.get_section_block_ids_recursive(&target_section, &mut ids)?;
     Ok(ids)
   }
 

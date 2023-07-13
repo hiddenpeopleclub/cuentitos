@@ -141,7 +141,7 @@ fn get_variables_string(variables: &Vec<String>, runtime: &Runtime) -> String {
   for variable in variables {
     variables_string += &format!("{}\n", get_variable_string(variable, runtime));
   }
-  variables_string.trim().to_string()
+  variables_string.to_string()
 }
 
 fn get_output_string(output: Output, runtime: &Runtime) -> String {
@@ -200,13 +200,13 @@ fn get_change_string(chance: &Chance) -> String {
   match chance {
     Chance::None => String::default(),
     Chance::Probability(value) => {
-      format!("🎲 ({}%)", value)
+      format!("🎲 ({}%) ", value)
     }
     Chance::Frequency {
       value,
       total_frequency,
     } => {
-      format!("🎲 ({}/{})", value, total_frequency)
+      format!("🎲 ({}/{}) ", value, total_frequency)
     }
   }
 }
