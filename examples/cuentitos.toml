@@ -6,4 +6,7 @@ energy = "integer"
 time = "float"
 
 [variables.time_of_day]
-enum = ["day", "night"]
+enum = ["morning", "night"]
+
+[variables.item]
+enum = ["tea"]

@@ -1,12 +1,11 @@
-use cuentitos_common::{BlockId, Config, VariableId};
+use cuentitos_common::{BlockId, Config, Section, VariableId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone, Eq)]
 pub struct GameState {
   pub variables: HashMap<VariableId, String>,
-  pub current_section: Option<String>,
-  pub current_subsection: Option<String>,
+  pub section: Option<Section>,
   pub uniques_played: Vec<BlockId>,
 }
 
