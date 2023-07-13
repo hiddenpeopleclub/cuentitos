@@ -1,6 +1,6 @@
 mod parser;
-pub use parser::parse_database;
-pub use parser::parse_database_from_path;
+pub use parser::*;
+
 #[macro_use]
 extern crate pest_derive;
 

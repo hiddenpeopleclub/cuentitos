@@ -11,5 +11,7 @@ path = "src/main.rs"
 clap = { version = "4.0.17", features = ["derive"] }
 cuentitos-compiler = { path = "../compiler" }
 cuentitos-runtime = { path = "../runtime" }
+palabritas = { path = "../palabritas" }
 regex = "1.7.0"
-notify = "5.1.0"
+pest = "2.0"
+rustyline = "12.0.0"

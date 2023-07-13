@@ -8,44 +8,26 @@ use std::path::Path;
 
 mod i18n;
 
-pub fn compile<T, U>(source_path: T, destination_path: U)
+pub fn compile<T, U>(source_path: T, destination_path: U) -> Result<(), Box<dyn std::error::Error>>
 where
   T: AsRef<Path>,
   U: AsRef<Path>,
 {
-  let db_result = parse_database_from_path(&source_path);
+  let mut db = parse_database_from_path(&source_path)?;
 
-  let mut db = match db_result {
-    Ok(db) => db,
-    Err(e) => {
-      println!("{}", e);
-      return;
-    }
-  };
-
-  let i18n = match I18n::process(&db, source_path, &destination_path) {
-    Ok(i18n) => i18n,
-    Err(e) => {
-      println!("{}", e);
-      return;
-    }
-  };
-
-  db.i18n = i18n;
+  I18n::process(&mut db, source_path, &destination_path)?;
 
   let mut buf: Vec<u8> = Vec::new();
   let mut serializer = Serializer::new(&mut buf);
 
-  let serialize_result = db.serialize(&mut serializer);
-  if serialize_result.is_err() {
-    println!("{}", serialize_result.unwrap_err());
-    return;
-  }
+  db.serialize(&mut serializer)?;
 
   let destination_path = destination_path.as_ref().to_path_buf();
-  let mut file = File::create(destination_path).unwrap();
+  let mut file = File::create(destination_path)?;
 
-  file.write_all(&buf).unwrap();
+  file.write_all(&buf)?;
+
+  Ok(())
 }
 
 #[cfg(test)]
@@ -54,6 +36,6 @@ mod test {
 
   #[test]
   fn compile_works_correctly() {
-    compile("../examples/story-example.cuentitos", "cuentitos.db");
+    compile("../examples/story-example.cuentitos", "cuentitos.db").unwrap();
   }
 }
