@@ -1,18 +1,19 @@
 extern crate pest;
 use std::collections::HashMap;
 use std::path::Path;
+use std::vec;
 
 use cuentitos_common::condition::ComparisonOperator;
 use cuentitos_common::modifier::ModifierOperator;
 use cuentitos_common::{
-  Block, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Function, I18n,
-  Modifier, NextBlock, Requirement, Script, SectionKey,
+  Block, BlockId, BlockSettings, Chance, Condition, Config, Database, FrequencyModifier, Function,
+  I18n, Modifier, NextBlock, Requirement, Script, Section, SectionName,
 };
 use pest::{iterators::Pair, Parser};
 
 use pest::error::LineColLocation;
 
-use crate::error::{ErrorInfo, PalabritasError};
+use crate::error::PalabritasError;
 
 #[derive(Parser)]
 #[grammar = "palabritas.pest"]
@@ -23,18 +24,16 @@ struct ParsingData {
   pub blocks: Vec<Vec<Block>>,
   pub i18n: I18n,
   pub config: Config,
-  pub section_list: Vec<SectionKey>,
   pub file: String,
-  pub current_section: Option<String>,
+  pub current_section: Option<Section>,
 }
 
 impl ParsingData {
-  fn new(config: Config, section_list: Vec<SectionKey>, file: String) -> Self {
+  fn new(config: Config, file: String) -> Self {
     ParsingData {
       blocks: Vec::default(),
       i18n: I18n::from_config(&config),
       config,
-      section_list,
       file,
       current_section: None,
     }
@@ -83,7 +82,7 @@ where
     Ok(mut result) => {
       let token = result.next().unwrap();
       let file = story_path.display().to_string();
-      let parsing_data = ParsingData::new(config, find_all_section_list(&token, &file)?, file);
+      let parsing_data = ParsingData::new(config, file);
 
       match parse_database(token, parsing_data) {
         Ok(database) => Ok(database),
@@ -98,10 +97,9 @@ where
 
       Err(PalabritasError::ParseError {
         reason: error.to_string(),
-        info: ErrorInfo {
+        script: Script {
           line,
           col,
-          string: String::default(),
           file: story_path.display().to_string(),
         },
       })
@@ -109,25 +107,39 @@ where
   }
 }
 
-pub fn find_all_section_list(
-  token: &Pair<Rule>,
-  file: &str,
-) -> Result<Vec<SectionKey>, PalabritasError> {
-  match_rule(token, Rule::Database, file)?;
-  let mut section_list = Vec::default(); //  pub section_list: HashMap<SectionId, BlockId>
-  for inner_token in token.clone().into_inner() {
-    if inner_token.as_rule() == Rule::Section {
-      parse_section_key(inner_token, &mut section_list, file)?;
-    }
-  }
-
-  Ok(section_list)
-}
-
 fn parse_database(
   token: Pair<Rule>,
   mut parsing_data: ParsingData,
 ) -> Result<Database, PalabritasError> {
+  fn add_section(
+    name: &str,
+    children: &Vec<BlockId>,
+    parent: Option<Box<Section>>,
+    block_id: BlockId,
+    section_map: &mut HashMap<Section, usize>,
+    blocks: &Vec<Block>,
+  ) {
+    let section_key = Section {
+      name: name.to_string(),
+      parent,
+    };
+
+    section_map.insert(section_key.clone(), block_id);
+
+    for child in children {
+      if let Block::Section { id: name, settings } = &blocks[*child] {
+        add_section(
+          name,
+          &settings.children,
+          Some(Box::new(section_key.clone())),
+          *child,
+          section_map,
+          blocks,
+        );
+      }
+    }
+  }
+
   match_rule(&token, Rule::Database, &parsing_data.file)?;
 
   for inner_token in token.into_inner() {
@@ -148,10 +160,19 @@ fn parse_database(
 
   let end_block = Block::Divert {
     next: NextBlock::EndOfFile,
-    settings: BlockSettings::default(),
+    settings: BlockSettings {
+      script: parsing_data.blocks[0]
+        .last()
+        .unwrap()
+        .get_settings()
+        .script
+        .clone(),
+      ..Default::default()
+    },
   };
   parsing_data.blocks[0].push(end_block);
 
+  let level_0_size = parsing_data.blocks[0].len();
   let mut ordered_blocks = Vec::default();
 
   for child_level in 0..parsing_data.blocks.len() {
@@ -172,25 +193,21 @@ fn parse_database(
 
   let mut section_map = HashMap::default();
 
-  for i in 0..ordered_blocks.len() {
-    if let Block::Section { id: section_id, settings } = &ordered_blocks[i] {
-      let section_key = SectionKey {
-        section: section_id.clone(),
-        subsection: None,
-      };
-
-      section_map.insert(section_key, i);
-      for child in &settings.children {
-        if let Block::Subsection { id: subsection_id, settings: _ } = &ordered_blocks[*child] {
-          let section_key = SectionKey {
-            section: section_id.clone(),
-            subsection: Some(subsection_id.clone()),
-          };
-          section_map.insert(section_key, *child);
-        }
-      }
+  for i in 0..level_0_size {
+    if let Block::Section { id: name, settings } = &ordered_blocks[i] {
+      add_section(
+        name,
+        &settings.children,
+        None,
+        i,
+        &mut section_map,
+        &ordered_blocks,
+      );
     }
   }
+
+  validate_diverts(&ordered_blocks, &section_map)?;
+  check_duplicate_sections(&ordered_blocks, level_0_size)?;
 
   Ok(Database {
     blocks: ordered_blocks,
@@ -202,11 +219,7 @@ fn parse_database(
 
 pub fn parse_database_str(input: &str, config: &Config) -> Result<Database, PalabritasError> {
   let token = parse_str(input, Rule::Database)?;
-  let parsing_data = ParsingData::new(
-    config.clone(),
-    find_all_section_list(&token, &String::default())?,
-    String::default(),
-  );
+  let parsing_data = ParsingData::new(config.clone(), String::default());
   parse_database(token, parsing_data)
 }
 
@@ -235,14 +248,9 @@ pub fn parse_choice_str(input: &str) -> Result<Block, PalabritasError> {
   parse_choice(token, &String::default())
 }
 
-pub fn parse_section_str(
-  input: &str,
-  config: &Config,
-  section_list: &[SectionKey],
-) -> Result<Block, PalabritasError> {
+pub fn parse_section_str(input: &str, config: &Config) -> Result<Block, PalabritasError> {
   let token = parse_str(input, Rule::Section)?;
-  let mut parsing_data =
-    ParsingData::new(config.clone(), section_list.to_owned(), String::default());
+  let mut parsing_data = ParsingData::new(config.clone(), String::default());
   parse_section(token, &mut parsing_data, 0)
 }
 
@@ -256,12 +264,14 @@ pub fn parse_function_str(input: &str) -> Result<Function, PalabritasError> {
   parse_function(token, &String::default())
 }
 
-pub fn parse_divert_str(
-  input: &str,
-  section_list: &[SectionKey],
-) -> Result<Block, PalabritasError> {
+pub fn parse_divert_str(input: &str) -> Result<Block, PalabritasError> {
   let token = parse_str(input, Rule::Divert)?;
-  parse_divert(token, section_list, &None, &String::default())
+  parse_divert(token, &String::default())
+}
+
+pub fn parse_boomerang_divert_str(input: &str) -> Result<Block, PalabritasError> {
+  let token = parse_str(input, Rule::BoomerangDivert)?;
+  parse_boomerang_divert(token, &String::default())
 }
 
 pub fn parse_modifier_str(input: &str, config: &Config) -> Result<Modifier, PalabritasError> {
@@ -298,10 +308,9 @@ fn parse_str(input: &str, rule: Rule) -> Result<Pair<'_, Rule>, PalabritasError>
       Some(token) => Ok(token),
       None => Err(PalabritasError::ParseError {
         reason: format!("{:?} not found", rule),
-        info: ErrorInfo {
+        script: Script {
           line: 1,
           col: 1,
-          string: input.to_string(),
           file: String::default(),
         },
       }),
@@ -314,68 +323,14 @@ fn parse_str(input: &str, rule: Rule) -> Result<Pair<'_, Rule>, PalabritasError>
 
       Err(PalabritasError::ParseError {
         reason: error.to_string(),
-        info: ErrorInfo {
+        script: Script {
           line,
           col,
-          string: input.to_string(),
           file: String::default(),
         },
       })
     }
   }
-}
-
-fn parse_section_key(
-  token: Pair<Rule>,
-  section_list: &mut Vec<SectionKey>,
-  file: &str,
-) -> Result<(), PalabritasError> {
-  match_rule(&token, Rule::Section, file)?;
-  let mut id = String::default();
-  for inner_token in token.into_inner() {
-    match inner_token.as_rule() {
-      Rule::Identifier => {
-        id = inner_token.as_str().to_string();
-      }
-      Rule::Subsection => {
-        parse_subsection_key(inner_token, &id, section_list, file)?;
-      }
-      _ => {}
-    }
-  }
-  section_list.push(SectionKey {
-    section: id.clone(),
-    subsection: None,
-  });
-
-  Ok(())
-}
-
-fn parse_subsection_key(
-  token: Pair<Rule>,
-  section: &str,
-  section_list: &mut Vec<SectionKey>,
-  file: &str,
-) -> Result<(), PalabritasError> {
-  match_rule(&token, Rule::Subsection, file)?;
-  let mut id = String::default();
-  for inner_token in token.into_inner() {
-    match inner_token.as_rule() {
-      Rule::Identifier => {
-        id = inner_token.as_str().to_string();
-      }
-      Rule::Subsection => {
-        parse_subsection_key(inner_token, &id, section_list, file)?;
-      }
-      _ => {}
-    }
-  }
-  section_list.push(SectionKey {
-    section: section.to_string(),
-    subsection: Some(id),
-  });
-
-  Ok(())
 }
 
 fn parse_section(
@@ -390,12 +345,13 @@ fn parse_section(
 
   parsing_data.blocks[child_order].push(Block::default());
   let block_id = parsing_data.blocks[child_order].len() - 1;
-  let error_info = ErrorInfo {
+  let script = Script {
     line: token.line_col().0,
     col: token.line_col().1,
-    string: token.as_str().to_string(),
     file: parsing_data.file.clone(),
   };
+
+  let string = token.as_str().to_string();
 
   let mut settings = BlockSettings {
     script: Script {
@@ -411,7 +367,17 @@ fn parse_section(
     match inner_token.as_rule() {
       Rule::Identifier => {
         id = inner_token.as_str().to_string();
-        parsing_data.current_section = Some(id.clone());
+        parsing_data.current_section = Some(Section {
+          name: id.clone(),
+          parent: None,
+        });
+        settings.section = parsing_data.current_section.clone();
+      }
+      Rule::Chance => {
+        settings.chance = parse_chance(inner_token, &parsing_data.file)?;
+        if let Chance::Frequency(_) = settings.chance {
+          return Err(PalabritasError::FrequencyOutOfBucket(script, string));
+        }
       }
       Rule::Command => {
         add_command_to_settings(
@@ -431,16 +397,17 @@ fn parse_section(
       }
       Rule::Subsection => {
         parse_subsection(inner_token, parsing_data, child_order + 1)?;
+        parsing_data.current_section = settings.section.clone();
         settings
-        .children
-        .push(parsing_data.blocks[child_order + 1].len() - 1);
+          .children
+          .push(parsing_data.blocks[child_order + 1].len() - 1);
       }
       _ => {}
     }
   }
 
   let section = Block::Section { id, settings };
-  check_invalid_frequency(&section, error_info, &parsing_data.blocks, child_order)?;
+  check_invalid_frequency(&section, script, string, &parsing_data.blocks, child_order)?;
   parsing_data.blocks[0][block_id] = section.clone();
 
   Ok(section)
@@ -451,19 +418,36 @@ fn parse_subsection(
   parsing_data: &mut ParsingData,
   child_order: usize,
 ) -> Result<(), PalabritasError> {
-  match_rule(&token, Rule::Subsection, &parsing_data.file)?;
-  while parsing_data.blocks.len() < 2 {
+  match token.as_rule() {
+    Rule::Subsection => {}
+    Rule::Subsubsection => {}
+    Rule::Subsubsubsection => {}
+    _ => {
+      return Err(PalabritasError::UnexpectedRule {
+        script: Script {
+          line: token.line_col().0,
+          col: token.line_col().1,
+          file: parsing_data.file.clone(),
+        },
+        expected_rule: Rule::Subsection,
+        rule_found: token.as_rule(),
+      });
+    }
+  };
+
+  while child_order >= parsing_data.blocks.len() {
     parsing_data.blocks.push(Vec::default());
   }
 
   parsing_data.blocks[child_order].push(Block::default());
   let block_id = parsing_data.blocks[child_order].len() - 1;
-  let error_info = ErrorInfo {
+  let script = Script {
     line: token.line_col().0,
     col: token.line_col().1,
-    string: token.as_str().to_string(),
     file: parsing_data.file.clone(),
   };
+
+  let string = token.as_str().to_string();
 
   let mut settings = BlockSettings {
     script: Script {
@@ -480,6 +464,13 @@ fn parse_subsection(
     match inner_token.as_rule() {
       Rule::Identifier => {
         id = inner_token.as_str().to_string();
+        if let Some(section) = &parsing_data.current_section {
+          parsing_data.current_section = Some(Section {
+            name: id.clone(),
+            parent: Some(Box::new(section.clone())),
+          });
+        }
+        settings.section = parsing_data.current_section.clone();
       }
       Rule::Command => {
         add_command_to_settings(
@@ -489,6 +480,12 @@ fn parse_subsection(
           &parsing_data.file,
         )?;
       }
+      Rule::Chance => {
+        settings.chance = parse_chance(inner_token, &parsing_data.file)?;
+        if let Chance::Frequency(_) = settings.chance {
+          return Err(PalabritasError::FrequencyOutOfBucket(script, string));
+        }
+      }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
           parse_block(inner_blocks_token, parsing_data, child_order + 1)?;
@@ -497,18 +494,30 @@ fn parse_subsection(
             .push(parsing_data.blocks[child_order + 1].len() - 1);
         }
       }
-      Rule::Subsection => {
+      Rule::Subsubsection => {
         parse_subsection(inner_token, parsing_data, child_order + 1)?;
         settings
-        .children
-        .push(parsing_data.blocks[child_order + 1].len() - 1);
+          .children
+          .push(parsing_data.blocks[child_order + 1].len() - 1);
+      }
+      Rule::Subsubsubsection => {
+        parse_subsection(inner_token, parsing_data, child_order + 1)?;
+        settings
+          .children
+          .push(parsing_data.blocks[child_order + 1].len() - 1);
       }
       _ => {}
     }
   }
 
-  let subsection = Block::Subsection { id, settings };
-  check_invalid_frequency(&subsection, error_info, &parsing_data.blocks, child_order)?;
+  let subsection = Block::Section { id, settings };
+  check_invalid_frequency(
+    &subsection,
+    script,
+    string,
+    &parsing_data.blocks,
+    child_order,
+  )?;
   parsing_data.blocks[child_order][block_id] = subsection;
 
   Ok(())
@@ -523,13 +532,13 @@ fn parse_block(
   //    (NamedBucket | Choice | Text | Divery)  ~  " "* ~ Command* ~ " "* ~ (NEWLINE | EOI) ~ NewBlock*
   let mut block = Block::default();
   let line_col = token.line_col();
-  let error_info = ErrorInfo {
+  let script = Script {
     line: token.line_col().0,
     col: token.line_col().1,
-    string: token.as_str().to_string(),
     file: parsing_data.file.clone(),
   };
 
+  let string = token.as_str().to_string();
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
       Rule::Text => {
@@ -542,12 +551,10 @@ fn parse_block(
         block = parse_choice(inner_token, &parsing_data.file)?;
       }
       Rule::Divert => {
-        block = parse_divert(
-          inner_token,
-          &parsing_data.section_list,
-          &parsing_data.current_section,
-          &parsing_data.file,
-        )?;
+        block = parse_divert(inner_token, &parsing_data.file)?;
+      }
+      Rule::BoomerangDivert => {
+        block = parse_boomerang_divert(inner_token, &parsing_data.file)?;
       }
       Rule::Command => {
         add_command_to_block(
@@ -569,6 +576,8 @@ fn parse_block(
       _ => {}
     }
   }
+
+  block.get_settings_mut().section = parsing_data.current_section.clone();
 
   while child_order >= parsing_data.blocks.len() {
     parsing_data.blocks.push(Vec::default());
@@ -610,7 +619,8 @@ fn parse_block(
 
   check_invalid_frequency(
     &parsing_data.blocks[child_order][block_id],
-    error_info,
+    script,
+    string,
     &parsing_data.blocks,
     child_order,
   )?;
@@ -620,13 +630,15 @@ fn parse_block(
 
 fn check_invalid_frequency(
   block: &Block,
-  error_info: ErrorInfo,
+  script: Script,
+  string: String,
   blocks: &[Vec<Block>],
   child_order: usize,
 ) -> Result<(), PalabritasError> {
   fn freq_modifier_matches_chance(
     settings: &BlockSettings,
-    error_info: &ErrorInfo,
+    script: &Script,
+    string: &str,
   ) -> Result<(), PalabritasError> {
     if settings.frequency_modifiers.is_empty() {
       Ok(())
@@ -634,7 +646,8 @@ fn check_invalid_frequency(
       match settings.chance {
         Chance::Frequency(_) => Ok(()),
         _ => Err(PalabritasError::FrequencyModifierWithoutFrequencyChance(
-          error_info.clone(),
+          script.clone(),
+          string.to_string(),
         )),
       }
     }
@@ -644,34 +657,25 @@ fn check_invalid_frequency(
     Block::Bucket {
       name: _,
       settings: _,
-    } => freq_modifier_matches_chance(block.get_settings(), &error_info),
+    } => freq_modifier_matches_chance(block.get_settings(), &script, &string),
 
     Block::Section { id: _, settings: _ } => {
       if let Chance::Frequency(_) = block.get_settings().chance {
-        Err(PalabritasError::FrequencyOutOfBucket(error_info))
+        Err(PalabritasError::FrequencyOutOfBucket(script, string))
       } else {
         Ok(())
       }
     }
-
-    Block::Subsection { id: _, settings: _ } => {
-      if let Chance::Frequency(_) = block.get_settings().chance {
-        Err(PalabritasError::FrequencyOutOfBucket(error_info))
-      } else {
-        Ok(())
-      }
-    }
-
     _ => {
-      freq_modifier_matches_chance(block.get_settings(), &error_info)?;
+      freq_modifier_matches_chance(block.get_settings(), &script, &string)?;
       if child_order == 0 {
         if let Chance::Frequency(_) = block.get_settings().chance {
-          return Err(PalabritasError::FrequencyOutOfBucket(error_info));
+          return Err(PalabritasError::FrequencyOutOfBucket(script, string));
         }
       }
       for child in &block.get_settings().children {
         if let Chance::Frequency(_) = blocks[child_order + 1][*child].get_settings().chance {
-          return Err(PalabritasError::FrequencyOutOfBucket(error_info));
+          return Err(PalabritasError::FrequencyOutOfBucket(script, string));
         }
       }
       Ok(())
@@ -806,12 +810,14 @@ fn validate_bucket_data(
           Block::Choice { id, settings: _ } => id.clone(),
           _ => String::default(),
         };
-        return Err(PalabritasError::BucketMissingProbability(ErrorInfo {
-          line: inner_line,
-          col: 1,
+        return Err(PalabritasError::BucketMissingProbability(
+          Script {
+            line: inner_line,
+            col: 1,
+            file: file.to_string(),
+          },
           string,
-          file: file.to_string(),
-        }));
+        ));
       }
       Chance::Frequency(_) => frequency_found = true,
       Chance::Probability(probability) => {
@@ -821,22 +827,26 @@ fn validate_bucket_data(
     }
 
     if frequency_found && chance_found {
-      return Err(PalabritasError::BucketHasFrequenciesAndChances(ErrorInfo {
-        line: line_col.0,
-        col: line_col.1,
-        string: bucket_name,
-        file: file.to_string(),
-      }));
+      return Err(PalabritasError::BucketHasFrequenciesAndChances(
+        Script {
+          line: line_col.0,
+          col: line_col.1,
+          file: file.to_string(),
+        },
+        bucket_name,
+      ));
     }
   }
 
   if chance_found && total_probability != 1. {
-    return Err(PalabritasError::BucketSumIsNot1(ErrorInfo {
-      line: line_col.0,
-      col: line_col.1,
-      string: bucket_name,
-      file: file.to_string(),
-    }));
+    return Err(PalabritasError::BucketSumIsNot1(
+      Script {
+        line: line_col.0,
+        col: line_col.1,
+        file: file.to_string(),
+      },
+      bucket_name,
+    ));
   }
 
   Ok(())
@@ -1066,48 +1076,64 @@ fn parse_tag(token: Pair<Rule>, file: &str) -> Result<String, PalabritasError> {
   }
   Ok(name)
 }
-fn parse_divert(
-  token: Pair<Rule>,
-  section_list: &[SectionKey],
-  current_section: &Option<String>,
-  file: &str,
-) -> Result<Block, PalabritasError> {
+fn parse_divert(token: Pair<Rule>, file: &str) -> Result<Block, PalabritasError> {
   match_rule(&token, Rule::Divert, file)?;
-  //Divert = { "->"  ~ " "* ~ Identifier ~ ("." ~ Identifier)? }
+  //Divert = { Chance? ~ "->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)* }
 
-  let mut section: Option<String> = None;
-  let mut subsection: Option<String> = None;
-
-  let error_info = ErrorInfo {
-    line: token.line_col().0,
-    col: token.line_col().1,
-    string: token.as_str().to_string(),
-    file: file.to_string(),
-  };
+  let mut section_names = Vec::default();
 
   for inner_token in token.into_inner() {
     if inner_token.as_rule() == Rule::Identifier {
-      if section.is_none() {
-        section = Some(inner_token.as_str().to_string());
-      } else {
-        subsection = Some(inner_token.as_str().to_string());
-      }
+      section_names.push(inner_token.as_str().to_string());
     }
   }
 
-  let next = match section.is_some() && subsection.is_none() && section.clone().unwrap() == "END" {
+  let next = match section_names == vec!["END"] {
     true => NextBlock::EndOfFile,
     false => {
-      let section_key = SectionKey {
-        section: section.unwrap(),
-        subsection,
-      };
-      check_section_existance(&section_key, section_list, &error_info, current_section)?;
-      NextBlock::Section(section_key)
+      let mut section = None;
+      for name in section_names {
+        section = Some(Box::new(Section {
+          name,
+          parent: section,
+        }));
+      }
+      NextBlock::Section(*section.unwrap())
     }
   };
 
   Ok(Block::Divert {
+    next,
+    settings: BlockSettings::default(),
+  })
+}
+
+fn parse_boomerang_divert(token: Pair<Rule>, file: &str) -> Result<Block, PalabritasError> {
+  match_rule(&token, Rule::BoomerangDivert, file)?;
+
+  let mut section_names = Vec::default();
+
+  for inner_token in token.into_inner() {
+    if inner_token.as_rule() == Rule::Identifier {
+      section_names.push(inner_token.as_str().to_string());
+    }
+  }
+
+  let next = match section_names == vec!["END"] {
+    true => NextBlock::EndOfFile,
+    false => {
+      let mut section = None;
+      for name in section_names {
+        section = Some(Box::new(Section {
+          name,
+          parent: section,
+        }));
+      }
+      NextBlock::Section(*section.unwrap())
+    }
+  };
+
+  Ok(Block::BoomerangDivert {
     next,
     settings: BlockSettings::default(),
   })
@@ -1120,12 +1146,12 @@ fn parse_modifier(
 ) -> Result<Modifier, PalabritasError> {
   match_rule(&token, Rule::Modifier, file)?;
   //Modifier = { "set" ~ " "+ ~ ( (Identifier ~ " "+ ~ ModifierOperator? ~ Value) | (NotOperator? ~ " "* ~ Identifier) ) ~ " "* }
-  let error_info = ErrorInfo {
+  let script = Script {
     line: token.line_col().0,
     col: token.line_col().1,
-    string: token.as_str().to_string(),
     file: file.to_string(),
   };
+  let string = token.as_str().to_string();
   let mut modifier = Modifier::default();
   for inner_token in token.into_inner() {
     match inner_token.as_rule() {
@@ -1149,17 +1175,24 @@ fn parse_modifier(
     }
   }
 
-  check_variable_existance(&modifier.variable, config, &error_info)?;
-  check_variable_value_matches_type(&modifier.variable, &modifier.value, config, &error_info)?;
+  check_variable_existance(&modifier.variable, config, &script, &string)?;
+  check_variable_value_matches_type(
+    &modifier.variable,
+    &modifier.value,
+    config,
+    &script,
+    &string,
+  )?;
   check_variable_modifier_operator_matches_type(
     &modifier.variable,
     &modifier.operator,
     config,
-    &error_info,
+    &script,
+    &string,
   )?;
 
   if modifier.operator == ModifierOperator::Divide && modifier.value == *"0" {
-    Err(PalabritasError::DivisionByZero(error_info))
+    Err(PalabritasError::DivisionByZero(script, string))
   } else {
     Ok(modifier)
   }
@@ -1168,45 +1201,177 @@ fn parse_modifier(
 fn check_variable_existance(
   variable: &str,
   config: &Config,
-  error_info: &ErrorInfo,
+  script: &Script,
+  string: &str,
 ) -> Result<(), PalabritasError> {
   if config.variables.get(variable).is_some() {
     Ok(())
   } else {
     Err(PalabritasError::VariableDoesntExist {
-      info: error_info.clone(),
+      script: script.clone(),
+      string: string.to_string(),
       variable: variable.to_string(),
     })
   }
 }
 
-fn check_section_existance(
-  section_key: &SectionKey,
-  section_list: &[SectionKey],
-  error_info: &ErrorInfo,
-  current_section: &Option<String>,
+fn check_duplicate_sections(
+  blocks: &Vec<Block>,
+  level_0_size: usize,
 ) -> Result<(), PalabritasError> {
-  if section_list.contains(section_key) {
+  fn check_related_duplicates(
+    settings: &BlockSettings,
+    blocks: &[Block],
+  ) -> Result<(), PalabritasError> {
+    let mut names_taken: HashMap<String, Script> = HashMap::default();
+
+    for child in &settings.children {
+      if let Block::Section { id, settings } = &blocks[*child] {
+        names_taken.insert(id.clone(), settings.script.clone());
+      }
+    }
+
+    for child in &settings.children {
+      let grand_children = if let Block::Section {
+        id: _,
+        settings: child_settings,
+      } = &blocks[*child]
+      {
+        &child_settings.children
+      } else {
+        continue;
+      };
+
+      for grand_child in grand_children {
+        let grand_children = if let Block::Section {
+          id,
+          settings: grand_child_settings,
+        } = &blocks[*grand_child]
+        {
+          (id, grand_child_settings)
+        } else {
+          continue;
+        };
+
+        if let Some(script) = names_taken.get(grand_children.0) {
+          return Err(PalabritasError::SubsectioNamedAfterUpperSection {
+            subsection_script: Box::new(grand_children.1.script.clone()),
+            section_script: Box::new(script.clone()),
+            subsection: grand_children.0.clone(),
+          });
+        }
+      }
+    }
+
     Ok(())
-  } else if section_key.subsection.is_none() && current_section.is_some() {
-    let new_section_key = SectionKey {
-      section: current_section.clone().unwrap(),
-      subsection: Some(section_key.clone().section),
-    };
-    check_section_existance(&new_section_key, section_list, error_info, current_section)
-  } else {
-    Err(PalabritasError::SectionDoesntExist {
-      info: error_info.clone(),
-      section: section_key.clone(),
-    })
   }
+  fn check_if_subsection_exists(
+    id: &SectionName,
+    script: &Script,
+    sections: &HashMap<Section, Script>,
+  ) -> Result<(), PalabritasError> {
+    for (other_section, other_script) in sections {
+      if other_section.parent.is_some() && other_section.name == *id {
+        return Err(PalabritasError::SubsectioNamedAfterUpperSection {
+          subsection_script: Box::new(other_script.clone()),
+          section_script: Box::new(script.clone()),
+          subsection: id.clone(),
+        });
+      }
+    }
+
+    Ok(())
+  }
+
+  fn check_duplicate(
+    settings: &BlockSettings,
+    sections: &mut HashMap<Section, Script>,
+  ) -> Result<(), PalabritasError> {
+    if let Some(section) = &settings.section {
+      if let Some(first_appearance) = sections.get(section) {
+        let first_appearance = Box::new(first_appearance.clone());
+        let second_appearance = Box::new(settings.script.clone());
+        return Err(PalabritasError::DuplicatedSection {
+          first_appearance,
+          section: section.clone(),
+          second_appearance,
+        });
+      }
+      sections.insert(section.clone(), settings.script.clone());
+    }
+    Ok(())
+  }
+
+  let mut sections: HashMap<Section, Script> = HashMap::default();
+
+  for block in blocks {
+    if let Block::Section { id: _, settings } = block {
+      check_duplicate(settings, &mut sections)?;
+    }
+  }
+
+  for i in 0..level_0_size {
+    if let Block::Section { id, settings } = &blocks[i] {
+      check_if_subsection_exists(id, &settings.script, &sections)?;
+      check_related_duplicates(settings, blocks)?;
+    }
+  }
+
+  Ok(())
+}
+fn validate_diverts(
+  blocks: &Vec<Block>,
+  section_map: &HashMap<Section, BlockId>,
+) -> Result<(), PalabritasError> {
+  fn append_to_parent(value: Section, into: &mut Section) {
+    match &mut into.parent {
+      Some(parent) => append_to_parent(value, parent),
+      None => {
+        into.parent = Some(Box::new(value));
+      }
+    }
+  }
+
+  for block in blocks {
+    if let Block::Divert {
+      next: NextBlock::Section(section),
+      settings: _,
+    } = block
+    {
+      if section_map.contains_key(section) {
+        continue;
+      }
+
+      if let Some(current_section) = block.get_settings().section.clone() {
+        let mut section = section.clone();
+        append_to_parent(current_section, &mut section);
+        if section_map.contains_key(&section) {
+          continue;
+        }
+
+        section.parent = section.parent.unwrap().parent;
+
+        if section_map.contains_key(&section) {
+          continue;
+        }
+      }
+
+      return Err(PalabritasError::SectionDoesntExist {
+        script: block.get_settings().script.clone(),
+        section: section.clone(),
+      });
+    }
+  }
+
+  Ok(())
 }
 
 fn check_variable_value_matches_type(
   variable: &str,
   value: &str,
   config: &Config,
-  error_info: &ErrorInfo,
+  script: &Script,
+  string: &str,
 ) -> Result<(), PalabritasError> {
   if let Some(kind) = config.variables.get(variable) {
     match kind {
@@ -1215,10 +1380,11 @@ fn check_variable_value_matches_type(
           Ok(())
         } else {
           Err(PalabritasError::InvalidVariableValue {
-            info: Box::new(error_info.clone()),
+            script: Box::new(script.clone()),
             variable: variable.to_string(),
             value: value.to_string(),
             variable_type: kind.clone(),
+            string: string.to_string(),
           })
         }
       }
@@ -1227,10 +1393,11 @@ fn check_variable_value_matches_type(
           Ok(())
         } else {
           Err(PalabritasError::InvalidVariableValue {
-            info: Box::new(error_info.clone()),
+            script: Box::new(script.clone()),
             variable: variable.to_string(),
             value: value.to_string(),
             variable_type: kind.clone(),
+            string: string.to_string(),
           })
         }
       }
@@ -1239,10 +1406,11 @@ fn check_variable_value_matches_type(
           Ok(())
         } else {
           Err(PalabritasError::InvalidVariableValue {
-            info: Box::new(error_info.clone()),
+            script: Box::new(script.clone()),
             variable: variable.to_string(),
             value: value.to_string(),
             variable_type: kind.clone(),
+            string: string.to_string(),
           })
         }
       }
@@ -1251,18 +1419,20 @@ fn check_variable_value_matches_type(
         match variants.contains(&value.to_string()) {
           true => Ok(()),
           false => Err(PalabritasError::InvalidVariableValue {
-            info: Box::new(error_info.clone()),
+            script: Box::new(script.clone()),
             variable: variable.to_string(),
             value: value.to_string(),
             variable_type: kind.clone(),
+            string: string.to_string(),
           }),
         }
       }
     }
   } else {
     Err(PalabritasError::VariableDoesntExist {
-      info: error_info.clone(),
+      script: script.clone(),
       variable: variable.to_string(),
+      string: string.to_string(),
     })
   }
 }
@@ -1271,7 +1441,8 @@ fn check_variable_modifier_operator_matches_type(
   variable: &str,
   operator: &ModifierOperator,
   config: &Config,
-  error_info: &ErrorInfo,
+  script: &Script,
+  string: &str,
 ) -> Result<(), PalabritasError> {
   if let Some(kind) = config.variables.get(variable) {
     match kind {
@@ -1280,17 +1451,19 @@ fn check_variable_modifier_operator_matches_type(
       _ => match operator {
         ModifierOperator::Set => Ok(()),
         _ => Err(PalabritasError::InvalidVariableOperator {
-          info: Box::new(error_info.clone()),
+          script: Box::new(script.clone()),
           variable: variable.to_string(),
           operator: format!("{}", operator),
           variable_type: kind.clone(),
+          string: string.to_string(),
         }),
       },
     }
   } else {
     Err(PalabritasError::VariableDoesntExist {
-      info: error_info.clone(),
+      script: script.clone(),
       variable: variable.to_string(),
+      string: string.to_string(),
     })
   }
 }
@@ -1299,7 +1472,8 @@ fn check_variable_comparison_operator_matches_type(
   variable: &str,
   operator: &ComparisonOperator,
   config: &Config,
-  error_info: &ErrorInfo,
+  script: &Script,
+  string: &str,
 ) -> Result<(), PalabritasError> {
   if let Some(kind) = config.variables.get(variable) {
     match kind {
@@ -1309,17 +1483,19 @@ fn check_variable_comparison_operator_matches_type(
         ComparisonOperator::Equal => Ok(()),
         ComparisonOperator::NotEqual => Ok(()),
         _ => Err(PalabritasError::InvalidVariableOperator {
-          info: Box::new(error_info.clone()),
+          script: Box::new(script.clone()),
           variable: variable.to_string(),
           operator: format!("{}", operator),
           variable_type: kind.clone(),
+          string: string.to_string(),
         }),
       },
     }
   } else {
     Err(PalabritasError::VariableDoesntExist {
-      info: error_info.clone(),
+      script: script.clone(),
       variable: variable.to_string(),
+      string: string.to_string(),
     })
   }
 }
@@ -1389,13 +1565,13 @@ fn parse_condition(
 ) -> Result<Condition, PalabritasError> {
   match_rule(&token, Rule::Condition, file)?;
   //Condition = { ( Identifier ~ " "* ~ ( ComparisonOperator ~ " "* )? ~ Value? ) | ( NotEqualOperator? ~ " "* ~ Identifier ~ " "*) }
-  let error_info = ErrorInfo {
+  let script = Script {
     line: token.line_col().0,
     col: token.line_col().1,
-    string: token.as_str().to_string(),
     file: file.to_string(),
   };
 
+  let string = token.as_str().to_string();
   let mut condition = Condition::default();
 
   for inner_token in token.into_inner() {
@@ -1416,13 +1592,20 @@ fn parse_condition(
     }
   }
 
-  check_variable_existance(&condition.variable, config, &error_info)?;
-  check_variable_value_matches_type(&condition.variable, &condition.value, config, &error_info)?;
+  check_variable_existance(&condition.variable, config, &script, &string)?;
+  check_variable_value_matches_type(
+    &condition.variable,
+    &condition.value,
+    config,
+    &script,
+    &string,
+  )?;
   check_variable_comparison_operator_matches_type(
     &condition.variable,
     &condition.operator,
     config,
-    &error_info,
+    &script,
+    &string,
   )?;
   Ok(condition)
 }
@@ -1474,10 +1657,9 @@ fn parse_chance(token: Pair<Rule>, file: &str) -> Result<Chance, PalabritasError
 fn match_rule(token: &Pair<Rule>, expected_rule: Rule, file: &str) -> Result<(), PalabritasError> {
   if token.as_rule() != expected_rule {
     return Err(PalabritasError::UnexpectedRule {
-      info: ErrorInfo {
+      script: Script {
         line: token.line_col().0,
         col: token.line_col().1,
-        string: token.as_str().to_string(),
         file: file.to_string(),
       },
       expected_rule,
@@ -1548,12 +1730,14 @@ mod test {
 
     assert_eq!(
       named_bucket,
-      PalabritasError::BucketSumIsNot1(ErrorInfo {
-        line: 1,
-        col: 1,
-        string: snake_case,
-        file: String::default()
-      })
+      PalabritasError::BucketSumIsNot1(
+        Script {
+          line: 1,
+          col: 1,
+          file: String::default()
+        },
+        snake_case
+      )
     );
   }
 
@@ -1573,12 +1757,14 @@ mod test {
 
     assert_eq!(
       named_bucket,
-      PalabritasError::BucketHasFrequenciesAndChances(ErrorInfo {
-        line: 1,
-        col: 1,
-        string: snake_case,
-        file: String::default()
-      })
+      PalabritasError::BucketHasFrequenciesAndChances(
+        Script {
+          line: 1,
+          col: 1,
+          file: String::default()
+        },
+        snake_case
+      )
     );
   }
 
@@ -1597,12 +1783,14 @@ mod test {
 
     assert_eq!(
       named_bucket,
-      PalabritasError::BucketMissingProbability(ErrorInfo {
-        line: 3,
-        col: 1,
-        string: child_2,
-        file: String::default()
-      })
+      PalabritasError::BucketMissingProbability(
+        Script {
+          line: 3,
+          col: 1,
+          file: String::default()
+        },
+        child_2
+      )
     );
   }
   #[test]
@@ -1716,16 +1904,22 @@ mod test {
     let identifier = make_random_snake_case();
 
     let section_string = format!("#{}\n", identifier);
-    let section = parse_section_str(&section_string, &Config::default(), &Vec::default()).unwrap();
+    let section = parse_section_str(&section_string, &Config::default()).unwrap();
 
     let expected_value = Block::Section {
-      id: identifier,
-      settings: BlockSettings::default(),
+      id: identifier.clone(),
+      settings: BlockSettings {
+        section: Some(Section {
+          name: identifier,
+          parent: None,
+        }),
+        ..Default::default()
+      },
     };
     assert_eq!(section, expected_value);
   }
   #[test]
-  fn parse_section_with_subsection_list_correctly() {
+  fn parse_section_with_subsection_correctly() {
     //Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
 
     let section_identifier = make_random_snake_case();
@@ -1742,22 +1936,33 @@ mod test {
     let mut parsing_data = ParsingData::default();
     parse_section(token, &mut parsing_data, 0).unwrap();
 
-    let section = parsing_data.blocks[0][0].clone();
+    let section_block = parsing_data.blocks[0][0].clone();
 
+    let section = Section {
+      name: section_identifier.clone(),
+      parent: None,
+    };
     let expected_value = Block::Section {
       id: section_identifier.clone(),
-      settings: BlockSettings{
-        children: vec![0,1],
+      settings: BlockSettings {
+        section: Some(section.clone()),
+        children: vec![0, 1],
         ..Default::default()
       },
     };
-    assert_eq!(section, expected_value);
+    assert_eq!(section_block, expected_value);
 
-    let sub_section_1 = parsing_data.blocks[1][0].clone();
+    let subsection_1_block = parsing_data.blocks[1][0].clone();
 
-    let expected_value = Block::Subsection {
+    let subsection_1 = Section {
+      name: subsection_identifier_1.clone(),
+      parent: Some(Box::new(section.clone())),
+    };
+
+    let expected_value = Block::Section {
       id: subsection_identifier_1.clone(),
       settings: BlockSettings {
+        section: Some(subsection_1.clone()),
         script: Script {
           file: String::default(),
           line: 2,
@@ -1766,13 +1971,19 @@ mod test {
         ..Default::default()
       },
     };
-    assert_eq!(sub_section_1, expected_value);
+    assert_eq!(subsection_1_block, expected_value);
 
-    let sub_section_2 = parsing_data.blocks[1][1].clone();
+    let subsection_2_block = parsing_data.blocks[1][1].clone();
 
-    let expected_value = Block::Subsection {
+    let subsection_2 = Section {
+      name: subsection_identifier_2.clone(),
+      parent: Some(Box::new(section.clone())),
+    };
+
+    let expected_value = Block::Section {
       id: subsection_identifier_2.clone(),
       settings: BlockSettings {
+        section: Some(subsection_2.clone()),
         script: Script {
           file: String::default(),
           line: 3,
@@ -1781,33 +1992,19 @@ mod test {
         ..Default::default()
       },
     };
-    assert_eq!(sub_section_2, expected_value);
+
+    assert_eq!(subsection_2_block, expected_value);
     let token = parse_str(&section_string, Rule::Database).unwrap();
     let parsing_data = ParsingData::default();
     let database = parse_database(token, parsing_data).unwrap();
 
-    let section_key = SectionKey {
-      section: section_identifier.clone(),
-      subsection: None,
-    };
-
-    let id = *database.sections.get(&section_key).unwrap();
+    let id = *database.sections.get(&section).unwrap();
     assert_eq!(id, 0);
 
-    let section_key = SectionKey {
-      section: section_identifier.clone(),
-      subsection: Some(subsection_identifier_1),
-    };
-    
-    let id = *database.sections.get(&section_key).unwrap();
+    let id = *database.sections.get(&subsection_1).unwrap();
     assert_eq!(id, 2);
 
-    let section_key = SectionKey {
-      section: section_identifier,
-      subsection: Some(subsection_identifier_2),
-    };
-
-    let id = *database.sections.get(&section_key).unwrap();
+    let id = *database.sections.get(&subsection_2).unwrap();
     assert_eq!(id, 3);
   }
   #[test]
@@ -1941,12 +2138,14 @@ mod test {
     let err = parse_database_str(&database_str, &Config::default()).unwrap_err();
     assert_eq!(
       err,
-      PalabritasError::FrequencyOutOfBucket(ErrorInfo {
-        line: 1,
-        col: 1,
-        string: database_str,
-        file: String::default()
-      })
+      PalabritasError::FrequencyOutOfBucket(
+        Script {
+          line: 1,
+          col: 1,
+          file: String::default()
+        },
+        database_str
+      )
     );
 
     let choice_str = make_random_string();
@@ -1955,12 +2154,14 @@ mod test {
     let err = parse_database_str(&database_str, &Config::default()).unwrap_err();
     assert_eq!(
       err,
-      PalabritasError::FrequencyOutOfBucket(ErrorInfo {
-        line: 1,
-        col: 1,
-        string: database_str,
-        file: String::default()
-      })
+      PalabritasError::FrequencyOutOfBucket(
+        Script {
+          line: 1,
+          col: 1,
+          file: String::default()
+        },
+        database_str
+      )
     );
 
     let text = make_random_string();
@@ -1991,12 +2192,14 @@ mod test {
     let err = parse_database_str(&database_str, &config).unwrap_err();
     assert_eq!(
       err,
-      PalabritasError::FrequencyModifierWithoutFrequencyChance(ErrorInfo {
-        line: 1,
-        col: 1,
-        string: database_str,
-        file: String::default()
-      })
+      PalabritasError::FrequencyModifierWithoutFrequencyChance(
+        Script {
+          line: 1,
+          col: 1,
+          file: String::default()
+        },
+        database_str
+      )
     );
   }
 
@@ -2015,12 +2218,14 @@ mod test {
 
     assert_eq!(
       value,
-      PalabritasError::DivisionByZero(ErrorInfo {
-        line: 1,
-        col: 1,
-        string: tag_string,
-        file: String::default()
-      })
+      PalabritasError::DivisionByZero(
+        Script {
+          line: 1,
+          col: 1,
+          file: String::default()
+        },
+        tag_string
+      )
     );
 
     let identifier = make_random_identifier();
@@ -2031,30 +2236,126 @@ mod test {
 
     assert_eq!(
       value,
-      PalabritasError::DivisionByZero(ErrorInfo {
-        line: 1,
-        col: 1,
-        string: tag_string,
-        file: String::default()
-      })
+      PalabritasError::DivisionByZero(
+        Script {
+          line: 1,
+          col: 1,
+          file: String::default()
+        },
+        tag_string
+      )
     );
   }
 
+  #[test]
+  fn duplicate_sections_throws_error() {
+    let section_1 = make_random_identifier();
+    let section_2 = section_1.clone();
+    let err = parse_database_str(
+      &format!("#{}\n#{}\n", section_1, section_2),
+      &Config::default(),
+    )
+    .unwrap_err();
+
+    let expected_error = PalabritasError::DuplicatedSection {
+      first_appearance: Box::new(Script {
+        file: String::default(),
+        line: 1,
+        col: 1,
+      }),
+      second_appearance: Box::new(Script {
+        file: String::default(),
+        line: 2,
+        col: 1,
+      }),
+      section: Section {
+        name: section_1,
+        parent: None,
+      },
+    };
+
+    assert_eq!(err, expected_error);
+  }
+
+  #[test]
+  fn duplicate_subsections_throws_error() {
+    let section_name = make_random_identifier();
+    let subsection_name = make_random_identifier();
+    let err = parse_database_str(
+      &format!(
+        "#{}\n##{}\n##{}\n",
+        section_name, subsection_name, subsection_name
+      ),
+      &Config::default(),
+    )
+    .unwrap_err();
+
+    let section = Section {
+      name: section_name,
+      parent: None,
+    };
+    let subsection = Section {
+      name: subsection_name,
+      parent: Some(Box::new(section.clone())),
+    };
+    let expected_error = PalabritasError::DuplicatedSection {
+      first_appearance: Box::new(Script {
+        file: String::default(),
+        line: 2,
+        col: 1,
+      }),
+      second_appearance: Box::new(Script {
+        file: String::default(),
+        line: 3,
+        col: 1,
+      }),
+      section: subsection,
+    };
+
+    assert_eq!(err, expected_error);
+  }
+
+  #[test]
+  fn subsections_named_after_sections_throws_error() {
+    let section_1 = make_random_identifier();
+    let subsection = make_random_identifier();
+    let section_2 = subsection.clone();
+    let err = parse_database_str(
+      &format!("#{}\n##{}\n#{}\n", section_1, subsection, section_2),
+      &Config::default(),
+    )
+    .unwrap_err();
+
+    let expected_error = PalabritasError::SubsectioNamedAfterUpperSection {
+      section_script: Box::new(Script {
+        file: String::default(),
+        line: 3,
+        col: 1,
+      }),
+      subsection_script: Box::new(Script {
+        file: String::default(),
+        line: 2,
+        col: 1,
+      }),
+      subsection: section_2,
+    };
+
+    assert_eq!(err, expected_error);
+  }
   #[test]
   fn diverts_to_non_existent_sections_throws_error() {
     let error = parse_database_str("Text\n  ->Section", &Config::default()).unwrap_err();
     assert_eq!(
       error,
       PalabritasError::SectionDoesntExist {
-        info: ErrorInfo {
+        script: Script {
           line: 2,
           col: 3,
-          string: "->Section".to_string(),
           file: String::default()
         },
-        section: SectionKey {
-          section: "Section".to_string(),
-          subsection: None
+        section: Section {
+          name: "Section".to_string(),
+          parent: None
         }
       }
     );
@@ -2074,12 +2375,12 @@ mod test {
     assert_eq!(
       error,
       PalabritasError::VariableDoesntExist {
-        info: ErrorInfo {
+        script: Script {
           line: 2,
           col: 7,
-          string: "variable = value".to_string(),
           file: String::default()
         },
+        string: "variable = value".to_string(),
         variable: "variable".to_string()
       }
     );
@@ -2094,12 +2395,12 @@ mod test {
     assert_eq!(
       error,
       PalabritasError::VariableDoesntExist {
-        info: ErrorInfo {
+        script: Script {
           line: 2,
           col: 8,
-          string: "variable = value".to_string(),
           file: String::default()
         },
+        string: "variable = value".to_string(),
         variable: "variable".to_string()
       }
     );
@@ -2113,12 +2414,12 @@ mod test {
     assert_eq!(
       error,
       PalabritasError::VariableDoesntExist {
-        info: ErrorInfo {
+        script: Script {
           line: 2,
           col: 3,
-          string: "set variable value".to_string(),
           file: String::default()
         },
+        string: "set variable value".to_string(),
         variable: "variable".to_string()
       }
     );
@@ -2131,21 +2432,22 @@ mod test {
       .variables
       .insert("variable".to_string(), VariableKind::Integer);
 
-    let error_info = ErrorInfo {
+    let script = Script {
       line: 0,
       col: 0,
-      string: String::default(),
       file: String::default(),
     };
 
     let error =
-      check_variable_value_matches_type("variable", "hello", &config, &error_info).unwrap_err();
+      check_variable_value_matches_type("variable", "hello", &config, &script, &String::default())
+        .unwrap_err();
 
     let expected_error = PalabritasError::InvalidVariableValue {
-      info: Box::new(error_info),
+      script: Box::new(script),
       variable: "variable".to_string(),
       value: "hello".to_string(),
       variable_type: VariableKind::Integer,
+      string: String::default(),
     };
 
     assert_eq!(error, expected_error);
@@ -2158,21 +2460,22 @@ mod test {
       .variables
       .insert("variable".to_string(), VariableKind::Float);
 
-    let error_info = ErrorInfo {
+    let script = Script {
       line: 0,
       col: 0,
-      string: String::default(),
       file: String::default(),
     };
 
     let error =
-      check_variable_value_matches_type("variable", "hello", &config, &error_info).unwrap_err();
+      check_variable_value_matches_type("variable", "hello", &config, &script, &String::default())
+        .unwrap_err();
 
     let expected_error = PalabritasError::InvalidVariableValue {
-      info: Box::new(error_info),
+      script: Box::new(script),
       variable: "variable".to_string(),
       value: "hello".to_string(),
       variable_type: VariableKind::Float,
+      string: String::default(),
     };
 
     assert_eq!(error, expected_error);
@@ -2185,21 +2488,22 @@ mod test {
       .variables
       .insert("variable".to_string(), VariableKind::Bool);
 
-    let error_info = ErrorInfo {
+    let script = Script {
       line: 0,
       col: 0,
-      string: String::default(),
       file: String::default(),
     };
 
     let error =
-      check_variable_value_matches_type("variable", "hello", &config, &error_info).unwrap_err();
+      check_variable_value_matches_type("variable", "hello", &config, &script, &String::default())
+        .unwrap_err();
 
     let expected_error = PalabritasError::InvalidVariableValue {
-      info: Box::new(error_info),
+      script: Box::new(script),
       variable: "variable".to_string(),
       value: "hello".to_string(),
       variable_type: VariableKind::Bool,
+      string: String::default(),
     };
 
     assert_eq!(error, expected_error);
@@ -2213,21 +2517,22 @@ mod test {
       .variables
       .insert("variable".to_string(), kind.clone());
 
-    let error_info = ErrorInfo {
+    let script = Script {
       line: 0,
       col: 0,
-      string: String::default(),
       file: String::default(),
     };
 
     let error =
-      check_variable_value_matches_type("variable", "hello", &config, &error_info).unwrap_err();
+      check_variable_value_matches_type("variable", "hello", &config, &script, &String::default())
+        .unwrap_err();
 
     let expected_error = PalabritasError::InvalidVariableValue {
-      info: Box::new(error_info),
+      script: Box::new(script),
       variable: "variable".to_string(),
       value: "hello".to_string(),
       variable_type: kind,
+      string: String::default(),
     };
 
     assert_eq!(error, expected_error);
@@ -2245,12 +2550,12 @@ mod test {
     assert_eq!(
       error,
       PalabritasError::InvalidVariableValue {
-        info: Box::new(ErrorInfo {
+        script: Box::new(Script {
           line: 2,
           col: 7,
-          string: "variable = value".to_string(),
           file: String::default()
         }),
+        string: "variable = value".to_string(),
         variable: "variable".to_string(),
         value: "value".to_string(),
         variable_type: VariableKind::Integer
@@ -2269,12 +2574,12 @@ mod test {
     assert_eq!(
       error,
       PalabritasError::InvalidVariableValue {
-        info: Box::new(ErrorInfo {
+        script: Box::new(Script {
           line: 2,
           col: 8,
-          string: "variable = value".to_string(),
           file: String::default()
         }),
+        string: "variable = value".to_string(),
         variable: "variable".to_string(),
         value: "value".to_string(),
         variable_type: VariableKind::Integer
@@ -2293,12 +2598,12 @@ mod test {
     assert_eq!(
       error,
       PalabritasError::InvalidVariableValue {
-        info: Box::new(ErrorInfo {
+        script: Box::new(Script {
           line: 2,
           col: 3,
-          string: "set variable value".to_string(),
           file: String::default()
         }),
+        string: "set variable value".to_string(),
         variable: "variable".to_string(),
         value: "value".to_string(),
         variable_type: VariableKind::Integer
@@ -2318,12 +2623,12 @@ mod test {
     assert_eq!(
       error,
       PalabritasError::InvalidVariableOperator {
-        info: Box::new(ErrorInfo {
+        script: Box::new(Script {
           line: 2,
           col: 7,
-          string: "variable > value".to_string(),
           file: String::default()
         }),
+        string: "variable > value".to_string(),
         variable: "variable".to_string(),
         operator: ">".to_string(),
         variable_type: VariableKind::String
@@ -2342,12 +2647,12 @@ mod test {
     assert_eq!(
       error,
       PalabritasError::InvalidVariableOperator {
-        info: Box::new(ErrorInfo {
+        script: Box::new(Script {
           line: 2,
           col: 8,
-          string: "variable > value".to_string(),
           file: String::default()
         }),
+        string: "variable > value".to_string(),
         variable: "variable".to_string(),
         operator: ">".to_string(),
         variable_type: VariableKind::String
@@ -2366,12 +2671,12 @@ mod test {
     assert_eq!(
       error,
       PalabritasError::InvalidVariableOperator {
-        info: Box::new(ErrorInfo {
+        script: Box::new(Script {
           line: 2,
           col: 3,
-          string: "set variable +1".to_string(),
           file: String::default()
         }),
+        string: "set variable +1".to_string(),
         variable: "variable".to_string(),
         operator: "+".to_string(),
         variable_type: VariableKind::String
@@ -2399,36 +2704,68 @@ mod test {
   fn parse_divert_correctly() {
     //Divert = { "->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)? }
     //Section
-    let section = make_random_identifier();
-    let divert_string = format!("-> {}", section);
-    let section_key = SectionKey {
-      section: section.clone(),
-      subsection: None,
+    let section_name = make_random_identifier();
+    let divert_string = format!("-> {}", section_name);
+    let section = Section {
+      name: section_name.clone(),
+      parent: None,
     };
     let expected_value = Block::Divert {
-      next: NextBlock::Section(section_key.clone()),
+      next: NextBlock::Section(section.clone()),
       settings: BlockSettings::default(),
     };
-    let mut section_list = vec![section_key];
 
-    let divert = parse_divert_str(&divert_string, &section_list).unwrap();
+    let divert = parse_divert_str(&divert_string).unwrap();
     assert_eq!(divert, expected_value);
 
     //Subsection
-    let subsection = make_random_identifier();
-    let divert_string = format!("-> {}/{}", section, subsection);
-    let section_key = SectionKey {
-      section: section.clone(),
-      subsection: Some(subsection.clone()),
+    let subsection_name = make_random_identifier();
+    let divert_string = format!("-> {}/{}", section_name, subsection_name);
+    let subsection = Section {
+      name: subsection_name.clone(),
+      parent: Some(Box::new(section.clone())),
     };
 
     let expected_value = Block::Divert {
-      next: NextBlock::Section(section_key.clone()),
+      next: NextBlock::Section(subsection.clone()),
       settings: BlockSettings::default(),
     };
-    section_list.push(section_key);
 
-    let divert = parse_divert_str(&divert_string, &section_list).unwrap();
+    let divert = parse_divert_str(&divert_string).unwrap();
+    assert_eq!(divert, expected_value);
+  }
+
+  #[test]
+  fn parse_boomerang_divert_correctly() {
+    //Section
+    let section_name = make_random_identifier();
+    let divert_string = format!("<-> {}", section_name);
+    let section = Section {
+      name: section_name.clone(),
+      parent: None,
+    };
+    let expected_value = Block::BoomerangDivert {
+      next: NextBlock::Section(section.clone()),
+      settings: BlockSettings::default(),
+    };
+
+    let divert = parse_boomerang_divert_str(&divert_string).unwrap();
+    assert_eq!(divert, expected_value);
+
+    //Subsection
+    let subsection_name = make_random_identifier();
+    let divert_string = format!("<-> {}/{}", section, subsection_name);
+    let subsection = Section {
+      name: subsection_name.clone(),
+      parent: Some(Box::new(section.clone())),
+    };
+
+    let expected_value = Block::BoomerangDivert {
+      next: NextBlock::Section(subsection.clone()),
+      settings: BlockSettings::default(),
+    };
+
+    let divert = parse_boomerang_divert_str(&divert_string).unwrap();
     assert_eq!(divert, expected_value);
   }
 
@@ -2768,6 +3105,19 @@ mod test {
   }
 
   #[test]
+  fn parse_boomerang_divert_rule() {
+    //BoomerangDivert = { Chance? ~ "<->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)? }
+    let section = make_random_identifier();
+    let subsection = make_random_identifier();
+
+    assert_parse_rule(Rule::BoomerangDivert, &("<->".to_string() + &section));
+    assert_parse_rule(
+      Rule::BoomerangDivert,
+      &("<->".to_string() + &section + "/" + &subsection),
+    );
+  }
+
+  #[test]
   fn parse_command_rule() {
     //Command = {NEWLINE ~ Indentation* ~ (Requirement | Frequency | Modifier | Divert) }
     let requirement = "\nreq ".to_string() + &(make_random_condition_str());
@@ -2804,18 +3154,49 @@ mod test {
 
   #[test]
   fn parse_section_rule() {
-    //Knot = {"===" ~ " "* ~ Identifier ~ " "* ~"===" ~ " "* ~ NEWLINE ~ ( NEWLINE | BlockBlock | Stitch | NamedBucket )* }
+    //Section = {"#"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
     let identifier = make_random_identifier();
-    assert_parse_rule(Rule::Section, &("#".to_string() + &identifier + "\n"));
+    assert_parse_rule(Rule::Section, &("#".to_string() + &identifier));
+    let percentage = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string() + "%";
+    assert_parse_rule(
+      Rule::Section,
+      &(format!("# ({}) {}", percentage, identifier)),
+    );
   }
 
   #[test]
   fn parse_subsection_rule() {
-    //stitch = {"=" ~ " "* ~ identifier ~ " "*}
+    //Subsection = { "##"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
     let identifier = make_random_identifier();
     assert_parse_rule(Rule::Subsection, &("##".to_string() + &identifier));
+    let percentage = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string() + "%";
+    assert_parse_rule(
+      Rule::Subsection,
+      &(format!("## ({}) {}", percentage, identifier)),
+    );
   }
-
+  #[test]
+  fn parse_subsubsection_rule() {
+    //Subsubsection = { Indentation* ~ "###"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine | Subsubsubsection)*}
+    let identifier = make_random_identifier();
+    assert_parse_rule(Rule::Subsubsection, &("###".to_string() + &identifier));
+    let percentage = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string() + "%";
+    assert_parse_rule(
+      Rule::Subsubsection,
+      &(format!("### ({}) {}", percentage, identifier)),
+    );
+  }
+  #[test]
+  fn parse_subsubsubsection_rule() {
+    //Subsubsection = { Indentation* ~ "###"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine | Subsubsubsection)*}
+    let identifier = make_random_identifier();
+    assert_parse_rule(Rule::Subsubsubsection, &("####".to_string() + &identifier));
+    let percentage = rand::thread_rng().gen_range(i8::MIN..i8::MAX).to_string() + "%";
+    assert_parse_rule(
+      Rule::Subsubsubsection,
+      &(format!("#### ({}) {}", percentage, identifier)),
+    );
+  }
   #[test]
   fn parse_text_rule() {
     //text = { probability? ~ string }
@@ -2850,6 +3231,52 @@ mod test {
   }
 
   #[test]
+  fn parse_section_with_chance() {
+    //Section = {"#"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
+    let identifier = make_random_identifier();
+    let percentage = rand::thread_rng().gen_range(0..100);
+    let section_str = format!("# ({}%) {}", percentage, identifier);
+    let section = parse_section_str(&section_str, &Config::default()).unwrap();
+
+    let expected_value = Block::Section {
+      id: identifier.clone(),
+      settings: BlockSettings {
+        section: Some(Section {
+          name: identifier,
+          parent: None,
+        }),
+        chance: Chance::Probability(percentage as f32 / 100.),
+        ..Default::default()
+      },
+    };
+
+    assert_eq!(section, expected_value);
+  }
+
+  #[test]
+  fn parse_subsection_with_chance() {
+    //Subsection = { "##"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
+    let identifier = make_random_identifier();
+    let percentage = rand::thread_rng().gen_range(0..100);
+    let subsection_str = format!("## ({}%) {}", percentage, identifier);
+
+    let token = parse_str(&subsection_str, Rule::Subsection).unwrap();
+    let mut parsing_data = ParsingData::new(Config::default(), String::default());
+    parse_subsection(token, &mut parsing_data, 0).unwrap();
+
+    let subsection = parsing_data.blocks[0][0].clone();
+    let expected_value = Block::Section {
+      id: identifier.clone(),
+      settings: BlockSettings {
+        chance: Chance::Probability(percentage as f32 / 100.),
+        ..Default::default()
+      },
+    };
+
+    assert_eq!(subsection, expected_value);
+  }
+
+  #[test]
   fn parse_section_commands_correctly() {
     let identifier = make_random_snake_case();
 
@@ -2857,16 +3284,15 @@ mod test {
     config
       .variables
       .insert("test".to_string(), VariableKind::Bool);
-    let section = parse_section_str(
-      &format!("# {}\n  req test\n", identifier),
-      &config,
-      &Vec::default(),
-    )
-    .unwrap();
+    let section = parse_section_str(&format!("# {}\n  req test\n", identifier), &config).unwrap();
 
     let expected_value = Block::Section {
-      id: identifier,
+      id: identifier.clone(),
       settings: BlockSettings {
+        section: Some(Section {
+          name: identifier,
+          parent: None,
+        }),
         requirements: vec![Requirement {
           condition: Condition {
             variable: "test".to_string(),
@@ -2911,6 +3337,126 @@ mod test {
       Rule::Function,
       &format!("`{} {} {}`", function, parameter_1, parameter_2),
     );
+  }
+
+  #[test]
+  fn parse_modifiers_with_empty_lines() {
+    let text = make_random_string();
+    let variable_1 = make_random_identifier();
+    let variable_2 = make_random_identifier();
+    let modifier_1 = format!("set {}", variable_1);
+    let modifier_2 = format!("set {}", variable_2);
+    let mut config = Config::default();
+
+    config
+      .variables
+      .insert(variable_1.clone(), VariableKind::Bool);
+    config
+      .variables
+      .insert(variable_2.clone(), VariableKind::Bool);
+
+    let database = parse_database_str(
+      &format!("{}\n  {}\n\n  {}", text, modifier_1, modifier_2),
+      &config,
+    )
+    .unwrap();
+
+    let modifier_1 = Modifier {
+      variable: variable_1,
+      value: true.to_string(),
+      operator: ModifierOperator::Set,
+    };
+
+    let modifier_2 = Modifier {
+      variable: variable_2,
+      value: true.to_string(),
+      operator: ModifierOperator::Set,
+    };
+
+    let text_block = Block::Text {
+      id: text,
+      settings: BlockSettings {
+        modifiers: vec![modifier_1, modifier_2],
+        ..Default::default()
+      },
+    };
+
+    let eof = Block::Divert {
+      next: NextBlock::EndOfFile,
+      settings: BlockSettings::default(),
+    };
+
+    let expected_database = Database {
+      blocks: vec![text_block, eof],
+      config,
+      ..Default::default()
+    };
+
+    assert_eq!(database, expected_database);
+  }
+
+  #[test]
+  fn subsections_can_start_with_indentation() {
+    let identifier = make_random_identifier();
+    assert_parse_rule(Rule::Subsection, &format!("  ## {}", identifier));
+  }
+  #[test]
+  fn choices_with_empty_lines() {
+    let text = make_random_string();
+    let choice_text_1 = make_random_identifier();
+    let choice_text_2 = make_random_identifier();
+    let choice_1 = format!("* {}", choice_text_1);
+    let choice_2 = format!("* {}", choice_text_2);
+
+    let database = parse_database_str(
+      &format!("{}\n  {}\n\n  {}", text, choice_1, choice_2),
+      &Config::default(),
+    )
+    .unwrap();
+
+    let choice_1 = Block::Choice {
+      id: choice_text_1,
+      settings: BlockSettings {
+        script: Script {
+          file: "".to_string(),
+          line: 2,
+          col: 3,
+        },
+        ..Default::default()
+      },
+    };
+
+    let choice_2 = Block::Choice {
+      id: choice_text_2,
+      settings: BlockSettings {
+        script: Script {
+          file: "".to_string(),
+          line: 4,
+          col: 3,
+        },
+        ..Default::default()
+      },
+    };
+
+    let text_block = Block::Text {
+      id: text,
+      settings: BlockSettings {
+        children: vec![2, 3],
+        ..Default::default()
+      },
+    };
+
+    let eof = Block::Divert {
+      next: NextBlock::EndOfFile,
+      settings: BlockSettings::default(),
+    };
+
+    let expected_database = Database {
+      blocks: vec![text_block, eof, choice_1, choice_2],
+      ..Default::default()
+    };
+
+    assert_eq!(database, expected_database);
   }
 
   fn assert_parse_rule(rule: Rule, input: &str) {
