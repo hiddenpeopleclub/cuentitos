@@ -32,12 +32,12 @@ pub enum PalabritasError {
   DuplicatedSection {
     first_appearance: Box<Script>,
     second_appearance: Box<Script>,
-    section_name: Section,
+    section: Section,
   },
-  SubsectioNamedAfterSection {
+  SubsectioNamedAfterUpperSection {
     subsection_script: Box<Script>,
     section_script: Box<Script>,
-    section_name: SectionName,
+    subsection: SectionName,
   },
   VariableDoesntExist {
     script: Script,
@@ -180,7 +180,7 @@ impl Display for PalabritasError {
       PalabritasError::DuplicatedSection {
         first_appearance,
         second_appearance,
-        section_name,
+        section: section_name,
       } => {
         write!(
           f,
@@ -189,10 +189,10 @@ impl Display for PalabritasError {
           second_appearance, section_name, first_appearance
         )
       }
-      PalabritasError::SubsectioNamedAfterSection {
+      PalabritasError::SubsectioNamedAfterUpperSection {
         subsection_script,
         section_script,
-        section_name,
+        subsection: section_name,
       } => {
         write!(
             f,

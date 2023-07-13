@@ -26,13 +26,15 @@ Command = {NewLine+ ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier
 Chance = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
 
 Section = {"#"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ ( NewLine | NewBlock | Subsection )* }
-Subsection = { Indentation* ~ "##"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
+Subsection = { Indentation* ~ "##"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine | Subsubsection)*}
+Subsubsection = { Indentation* ~ "###"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine | Subsubsubsection)*}
+Subsubsubsection = { Indentation* ~ "####"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
 
 Text = { !Indentation ~ !ReservedKeywords ~ Chance? ~ String }
 Choice = { "*" ~ " "* ~ Chance? ~ String }
 NamedBucket = { "[" ~ " "* ~ Chance? ~ SnakeCase ~ " "* ~ "]" }
-Divert = { Chance? ~ "->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)? }
-BoomerangDivert = { Chance? ~ "<->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)? }
+Divert = { Chance? ~ "->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)* }
+BoomerangDivert = { Chance? ~ "<->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)* }
 
 NewBlock = {
     // The first line in the block
