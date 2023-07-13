@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use crate::Result;
 use crate::VariableKind;
@@ -35,6 +36,21 @@ impl Config {
       Err(err) => {
         eprintln!("Unable to load data from `{}`", filename.display());
         return Err(Box::new(err));
+      }
+    };
+
+    Ok(config)
+  }
+}
+
+impl FromStr for Config {
+  type Err = toml::de::Error;
+  fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+    let config: Config = match toml::from_str(s) {
+      Ok(d) => d,
+      Err(err) => {
+        eprintln!("Unable to load data from \n`{}`", s);
+        return Err(err);
       }
     };
 
