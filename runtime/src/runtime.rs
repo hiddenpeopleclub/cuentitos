@@ -59,12 +59,6 @@ impl Output {
             block_found: "section".to_string(),
           })
         }
-        cuentitos_common::Block::Subsection { id: _, settings: _ } => {
-          Err(RuntimeError::UnexpectedBlock {
-            expected_block: "text".to_string(),
-            block_found: "subsection".to_string(),
-          })
-        }
         cuentitos_common::Block::Divert {
           next: _,
           settings: _,
@@ -101,12 +95,6 @@ pub enum Block {
     settings: BlockSettings,
   },
   Section {
-    name: String,
-    settings: BlockSettings,
-  },
-  Subsection {
-    section: String,
-    name: String,
     settings: BlockSettings,
   },
   Divert {
@@ -136,12 +124,7 @@ impl Block {
       Block::Text { text: _, settings } => settings,
       Block::Choice { text: _, settings } => settings,
       Block::Bucket { name: _, settings } => settings,
-      Block::Section { name: _, settings } => settings,
-      Block::Subsection {
-        section: _,
-        name: _,
-        settings,
-      } => settings,
+      Block::Section { settings } => settings,
       Block::Divert { next: _, settings } => settings,
       Block::BoomerangDivert { next: _, settings } => settings,
     }
@@ -235,7 +218,7 @@ impl Runtime {
     Ok(blocks_added)
   }
 
-  pub fn peek_next(&mut self) -> Result<Output, RuntimeError> {
+  pub fn peek_next(&self) -> Result<Output, RuntimeError> {
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
     }
@@ -288,18 +271,7 @@ impl Runtime {
         name: name.clone(),
         settings,
       },
-      cuentitos_common::Block::Section { id, settings: _ } => Block::Section {
-        name: id.clone(),
-        settings,
-      },
-      cuentitos_common::Block::Subsection { id, settings: _ } => {
-        let section = settings.section.clone().unwrap_or_default().section_name;
-        Block::Subsection {
-          name: id.clone(),
-          settings,
-          section,
-        }
-      }
+      cuentitos_common::Block::Section { id: _, settings: _ } => Block::Section { settings },
       cuentitos_common::Block::Divert { next, settings: _ } => Block::Divert {
         next: next.clone(),
         settings,
@@ -489,41 +461,64 @@ impl Runtime {
     Ok(variables)
   }
 
-  fn get_section_block_ids(&mut self, section: &Section) -> Result<Vec<BlockId>, RuntimeError> {
-    let mut section = section.clone();
-    let section_id = match self.database.sections.get(&section) {
-      Some(id) => Some(id),
-      None => {
-        if let Some(current_section) = &self.game_state.section {
-          section = Section {
-            section_name: current_section.section_name.clone(),
-            subsection_name: Some(section.section_name.clone()),
-          };
-          self.database.sections.get(&section)
-        } else {
-          return Err(RuntimeError::SectionDoesntExist(section.clone()));
+  fn get_section_block_ids_recursive(
+    &self,
+    section: &Section,
+    ids: &mut Vec<BlockId>,
+  ) -> Result<(), RuntimeError> {
+    match self.database.sections.get(section) {
+      Some(id) => {
+        if let Some(parent) = &section.parent {
+          self.get_section_block_ids_recursive(parent, ids)?;
+        }
+        ids.push(*id);
+        Ok(())
+      }
+      None => Err(RuntimeError::SectionDoesntExist(section.clone())),
+    }
+  }
+
+  fn get_actual_section(&self, section: &Section) -> Result<Section, RuntimeError> {
+    fn append_to_parent(value: Section, into: &mut Section) {
+      match &mut into.parent {
+        Some(parent) => append_to_parent(value, parent),
+        None => {
+          into.parent = Some(Box::new(value));
         }
       }
-    };
-
-    let mut stack: Vec<usize> = Vec::default();
-
-    if let Some(block_id) = section_id {
-      if section.subsection_name.is_some() {
-        let parent = Section {
-          section_name: section.section_name.clone(),
-          subsection_name: None,
-        };
-        if let Some(parent_id) = self.database.sections.get(&parent) {
-          stack.push(*parent_id);
-        } else {
-          return Err(RuntimeError::SectionDoesntExist(parent.clone()));
-        }
-      }
-      stack.push(*block_id);
     }
 
-    Ok(stack)
+    let mut section_mut = section.clone();
+
+    let section_exists = match self.database.sections.contains_key(&section_mut) {
+      true => true,
+      false => match &self.game_state.section {
+        Some(current_section) => {
+          append_to_parent(current_section.clone(), &mut section_mut);
+          match self.database.sections.contains_key(&section_mut) {
+            true => true,
+            false => {
+              section_mut.parent = section_mut.parent.unwrap().parent;
+              self.database.sections.contains_key(&section_mut)
+            }
+          }
+        }
+        None => false,
+      },
+    };
+
+    match section_exists {
+      true => Ok(section_mut),
+      false => Err(RuntimeError::SectionDoesntExist(section.clone())),
+    }
+  }
+  fn get_section_block_ids(&mut self, section: &Section) -> Result<Vec<BlockId>, RuntimeError> {
+    let mut ids: Vec<usize> = Vec::default();
+    let section = self.get_actual_section(section)?;
+
+    self.get_section_block_ids_recursive(&section, &mut ids)?;
+
+    Ok(ids)
   }
 
   fn meets_requirements_and_chance(&mut self, id: BlockId) -> Result<bool, RuntimeError> {
@@ -753,10 +748,6 @@ impl Runtime {
         blocks.append(&mut self.update_stack()?);
         Ok(blocks)
       }
-      cuentitos_common::Block::Subsection { id: _, settings: _ } => {
-        blocks.append(&mut self.update_stack()?);
-        Ok(blocks)
-      }
       cuentitos_common::Block::Text { id: _, settings: _ } => {
         self.update_choices()?;
         Ok(blocks)
@@ -907,9 +898,6 @@ impl Runtime {
           self.get_next_child_in_stack(settings, next_child + 1)
         }
       }
-      cuentitos_common::Block::Section { id, settings: _ } => {
-        Err(RuntimeError::SectionAtLowerLevel(id.clone()))
-      }
       _ => Ok(Some(settings.children[0])),
     }
   }
@@ -1055,21 +1043,21 @@ mod test {
 
   #[test]
   fn divert_works_correctly() {
-    let section_1 = Block::Section {
+    let block_section_1 = Block::Section {
       id: "section_1".to_string(),
       settings: cuentitos_common::BlockSettings {
         children: vec![3],
         ..Default::default()
       },
     };
-    let section_2 = Block::Section {
+    let block_section_2 = Block::Section {
       id: "section_2".to_string(),
       settings: cuentitos_common::BlockSettings {
         children: vec![2],
         ..Default::default()
       },
     };
-    let subsection = Block::Subsection {
+    let block_subsection = Block::Section {
       id: "subsection".to_string(),
       settings: cuentitos_common::BlockSettings {
         children: vec![4],
@@ -1086,29 +1074,34 @@ mod test {
     };
 
     let mut sections: HashMap<Section, usize> = HashMap::default();
-    sections.insert(
-      Section {
-        section_name: "section_1".to_string(),
-        subsection_name: None,
-      },
-      0,
-    );
-    sections.insert(
-      Section {
-        section_name: "section_2".to_string(),
-        subsection_name: None,
-      },
-      1,
-    );
-    sections.insert(
-      Section {
-        section_name: "section_2".to_string(),
-        subsection_name: Some("subsection".to_string()),
-      },
-      2,
-    );
+
+    let section_1 = Section {
+      name: "section_1".to_string(),
+      parent: None,
+    };
+
+    sections.insert(section_1.clone(), 0);
+
+    let section_2 = Section {
+      name: "section_2".to_string(),
+      parent: None,
+    };
+
+    sections.insert(section_2.clone(), 1);
+
+    let subsection = Section {
+      name: "subsection".to_string(),
+      parent: Some(Box::new(section_2)),
+    };
+    sections.insert(subsection.clone(), 2);
     let database = Database {
-      blocks: vec![section_1, section_2, subsection, text_1, text_2],
+      blocks: vec![
+        block_section_1,
+        block_section_2,
+        block_subsection,
+        text_1,
+        text_2,
+      ],
       sections,
       ..Default::default()
     };
@@ -1117,12 +1110,7 @@ mod test {
       database,
       ..Default::default()
     };
-    runtime
-      .divert(&Section {
-        section_name: "section_2".to_string(),
-        subsection_name: Some("subsection".to_string()),
-      })
-      .unwrap();
+    runtime.divert(&subsection).unwrap();
     assert_eq!(
       runtime.block_stack,
       vec![
@@ -1137,12 +1125,7 @@ mod test {
       ]
     );
 
-    runtime
-      .divert(&Section {
-        section_name: "section_1".to_string(),
-        subsection_name: None,
-      })
-      .unwrap();
+    runtime.divert(&section_1).unwrap();
     assert_eq!(
       runtime.block_stack,
       vec![BlockStackData {
@@ -1154,21 +1137,21 @@ mod test {
 
   #[test]
   fn boomerang_divert_works_correctly() {
-    let section_1 = Block::Section {
+    let block_section_1 = Block::Section {
       id: "section_1".to_string(),
       settings: cuentitos_common::BlockSettings {
         children: vec![3],
         ..Default::default()
       },
     };
-    let section_2 = Block::Section {
+    let block_section_2 = Block::Section {
       id: "section_2".to_string(),
       settings: cuentitos_common::BlockSettings {
         children: vec![2],
         ..Default::default()
       },
     };
-    let subsection = Block::Subsection {
+    let block_subsection = Block::Section {
       id: "subsection".to_string(),
       settings: cuentitos_common::BlockSettings {
         children: vec![4],
@@ -1185,29 +1168,34 @@ mod test {
     };
 
     let mut sections: HashMap<Section, usize> = HashMap::default();
-    sections.insert(
-      Section {
-        section_name: "section_1".to_string(),
-        subsection_name: None,
-      },
-      0,
-    );
-    sections.insert(
-      Section {
-        section_name: "section_2".to_string(),
-        subsection_name: None,
-      },
-      1,
-    );
-    sections.insert(
-      Section {
-        section_name: "section_2".to_string(),
-        subsection_name: Some("subsection".to_string()),
-      },
-      2,
-    );
+
+    let section_1 = Section {
+      name: "section_1".to_string(),
+      parent: None,
+    };
+
+    sections.insert(section_1.clone(), 0);
+
+    let section_2 = Section {
+      name: "section_2".to_string(),
+      parent: None,
+    };
+
+    sections.insert(section_2.clone(), 1);
+
+    let subsection = Section {
+      name: "subsection".to_string(),
+      parent: Some(Box::new(section_2)),
+    };
+    sections.insert(subsection.clone(), 2);
     let database = Database {
-      blocks: vec![section_1, section_2, subsection, text_1, text_2],
+      blocks: vec![
+        block_section_1,
+        block_section_2,
+        block_subsection,
+        text_1,
+        text_2,
+      ],
       sections,
       ..Default::default()
     };
@@ -1216,12 +1204,7 @@ mod test {
       database,
       ..Default::default()
     };
-    runtime
-      .boomerang_divert(&Section {
-        section_name: "section_2".to_string(),
-        subsection_name: Some("subsection".to_string()),
-      })
-      .unwrap();
+    runtime.boomerang_divert(&subsection).unwrap();
     assert_eq!(
       runtime.block_stack,
       vec![
@@ -1236,12 +1219,7 @@ mod test {
       ]
     );
 
-    runtime
-      .boomerang_divert(&Section {
-        section_name: "section_1".to_string(),
-        subsection_name: None,
-      })
-      .unwrap();
+    runtime.boomerang_divert(&section_1).unwrap();
     assert_eq!(
       runtime.block_stack,
       vec![
@@ -3020,8 +2998,8 @@ mod test {
     let mut sections: HashMap<Section, usize> = HashMap::default();
     sections.insert(
       Section {
-        section_name: "section".to_string(),
-        subsection_name: None,
+        name: "section".to_string(),
+        parent: None,
       },
       0,
     );
@@ -3041,8 +3019,8 @@ mod test {
 
     let divert = Block::Divert {
       next: NextBlock::Section(Section {
-        section_name: "section".to_string(),
-        subsection_name: None,
+        name: "section".to_string(),
+        parent: None,
       }),
       settings: cuentitos_common::BlockSettings::default(),
     };
@@ -3194,33 +3172,6 @@ mod test {
   }
 
   #[test]
-  fn section_at_lower_level_throws_error() {
-    let text = Block::Text {
-      id: String::default(),
-      settings: cuentitos_common::BlockSettings {
-        children: vec![1],
-        ..Default::default()
-      },
-    };
-
-    let section = Block::Section {
-      id: "section".to_string(),
-      settings: cuentitos_common::BlockSettings::default(),
-    };
-
-    let database = Database {
-      blocks: vec![text, section],
-      ..Default::default()
-    };
-    let mut runtime = Runtime::new(database);
-    Runtime::update_stack(&mut runtime).unwrap();
-    let err = Runtime::update_stack(&mut runtime).unwrap_err();
-    assert_eq!(
-      err,
-      RuntimeError::SectionAtLowerLevel("section".to_string())
-    );
-  }
-  #[test]
   fn throws_error_when_story_finishes() {
     let text: Block = Block::Divert {
       next: NextBlock::EndOfFile,
@@ -3239,8 +3190,8 @@ mod test {
   #[test]
   fn divert_throws_error_if_section_doesnt_exist() {
     let section_key = Section {
-      section_name: "section".to_string(),
-      subsection_name: Some("subsection".to_string()),
+      name: "section".to_string(),
+      parent: None,
     };
     let divert = Block::Divert {
       next: NextBlock::Section(section_key.clone()),

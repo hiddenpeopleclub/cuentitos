@@ -1,31 +1,10 @@
-use crate::{FrequencyModifier, Function, I18nId, Modifier, Requirement};
+use crate::{FrequencyModifier, Function, I18nId, Modifier, Requirement, Section, SectionName};
 use core::fmt;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
 pub type BlockId = usize;
 pub type BucketName = String;
-pub type SectionName = String;
-
-#[derive(Debug, Default, Serialize, Deserialize, Eq, PartialEq, Clone, Hash)]
-pub struct Section {
-  pub section_name: SectionName,
-  pub subsection_name: Option<SectionName>,
-}
-impl fmt::Display for Section {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    let mut key = String::new();
-
-    key.push_str(&self.section_name);
-
-    if let Some(subsection) = &self.subsection_name {
-      key.push('/');
-      key.push_str(subsection);
-    }
-
-    write!(f, "{}", key)
-  }
-}
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub enum NextBlock {
   #[default]
@@ -97,10 +76,6 @@ pub enum Block {
     id: SectionName,
     settings: BlockSettings,
   },
-  Subsection {
-    id: SectionName,
-    settings: BlockSettings,
-  },
   Divert {
     next: NextBlock,
     settings: BlockSettings,
@@ -118,7 +93,6 @@ impl Block {
       Block::Choice { id: _, settings } => settings,
       Block::Bucket { name: _, settings } => settings,
       Block::Section { id: _, settings } => settings,
-      Block::Subsection { id: _, settings } => settings,
       Block::Divert { next: _, settings } => settings,
       Block::BoomerangDivert { next: _, settings } => settings,
     }
@@ -129,7 +103,6 @@ impl Block {
       Block::Choice { id: _, settings } => settings,
       Block::Bucket { name: _, settings } => settings,
       Block::Section { id: _, settings } => settings,
-      Block::Subsection { id: _, settings } => settings,
       Block::Divert { next: _, settings } => settings,
       Block::BoomerangDivert { next: _, settings } => settings,
     }

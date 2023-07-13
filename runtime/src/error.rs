@@ -1,18 +1,17 @@
+use cuentitos_common::{BlockId, Section};
+use std::fmt::Debug;
 use std::{
   error::Error,
   fmt::Display,
   num::{ParseFloatError, ParseIntError},
   str::ParseBoolError,
 };
-
-use cuentitos_common::{BlockId, Section, SectionName};
 type VariableName = String;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub enum RuntimeError {
   InvalidBlockId(BlockId),
   WaitingForChoice(Vec<String>),
-  SectionAtLowerLevel(SectionName),
   StoryFinished,
   SectionDoesntExist(Section),
   UnexpectedBlock {
@@ -51,6 +50,11 @@ impl Display for ErrorInfo {
   }
 }
 impl Error for RuntimeError {}
+impl Debug for RuntimeError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{}", self)
+  }
+}
 impl Display for RuntimeError {
   fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
     match self {
@@ -66,13 +70,6 @@ impl Display for RuntimeError {
           f,
           "Can't progress story without making a choice.{}",
           choices_str
-        )
-      }
-      RuntimeError::SectionAtLowerLevel(section_name) => {
-        write!(
-          f,
-          "Invalid section `{}`. Sections can't be children. ",
-          section_name
         )
       }
       RuntimeError::StoryFinished => {
