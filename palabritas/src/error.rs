@@ -1,8 +1,9 @@
 use crate::parser::Rule;
 use cuentitos_common::{Script, Section, SectionName, VariableKind};
+use std::fmt::Debug;
 use std::{error::Error, fmt::Display, path::PathBuf};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub enum PalabritasError {
   FileIsEmpty,
   ParseError {
@@ -31,12 +32,12 @@ pub enum PalabritasError {
   DuplicatedSection {
     first_appearance: Box<Script>,
     second_appearance: Box<Script>,
-    section_name: Section,
+    section: Section,
   },
-  SubsectioNamedAfterSection {
+  SubsectioNamedAfterUpperSection {
     subsection_script: Box<Script>,
     section_script: Box<Script>,
-    section_name: SectionName,
+    subsection: SectionName,
   },
   VariableDoesntExist {
     script: Script,
@@ -62,6 +63,11 @@ pub enum PalabritasError {
 }
 
 impl Error for PalabritasError {}
+impl Debug for PalabritasError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{}", self)
+  }
+}
 impl Display for PalabritasError {
   fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
     match self {
@@ -174,7 +180,7 @@ impl Display for PalabritasError {
       PalabritasError::DuplicatedSection {
         first_appearance,
         second_appearance,
-        section_name,
+        section: section_name,
       } => {
         write!(
           f,
@@ -183,10 +189,10 @@ impl Display for PalabritasError {
           second_appearance, section_name, first_appearance
         )
       }
-      PalabritasError::SubsectioNamedAfterSection {
+      PalabritasError::SubsectioNamedAfterUpperSection {
         subsection_script,
         section_script,
-        section_name,
+        subsection: section_name,
       } => {
         write!(
             f,

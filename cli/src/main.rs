@@ -32,10 +32,7 @@ where
 {
   match cuentitos_compiler::compile(&source_path, destination_path) {
     Ok(_) => Ok(()),
-    Err(err) => {
-      println!("{}\n", err);
-      Err(err)
-    }
+    Err(err) => Err(err),
   }
 }
 
