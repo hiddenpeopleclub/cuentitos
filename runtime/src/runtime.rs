@@ -5,7 +5,6 @@ use crate::RuntimeError;
 use cuentitos_common::condition::ComparisonOperator;
 use cuentitos_common::modifier::ModifierOperator;
 use cuentitos_common::BlockId;
-use cuentitos_common::BlockSettings;
 use cuentitos_common::Condition;
 use cuentitos_common::Database;
 use cuentitos_common::Function;
@@ -20,21 +19,139 @@ use rand::SeedableRng;
 use rand_pcg::Pcg32;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
-pub struct Block {
+type BucketName = String;
+
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
+pub struct Output {
   pub text: String,
   pub choices: Vec<String>,
-  pub tags: Vec<String>,
-  pub functions: Vec<Function>,
-  pub script: Script,
+  pub blocks: Vec<Block>,
 }
 
-pub type ModifiedVariables = Vec<String>;
+impl Output {
+  pub fn from_blocks(blocks: Vec<Block>, runtime: &Runtime) -> Result<Self, RuntimeError> {
+    if let Some(last_block) = blocks.last() {
+      match runtime.get_cuentitos_block(last_block.get_settings().id)? {
+        cuentitos_common::Block::Text { id, settings: _ } => Ok(Output {
+          text: runtime
+            .database
+            .i18n
+            .get_translation(&runtime.current_locale, id),
+          choices: runtime.get_current_choices_strings()?,
+          blocks,
+        }),
+        cuentitos_common::Block::Choice { id: _, settings: _ } => {
+          Err(RuntimeError::UnexpectedBlock {
+            expected_block: "text".to_string(),
+            block_found: "choice".to_string(),
+          })
+        }
+        cuentitos_common::Block::Bucket {
+          name: _,
+          settings: _,
+        } => Err(RuntimeError::UnexpectedBlock {
+          expected_block: "text".to_string(),
+          block_found: "bucket".to_string(),
+        }),
+        cuentitos_common::Block::Section { id: _, settings: _ } => {
+          Err(RuntimeError::UnexpectedBlock {
+            expected_block: "text".to_string(),
+            block_found: "section".to_string(),
+          })
+        }
+        cuentitos_common::Block::Divert {
+          next: _,
+          settings: _,
+        } => Err(RuntimeError::UnexpectedBlock {
+          expected_block: "text".to_string(),
+          block_found: "divert".to_string(),
+        }),
+        cuentitos_common::Block::BoomerangDivert {
+          next: _,
+          settings: _,
+        } => Err(RuntimeError::UnexpectedBlock {
+          expected_block: "text".to_string(),
+          block_found: "boomerang divert".to_string(),
+        }),
+      }
+    } else {
+      Err(RuntimeError::EmptyStack)
+    }
+  }
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub enum Block {
+  Text {
+    text: String,
+    settings: BlockSettings,
+  },
+  Choice {
+    text: String,
+    settings: BlockSettings,
+  },
+  Bucket {
+    name: Option<BucketName>,
+    settings: BlockSettings,
+  },
+  Section {
+    settings: BlockSettings,
+  },
+  Divert {
+    next: NextBlock,
+    settings: BlockSettings,
+  },
+  BoomerangDivert {
+    next: NextBlock,
+    settings: BlockSettings,
+  },
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct BlockSettings {
+  pub id: BlockId,
+  pub script: Script,
+  pub chance: Chance,
+  pub tags: Vec<String>,
+  pub functions: Vec<Function>,
+  pub changed_variables: Vec<String>,
+  pub section: Option<Section>,
+}
+
+impl Block {
+  pub fn get_settings(&self) -> &BlockSettings {
+    match self {
+      Block::Text { text: _, settings } => settings,
+      Block::Choice { text: _, settings } => settings,
+      Block::Bucket { name: _, settings } => settings,
+      Block::Section { settings } => settings,
+      Block::Divert { next: _, settings } => settings,
+      Block::BoomerangDivert { next: _, settings } => settings,
+    }
+  }
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
+pub enum Chance {
+  #[default]
+  None,
+  Probability(f32),
+  Frequency {
+    value: u32,
+    total_frequency: u32,
+  },
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
+pub struct BlockStackData {
+  pub id: BlockId,
+  pub chance: Chance,
+}
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Runtime {
   pub database: Database,
-  pub block_stack: Vec<BlockId>,
+  pub block_stack: Vec<BlockStackData>,
   pub choices: Vec<BlockId>,
   #[serde(skip)]
   pub game_state: GameState,
@@ -81,153 +198,103 @@ impl Runtime {
     self.rng = Some(Pcg32::seed_from_u64(seed));
   }
 
-  pub fn divert(&mut self, section: &Section) -> Result<ModifiedVariables, RuntimeError> {
-    let new_stack = self.get_section_blocks_stack(section)?;
+  pub fn divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError> {
+    let new_stack = self.get_section_block_ids(section)?;
     self.block_stack.clear();
-    let mut modified_variables = ModifiedVariables::default();
+    let mut blocks_added = Vec::default();
+    for block in new_stack {
+      blocks_added.push(Self::push_stack(self, block)?);
+    }
+    Ok(blocks_added)
+  }
+
+  pub fn boomerang_divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError> {
+    let new_stack = self.get_section_block_ids(section)?;
+    let mut blocks_added = Vec::default();
 
     for block in new_stack {
-      modified_variables.append(&mut Self::push_stack(self, block)?);
+      blocks_added.push(Self::push_stack(self, block)?);
     }
-
-    Ok(modified_variables)
+    Ok(blocks_added)
   }
 
-  pub fn boomerang_divert(&mut self, section: &Section) -> Result<ModifiedVariables, RuntimeError> {
-    let new_stack = self.get_section_blocks_stack(section)?;
-    let mut modified_variables = ModifiedVariables::default();
-
-    for block in new_stack {
-      modified_variables.append(&mut Self::push_stack(self, block)?);
-    }
-    Ok(modified_variables)
-  }
-
-  fn get_section_blocks_stack(&mut self, section: &Section) -> Result<Vec<BlockId>, RuntimeError> {
-    let mut section = section.clone();
-    let section_id = match self.database.sections.get(&section) {
-      Some(id) => Some(id),
-      None => {
-        if let Some(current_section) = &self.game_state.section {
-          section = Section {
-            section_name: current_section.section_name.clone(),
-            subsection_name: Some(section.section_name.clone()),
-          };
-          self.database.sections.get(&section)
-        } else {
-          return Err(RuntimeError::SectionDoesntExist(section.clone()));
-        }
-      }
-    };
-
-    let mut stack: Vec<usize> = Vec::default();
-
-    if let Some(block_id) = section_id {
-      if section.subsection_name.is_some() {
-        let parent = Section {
-          section_name: section.section_name.clone(),
-          subsection_name: None,
-        };
-        if let Some(parent_id) = self.database.sections.get(&parent) {
-          stack.push(*parent_id);
-        } else {
-          return Err(RuntimeError::SectionDoesntExist(parent.clone()));
-        }
-      }
-      stack.push(*block_id);
-    }
-
-    Ok(stack)
-  }
-
-  pub fn peek_next_block(&mut self) -> Result<(Block, ModifiedVariables), RuntimeError> {
+  pub fn peek_next(&self) -> Result<Output, RuntimeError> {
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
     }
 
     let mut peek_runtime = self.clone();
-    let modified_variables = Self::update_stack(&mut peek_runtime)?;
-    let block = peek_runtime.current_block()?;
-
-    Ok((block, modified_variables))
+    let blocks = peek_runtime.update_stack()?;
+    Output::from_blocks(blocks, self)
   }
 
-  pub fn next_block(&mut self) -> Result<(Block, ModifiedVariables), RuntimeError> {
+  pub fn progress_story(&mut self) -> Result<Output, RuntimeError> {
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
     }
 
-    let modified_variables = Self::update_stack(self)?;
-    let block = self.current_block()?;
-
-    Ok((block, modified_variables))
+    let blocks = Self::update_stack(self)?;
+    Output::from_blocks(blocks, self)
   }
 
-  pub fn get_block(&self, id: BlockId) -> &cuentitos_common::Block {
-    &self.database.blocks[id]
+  pub fn get_block(&self, stack_data: &BlockStackData) -> Result<Block, RuntimeError> {
+    let id = stack_data.id;
+    let cuentitos_block = self.get_cuentitos_block(id)?;
+    let cuentitos_settings = cuentitos_block.get_settings();
+    let script = cuentitos_settings.script.clone();
+    let tags = cuentitos_settings.tags.clone();
+    let functions = cuentitos_settings.functions.clone();
+    let chance = stack_data.chance.clone();
+    let changed_variables = self.get_changed_variables(cuentitos_settings)?;
+    let section = cuentitos_settings.section.clone();
+
+    let settings = BlockSettings {
+      id,
+      script,
+      tags,
+      functions,
+      chance,
+      changed_variables,
+      section,
+    };
+
+    let block = match cuentitos_block {
+      cuentitos_common::Block::Text { id, settings: _ } => Block::Text {
+        text: self.database.i18n.get_translation(&self.current_locale, id),
+        settings,
+      },
+      cuentitos_common::Block::Choice { id, settings: _ } => Block::Choice {
+        text: self.database.i18n.get_translation(&self.current_locale, id),
+        settings,
+      },
+      cuentitos_common::Block::Bucket { name, settings: _ } => Block::Bucket {
+        name: name.clone(),
+        settings,
+      },
+      cuentitos_common::Block::Section { id: _, settings: _ } => Block::Section { settings },
+      cuentitos_common::Block::Divert { next, settings: _ } => Block::Divert {
+        next: next.clone(),
+        settings,
+      },
+      cuentitos_common::Block::BoomerangDivert { next, settings: _ } => Block::BoomerangDivert {
+        next: next.clone(),
+        settings,
+      },
+    };
+
+    Ok(block)
   }
 
-  pub fn current_block(&self) -> Result<Block, RuntimeError> {
-    let id = match self.block_stack.last() {
+  pub fn current(&self) -> Result<Output, RuntimeError> {
+    let stack_data = match self.block_stack.last() {
       Some(id) => id,
       None => return Err(RuntimeError::EmptyStack),
     };
-
-    let block = self.get_block(*id);
-    let settings = block.get_settings();
-    let tags = settings.tags.clone();
-    let functions = settings.functions.clone();
-    match block {
-      cuentitos_common::Block::Text { id, settings: _ } => Ok(Block {
-        text: self.database.i18n.get_translation(&self.current_locale, id),
-        choices: self.get_choices_strings(),
-        tags,
-        functions,
-        script: settings.script.clone(),
-      }),
-      cuentitos_common::Block::Choice { id: _, settings: _ } => {
-        Err(RuntimeError::UnexpectedBlock {
-          expected_block: "text".to_string(),
-          block_found: "choice".to_string(),
-        })
-      }
-      cuentitos_common::Block::Bucket {
-        name: _,
-        settings: _,
-      } => Err(RuntimeError::UnexpectedBlock {
-        expected_block: "text".to_string(),
-        block_found: "bucket".to_string(),
-      }),
-      cuentitos_common::Block::Section { id: _, settings: _ } => {
-        Err(RuntimeError::UnexpectedBlock {
-          expected_block: "text".to_string(),
-          block_found: "section".to_string(),
-        })
-      }
-      cuentitos_common::Block::Subsection { id: _, settings: _ } => {
-        Err(RuntimeError::UnexpectedBlock {
-          expected_block: "text".to_string(),
-          block_found: "subsection".to_string(),
-        })
-      }
-      cuentitos_common::Block::Divert {
-        next: _,
-        settings: _,
-      } => Err(RuntimeError::UnexpectedBlock {
-        expected_block: "text".to_string(),
-        block_found: "divert".to_string(),
-      }),
-      cuentitos_common::Block::BoomerangDivert {
-        next: _,
-        settings: _,
-      } => Err(RuntimeError::UnexpectedBlock {
-        expected_block: "text".to_string(),
-        block_found: "boomerang divert".to_string(),
-      }),
-    }
+    let blocks = vec![self.get_block(stack_data)?];
+    Output::from_blocks(blocks, self)
   }
 
-  pub fn pick_choice(&mut self, choice: usize) -> Result<(Block, ModifiedVariables), RuntimeError> {
+  pub fn pick_choice(&mut self, choice: usize) -> Result<Output, RuntimeError> {
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
     }
@@ -250,7 +317,7 @@ impl Runtime {
     }
 
     Self::push_stack_until_text(self, choices[choice])?;
-    self.next_block()
+    self.progress_story()
   }
 
   pub fn set_variable<R, T>(&mut self, variable: R, value: T) -> Result<(), RuntimeError>
@@ -313,9 +380,8 @@ impl Runtime {
       if (t == "i32" && self.database.config.variables[&variable] == VariableKind::Integer)
         || (t == "f32" && self.database.config.variables[&variable] == VariableKind::Float)
         || (t == "bool" && self.database.config.variables[&variable] == VariableKind::Bool)
-        || (t == "alloc::string::String"
-          && self.database.config.variables[&variable] == VariableKind::String)
-        || (t == "&str" && self.database.config.variables[&variable] == VariableKind::String)
+        || t == "alloc::string::String"
+        || t == "&str"
         || self.is_valid_enum::<T>(&value)
       {
         match value.parse::<T>() {
@@ -359,24 +425,123 @@ impl Runtime {
     }
   }
 
-  pub fn get_choices_strings(&self) -> Vec<String> {
+  pub fn get_current_choices_strings(&self) -> Result<Vec<String>, RuntimeError> {
     let mut choices_strings = Vec::default();
     for choice in &self.choices {
-      if let cuentitos_common::Block::Choice { id, settings: _ } = self.get_block(*choice) {
+      if let cuentitos_common::Block::Choice { id, settings: _ } =
+        self.get_cuentitos_block(*choice)?
+      {
         choices_strings.push(self.database.i18n.get_translation(&self.current_locale, id));
       }
     }
 
-    choices_strings
+    Ok(choices_strings)
   }
 
-  fn meets_requirements(&mut self, id: BlockId) -> Result<bool, RuntimeError> {
-    for requirement in &self.get_block(id).get_settings().requirements {
+  fn get_cuentitos_block(&self, id: BlockId) -> Result<&cuentitos_common::Block, RuntimeError> {
+    if id < self.database.blocks.len() {
+      Ok(&self.database.blocks[id])
+    } else {
+      Err(RuntimeError::InvalidBlockId(id))
+    }
+  }
+
+  fn get_changed_variables(
+    &self,
+    settings: &cuentitos_common::BlockSettings,
+  ) -> Result<Vec<String>, RuntimeError> {
+    let mut variables = Vec::default();
+    for modifier in &settings.modifiers {
+      let variable = modifier.variable.clone();
+      if !variables.contains(&variable) {
+        variables.push(variable);
+      }
+    }
+
+    Ok(variables)
+  }
+
+  fn get_section_block_ids_recursive(
+    &self,
+    section: &Section,
+    ids: &mut Vec<BlockId>,
+  ) -> Result<(), RuntimeError> {
+    match self.database.sections.get(section) {
+      Some(id) => {
+        if let Some(parent) = &section.parent {
+          self.get_section_block_ids_recursive(parent, ids)?;
+        }
+        ids.push(*id);
+        Ok(())
+      }
+      None => Err(RuntimeError::SectionDoesntExist(section.clone())),
+    }
+  }
+
+  fn get_actual_section(&self, section: &Section) -> Result<Section, RuntimeError> {
+    fn append_to_parent(value: Section, into: &mut Section) {
+      match &mut into.parent {
+        Some(parent) => append_to_parent(value, parent),
+        None => {
+          into.parent = Some(Box::new(value));
+        }
+      }
+    }
+
+    let mut section_mut = section.clone();
+
+    let section_exists = match self.database.sections.contains_key(&section_mut) {
+      true => true,
+      false => match &self.game_state.section {
+        Some(current_section) => {
+          append_to_parent(current_section.clone(), &mut section_mut);
+          match self.database.sections.contains_key(&section_mut) {
+            true => true,
+            false => {
+              section_mut.parent = section_mut.parent.unwrap().parent;
+              self.database.sections.contains_key(&section_mut)
+            }
+          }
+        }
+        None => false,
+      },
+    };
+
+    match section_exists {
+      true => Ok(section_mut),
+      false => Err(RuntimeError::SectionDoesntExist(section.clone())),
+    }
+  }
+  fn get_section_block_ids(&mut self, section: &Section) -> Result<Vec<BlockId>, RuntimeError> {
+    let mut ids: Vec<usize> = Vec::default();
+    let section = self.get_actual_section(section)?;
+
+    self.get_section_block_ids_recursive(&section, &mut ids)?;
+
+    Ok(ids)
+  }
+
+  fn meets_requirements_and_chance(&mut self, id: BlockId) -> Result<bool, RuntimeError> {
+    if self.meets_requirements(id)? {
+      Ok(self.roll_chances_for_block(id)?)
+    } else {
+      Ok(false)
+    }
+  }
+
+  fn meets_requirements(&self, id: BlockId) -> Result<bool, RuntimeError> {
+    let settings = self.get_cuentitos_block(id)?.get_settings();
+
+    if settings.unique && self.game_state.uniques_played.contains(&id) {
+      return Ok(false);
+    }
+
+    for requirement in &settings.requirements {
       if !self.meets_condition(&requirement.condition)? {
         return Ok(false);
       }
     }
-    Ok(self.roll_chances_for_block(id))
+    Ok(true)
   }
 
   fn meets_condition(&self, condition: &Condition) -> Result<bool, RuntimeError> {
@@ -442,11 +607,11 @@ impl Runtime {
     Ok(false)
   }
 
-  fn roll_chances_for_block(&mut self, id: BlockId) -> bool {
-    match self.get_block(id).get_settings().chance {
-      cuentitos_common::Chance::None => true,
-      cuentitos_common::Chance::Frequency(_) => true,
-      cuentitos_common::Chance::Probability(probability) => self.random_float() < probability,
+  fn roll_chances_for_block(&mut self, id: BlockId) -> Result<bool, RuntimeError> {
+    match self.get_cuentitos_block(id)?.get_settings().chance {
+      cuentitos_common::Chance::None => Ok(true),
+      cuentitos_common::Chance::Frequency(_) => Ok(true),
+      cuentitos_common::Chance::Probability(probability) => Ok(self.random_float() < probability),
     }
   }
 
@@ -504,7 +669,10 @@ impl Runtime {
     num
   }
 
-  fn get_frequency_with_modifier(&self, settings: &BlockSettings) -> Result<u32, RuntimeError> {
+  fn get_frequency_with_modifier(
+    &self,
+    settings: &cuentitos_common::BlockSettings,
+  ) -> Result<u32, RuntimeError> {
     match settings.chance {
       cuentitos_common::Chance::None => Ok(0),
       cuentitos_common::Chance::Frequency(frequency) => {
@@ -560,142 +728,159 @@ impl Runtime {
     }
   }
 
-  fn apply_modifiers(&mut self) -> Result<ModifiedVariables, RuntimeError> {
-    let mut modified_variables = ModifiedVariables::default();
-    let id = match self.block_stack.last() {
-      Some(id) => id,
-      None => return Err(RuntimeError::EmptyStack),
-    };
-    let block = self.get_block(*id);
-    for modifier in block.get_settings().modifiers.clone() {
-      self.apply_modifier(&modifier)?;
-      modified_variables.push(modifier.variable);
+  fn apply_modifiers(&mut self, modifiers: &Vec<Modifier>) -> Result<(), RuntimeError> {
+    for modifier in modifiers {
+      self.apply_modifier(modifier)?;
     }
-    Ok(modified_variables)
+    Ok(())
   }
 
-  fn push_stack_until_text(
-    runtime: &mut Runtime,
-    id: BlockId,
-  ) -> Result<ModifiedVariables, RuntimeError> {
-    let mut modified_variables = Self::push_stack(runtime, id)?;
-    let block = runtime.get_block(id).clone();
+  fn push_stack_until_text(&mut self, id: BlockId) -> Result<Vec<Block>, RuntimeError> {
+    if !self.meets_requirements_and_chance(id)? {
+      return self.find_next(id);
+    }
+    let mut blocks = Vec::default();
+    blocks.push(self.push_stack(id)?);
+    let block = self.get_cuentitos_block(id)?.clone();
 
     match block {
       cuentitos_common::Block::Section { id: _, settings: _ } => {
-        modified_variables.append(&mut Self::update_stack(runtime)?);
-        Ok(modified_variables)
-      }
-      cuentitos_common::Block::Subsection { id: _, settings: _ } => {
-        modified_variables.append(&mut Self::update_stack(runtime)?);
-        Ok(modified_variables)
+        blocks.append(&mut self.update_stack()?);
+        Ok(blocks)
       }
       cuentitos_common::Block::Text { id: _, settings: _ } => {
-        runtime.update_choices()?;
-        Ok(modified_variables)
+        self.update_choices()?;
+        Ok(blocks)
       }
       cuentitos_common::Block::Choice { id: _, settings: _ } => {
-        runtime.update_choices()?;
-        Ok(modified_variables)
+        self.update_choices()?;
+        Ok(blocks)
       }
       cuentitos_common::Block::Bucket {
         name: _,
         settings: _,
       } => {
-        if let Some(next) = runtime.get_random_block_from_bucket(block.get_settings())? {
-          modified_variables.append(&mut Self::push_stack_until_text(runtime, next)?);
-          Ok(modified_variables)
+        if let Some(next) = self.get_random_block_from_bucket(block.get_settings())? {
+          blocks.append(&mut self.push_stack_until_text(next)?);
+          Ok(blocks)
         } else {
-          runtime.update_choices()?;
-          Ok(modified_variables)
+          blocks.append(&mut self.update_stack()?);
+          Ok(blocks)
         }
       }
       cuentitos_common::Block::Divert { next, settings: _ } => {
         match next {
           NextBlock::BlockId(id) => {
-            modified_variables.append(&mut Self::push_stack_until_text(runtime, id)?)
+            self.block_stack.clear();
+            blocks.append(&mut self.push_stack_until_text(id)?)
           }
           NextBlock::EndOfFile => {
-            runtime.reset();
+            self.reset();
             return Err(RuntimeError::StoryFinished);
           }
           NextBlock::Section(section) => {
-            modified_variables.append(&mut runtime.divert(&section)?);
-            modified_variables.append(&mut Self::update_stack(runtime)?)
+            blocks.append(&mut self.divert(&section)?);
+            blocks.append(&mut self.update_stack()?)
           }
         }
-        Ok(modified_variables)
+        Ok(blocks)
       }
       cuentitos_common::Block::BoomerangDivert { next, settings: _ } => {
         match next {
-          NextBlock::BlockId(id) => {
-            modified_variables.append(&mut Self::push_stack_until_text(runtime, id)?)
-          }
+          NextBlock::BlockId(id) => blocks.append(&mut self.push_stack_until_text(id)?),
           NextBlock::EndOfFile => {
-            runtime.reset();
+            self.reset();
             return Err(RuntimeError::StoryFinished);
           }
           NextBlock::Section(section) => {
-            modified_variables.append(&mut runtime.boomerang_divert(&section)?);
-            modified_variables.append(&mut Self::update_stack(runtime)?)
+            blocks.append(&mut self.boomerang_divert(&section)?);
+            blocks.append(&mut self.update_stack()?)
           }
         }
-        Ok(modified_variables)
+        Ok(blocks)
       }
     }
   }
 
-  fn push_stack(runtime: &mut Runtime, id: BlockId) -> Result<ModifiedVariables, RuntimeError> {
-    runtime.block_stack.push(id);
-
-    if !runtime.meets_requirements(id)? {
-      return Self::pop_stack_and_find_next(runtime);
-    }
-
-    if runtime.get_block(id).get_settings().unique {
-      if runtime.game_state.uniques_played.contains(&id) {
-        return Self::pop_stack_and_find_next(runtime);
-      } else {
-        runtime.game_state.uniques_played.push(id);
+  fn get_chance(&self, id: BlockId, parent_id: Option<BlockId>) -> Result<Chance, RuntimeError> {
+    let block = self.get_cuentitos_block(id)?;
+    match block.get_settings().chance {
+      cuentitos_common::Chance::None => Ok(Chance::None),
+      cuentitos_common::Chance::Frequency(_) => {
+        let parent = match parent_id {
+          Some(parent_id) => self.get_cuentitos_block(parent_id)?,
+          None => return Err(RuntimeError::FrequencyOutOfBucket),
+        };
+        let total_frequency = self.get_total_frequency(parent.get_settings())?;
+        let value = self.get_frequency_with_modifier(block.get_settings())?;
+        Ok(Chance::Frequency {
+          value,
+          total_frequency,
+        })
       }
+      cuentitos_common::Chance::Probability(value) => Ok(Chance::Probability(value * 100.)),
     }
-
-    runtime.game_state.section = runtime.get_block(id).get_settings().section.clone();
-    runtime.apply_modifiers()
   }
 
-  fn update_stack(runtime: &mut Runtime) -> Result<ModifiedVariables, RuntimeError> {
-    if runtime.database.blocks.is_empty() {
+  fn push_stack(&mut self, id: BlockId) -> Result<Block, RuntimeError> {
+    let parent_id = self.block_stack.last().map(|stack_data| stack_data.id);
+    let chance = self.get_chance(id, parent_id)?;
+    let block_stack_data = BlockStackData { id, chance };
+
+    let cuentitos_block = self.get_cuentitos_block(id)?.clone();
+    if cuentitos_block.get_settings().unique {
+      self.game_state.uniques_played.push(id);
+    }
+
+    self.game_state.section = cuentitos_block.get_settings().section.clone();
+    let modifiers = self
+      .get_cuentitos_block(block_stack_data.id)?
+      .get_settings()
+      .modifiers
+      .clone();
+    self.apply_modifiers(&modifiers)?;
+
+    let block = self.get_block(&block_stack_data)?;
+    self.block_stack.push(block_stack_data);
+
+    Ok(block)
+  }
+
+  fn update_stack(&mut self) -> Result<Vec<Block>, RuntimeError> {
+    if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
     }
 
-    if runtime.block_stack.is_empty() {
-      return Self::push_stack_until_text(runtime, 0);
+    if self.block_stack.is_empty() {
+      return self.push_stack_until_text(0);
     }
 
-    let last_block_id = match runtime.block_stack.last() {
-      Some(id) => id,
+    let last_block_id = match self.block_stack.last() {
+      Some(block_stack_data) => block_stack_data.id,
       None => return Err(RuntimeError::EmptyStack),
     };
 
-    if last_block_id >= &runtime.database.blocks.len() {
-      return Err(RuntimeError::InvalidBlockId(*last_block_id));
+    if last_block_id >= self.database.blocks.len() {
+      return Err(RuntimeError::InvalidBlockId(last_block_id));
     }
 
-    let settings = runtime.get_block(*last_block_id).get_settings().clone();
+    let settings = self
+      .get_cuentitos_block(last_block_id)?
+      .get_settings()
+      .clone();
 
     if !settings.children.is_empty() {
-      if let Some(child) = runtime.get_next_child_in_stack(&settings, 0)? {
-        return Self::push_stack_until_text(runtime, child);
+      if let Some(child) = self.get_next_child_in_stack(&settings, 0)? {
+        return self.push_stack_until_text(child);
       }
     }
 
-    Self::pop_stack_and_find_next(runtime)
+    self.pop_stack_and_find_next()
   }
 
   fn get_next_child_in_stack(
     &mut self,
-    settings: &BlockSettings,
+    settings: &cuentitos_common::BlockSettings,
     next_child: usize,
   ) -> Result<Option<BlockId>, RuntimeError> {
     if next_child >= settings.children.len() {
@@ -703,75 +888,86 @@ impl Runtime {
     }
 
     let id = settings.children[next_child];
-    match self.get_block(id) {
+    match self.get_cuentitos_block(id)? {
       cuentitos_common::Block::Choice { id: _, settings: _ } => {
         if self.choices.contains(&id) {
-          Err(RuntimeError::WaitingForChoice(self.get_choices_strings()))
+          Err(RuntimeError::WaitingForChoice(
+            self.get_current_choices_strings()?,
+          ))
         } else {
           self.get_next_child_in_stack(settings, next_child + 1)
         }
-      }
-      cuentitos_common::Block::Section { id, settings: _ } => {
-        Err(RuntimeError::SectionAtLowerLevel(id.clone()))
       }
       _ => Ok(Some(settings.children[0])),
     }
   }
 
-  fn pop_stack_and_find_next(runtime: &mut Runtime) -> Result<ModifiedVariables, RuntimeError> {
-    let last_block_id: usize = match runtime.block_stack.last() {
-      Some(id) => *id,
-      None => return Err(RuntimeError::EmptyStack),
-    };
-
-    runtime.block_stack.pop();
-    if runtime.block_stack.is_empty() {
-      return Self::push_stack_until_text(runtime, last_block_id + 1);
+  fn find_next(&mut self, previous_id: BlockId) -> Result<Vec<Block>, RuntimeError> {
+    if self.block_stack.is_empty() {
+      return self.push_stack_until_text(previous_id + 1);
     }
 
-    let new_block_id: &usize = match runtime.block_stack.last() {
-      Some(id) => id,
+    let new_block_id: usize = match self.block_stack.last() {
+      Some(block_stack_data) => block_stack_data.id,
       None => return Err(RuntimeError::EmptyStack),
     };
 
-    let parent = &runtime.database.blocks[*new_block_id].clone();
+    let parent = self.database.blocks[new_block_id].clone();
 
     let parent_settings = parent.get_settings();
     let mut previous_block_found = false;
     for sibling in &parent_settings.children {
       if previous_block_found {
-        if let cuentitos_common::Block::Choice { id: _, settings: _ } = runtime.get_block(*sibling)
+        if let cuentitos_common::Block::Choice { id: _, settings: _ } =
+          self.get_cuentitos_block(*sibling)?
         {
           continue;
         }
-        return Self::push_stack_until_text(runtime, *sibling);
+        return self.push_stack_until_text(*sibling);
       }
-      if *sibling == last_block_id {
+      if *sibling == previous_id {
         previous_block_found = true;
       }
     }
 
-    Self::pop_stack_and_find_next(runtime)
+    self.pop_stack_and_find_next()
   }
 
-  fn get_random_block_from_bucket(
-    &mut self,
-    settings: &BlockSettings,
-  ) -> Result<Option<BlockId>, RuntimeError> {
+  fn pop_stack_and_find_next(&mut self) -> Result<Vec<Block>, RuntimeError> {
+    let last_block_id: usize = match self.block_stack.last() {
+      Some(block_stack_data) => block_stack_data.id,
+      None => return Err(RuntimeError::EmptyStack),
+    };
+
+    self.block_stack.pop();
+    self.find_next(last_block_id)
+  }
+
+  fn get_total_frequency(
+    &self,
+    bucket_settings: &cuentitos_common::BlockSettings,
+  ) -> Result<u32, RuntimeError> {
     let mut total_frequency = 0;
-    for child in &settings.children {
+    for child in &bucket_settings.children {
       if self.meets_requirements(*child)? {
-        let child_settings = self.get_block(*child).get_settings();
+        let child_settings = self.get_cuentitos_block(*child)?.get_settings();
         let frequency = self.get_frequency_with_modifier(child_settings)?;
         total_frequency += frequency;
       }
     }
+    Ok(total_frequency)
+  }
 
+  fn get_random_block_from_bucket(
+    &mut self,
+    settings: &cuentitos_common::BlockSettings,
+  ) -> Result<Option<BlockId>, RuntimeError> {
+    let total_frequency = self.get_total_frequency(settings)?;
     let mut random_number = self.random_with_max(total_frequency);
 
     for child in &settings.children {
       if self.meets_requirements(*child)? {
-        let child_settings = self.get_block(*child).get_settings();
+        let child_settings = self.get_cuentitos_block(*child)?.get_settings();
         let frequency = self.get_frequency_with_modifier(child_settings)?;
         if random_number <= frequency {
           return Ok(Some(*child));
@@ -789,27 +985,27 @@ impl Runtime {
       return Err(RuntimeError::EmptyStack);
     }
 
-    let last_block_id: &usize = match self.block_stack.last() {
-      Some(id) => id,
+    let last_block_id: usize = match self.block_stack.last() {
+      Some(block_stack_data) => block_stack_data.id,
       None => return Err(RuntimeError::EmptyStack),
     };
 
-    let last_block = self.get_block(*last_block_id).clone();
+    let last_block = self.get_cuentitos_block(last_block_id)?.clone();
 
     let settings = last_block.get_settings();
 
     for child in &settings.children {
       if *child < self.database.blocks.len() {
-        match self.get_block(*child) {
+        match self.get_cuentitos_block(*child)? {
           cuentitos_common::Block::Choice { id: _, settings: _ } => {
-            if self.meets_requirements(*child)? {
+            if self.meets_requirements_and_chance(*child)? {
               self.choices.push(*child)
             }
           }
           cuentitos_common::Block::Bucket { name: _, settings } => {
             if let Some(picked_block) = self.get_random_block_from_bucket(&settings.clone())? {
               if let cuentitos_common::Block::Choice { id: _, settings: _ } =
-                self.get_block(picked_block)
+                self.get_cuentitos_block(picked_block)?
               {
                 self.choices.push(picked_block);
               }
@@ -819,7 +1015,6 @@ impl Runtime {
         }
       }
     }
-
     Ok(())
   }
 }
@@ -829,11 +1024,14 @@ mod test {
 
   use std::{collections::HashMap, fmt::Display, str::FromStr, vec};
 
-  use crate::{Runtime, RuntimeError};
+  use crate::{
+    runtime::{BlockStackData, Chance},
+    Runtime, RuntimeError,
+  };
   use cuentitos_common::{
-    condition::ComparisonOperator, modifier::ModifierOperator, Block, BlockSettings, Chance,
-    Condition, Config, Database, FrequencyModifier, Function, I18n, LanguageDb, LanguageId,
-    Modifier, NextBlock, Requirement, Section, VariableKind,
+    condition::ComparisonOperator, modifier::ModifierOperator, Block, Condition, Config, Database,
+    FrequencyModifier, Function, I18n, LanguageDb, LanguageId, Modifier, NextBlock, Requirement,
+    Section, VariableKind,
   };
 
   #[test]
@@ -845,60 +1043,65 @@ mod test {
 
   #[test]
   fn divert_works_correctly() {
-    let section_1 = Block::Section {
+    let block_section_1 = Block::Section {
       id: "section_1".to_string(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         children: vec![3],
         ..Default::default()
       },
     };
-    let section_2 = Block::Section {
+    let block_section_2 = Block::Section {
       id: "section_2".to_string(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         children: vec![2],
         ..Default::default()
       },
     };
-    let subsection = Block::Subsection {
+    let block_subsection = Block::Section {
       id: "subsection".to_string(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         children: vec![4],
         ..Default::default()
       },
     };
     let text_1 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
     let text_2 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let mut sections: HashMap<Section, usize> = HashMap::default();
-    sections.insert(
-      Section {
-        section_name: "section_1".to_string(),
-        subsection_name: None,
-      },
-      0,
-    );
-    sections.insert(
-      Section {
-        section_name: "section_2".to_string(),
-        subsection_name: None,
-      },
-      1,
-    );
-    sections.insert(
-      Section {
-        section_name: "section_2".to_string(),
-        subsection_name: Some("subsection".to_string()),
-      },
-      2,
-    );
+
+    let section_1 = Section {
+      name: "section_1".to_string(),
+      parent: None,
+    };
+
+    sections.insert(section_1.clone(), 0);
+
+    let section_2 = Section {
+      name: "section_2".to_string(),
+      parent: None,
+    };
+
+    sections.insert(section_2.clone(), 1);
+
+    let subsection = Section {
+      name: "subsection".to_string(),
+      parent: Some(Box::new(section_2)),
+    };
+    sections.insert(subsection.clone(), 2);
     let database = Database {
-      blocks: vec![section_1, section_2, subsection, text_1, text_2],
+      blocks: vec![
+        block_section_1,
+        block_section_2,
+        block_subsection,
+        text_1,
+        text_2,
+      ],
       sections,
       ..Default::default()
     };
@@ -907,79 +1110,92 @@ mod test {
       database,
       ..Default::default()
     };
-    runtime
-      .divert(&Section {
-        section_name: "section_2".to_string(),
-        subsection_name: Some("subsection".to_string()),
-      })
-      .unwrap();
-    assert_eq!(runtime.block_stack, vec![1, 2]);
+    runtime.divert(&subsection).unwrap();
+    assert_eq!(
+      runtime.block_stack,
+      vec![
+        BlockStackData {
+          id: 1,
+          chance: Chance::None
+        },
+        BlockStackData {
+          id: 2,
+          chance: Chance::None
+        },
+      ]
+    );
 
-    runtime
-      .divert(&Section {
-        section_name: "section_1".to_string(),
-        subsection_name: None,
-      })
-      .unwrap();
-    assert_eq!(runtime.block_stack, vec![0]);
+    runtime.divert(&section_1).unwrap();
+    assert_eq!(
+      runtime.block_stack,
+      vec![BlockStackData {
+        id: 0,
+        chance: Chance::None
+      }]
+    );
   }
 
   #[test]
   fn boomerang_divert_works_correctly() {
-    let section_1 = Block::Section {
+    let block_section_1 = Block::Section {
       id: "section_1".to_string(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         children: vec![3],
         ..Default::default()
       },
     };
-    let section_2 = Block::Section {
+    let block_section_2 = Block::Section {
       id: "section_2".to_string(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         children: vec![2],
         ..Default::default()
       },
     };
-    let subsection = Block::Subsection {
+    let block_subsection = Block::Section {
       id: "subsection".to_string(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         children: vec![4],
         ..Default::default()
       },
     };
     let text_1 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
     let text_2 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let mut sections: HashMap<Section, usize> = HashMap::default();
-    sections.insert(
-      Section {
-        section_name: "section_1".to_string(),
-        subsection_name: None,
-      },
-      0,
-    );
-    sections.insert(
-      Section {
-        section_name: "section_2".to_string(),
-        subsection_name: None,
-      },
-      1,
-    );
-    sections.insert(
-      Section {
-        section_name: "section_2".to_string(),
-        subsection_name: Some("subsection".to_string()),
-      },
-      2,
-    );
+
+    let section_1 = Section {
+      name: "section_1".to_string(),
+      parent: None,
+    };
+
+    sections.insert(section_1.clone(), 0);
+
+    let section_2 = Section {
+      name: "section_2".to_string(),
+      parent: None,
+    };
+
+    sections.insert(section_2.clone(), 1);
+
+    let subsection = Section {
+      name: "subsection".to_string(),
+      parent: Some(Box::new(section_2)),
+    };
+    sections.insert(subsection.clone(), 2);
     let database = Database {
-      blocks: vec![section_1, section_2, subsection, text_1, text_2],
+      blocks: vec![
+        block_section_1,
+        block_section_2,
+        block_subsection,
+        text_1,
+        text_2,
+      ],
       sections,
       ..Default::default()
     };
@@ -988,26 +1204,44 @@ mod test {
       database,
       ..Default::default()
     };
-    runtime
-      .boomerang_divert(&Section {
-        section_name: "section_2".to_string(),
-        subsection_name: Some("subsection".to_string()),
-      })
-      .unwrap();
-    assert_eq!(runtime.block_stack, vec![1, 2]);
+    runtime.boomerang_divert(&subsection).unwrap();
+    assert_eq!(
+      runtime.block_stack,
+      vec![
+        BlockStackData {
+          id: 1,
+          chance: Chance::None
+        },
+        BlockStackData {
+          id: 2,
+          chance: Chance::None
+        },
+      ]
+    );
 
-    runtime
-      .boomerang_divert(&Section {
-        section_name: "section_1".to_string(),
-        subsection_name: None,
-      })
-      .unwrap();
-    assert_eq!(runtime.block_stack, vec![1, 2, 0]);
+    runtime.boomerang_divert(&section_1).unwrap();
+    assert_eq!(
+      runtime.block_stack,
+      vec![
+        BlockStackData {
+          id: 1,
+          chance: Chance::None
+        },
+        BlockStackData {
+          id: 2,
+          chance: Chance::None
+        },
+        BlockStackData {
+          id: 0,
+          chance: Chance::None
+        }
+      ]
+    );
   }
 
   #[test]
   fn get_choices_works_correctly() {
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       children: vec![1, 2, 3],
       ..Default::default()
     };
@@ -1019,17 +1253,17 @@ mod test {
 
     let choice_1 = Block::Choice {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let choice_2 = Block::Choice {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let child_text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -1039,7 +1273,10 @@ mod test {
 
     let mut runtime = Runtime {
       database,
-      block_stack: vec![0],
+      block_stack: vec![BlockStackData {
+        id: 0,
+        chance: Chance::None,
+      }],
       ..Default::default()
     };
 
@@ -1049,7 +1286,7 @@ mod test {
   }
   #[test]
   fn get_choices_strings_works_correctly() {
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       children: vec![1, 2, 3],
       ..Default::default()
     };
@@ -1061,17 +1298,17 @@ mod test {
 
     let choice_1 = Block::Choice {
       id: "a".to_string(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let choice_2 = Block::Choice {
       id: "b".to_string(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let child_text = Block::Text {
       id: "c".to_string(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let mut en: LanguageDb = HashMap::default();
@@ -1095,19 +1332,22 @@ mod test {
 
     let mut runtime = Runtime {
       database,
-      block_stack: vec![0],
+      block_stack: vec![BlockStackData {
+        id: 0,
+        chance: Chance::None,
+      }],
       current_locale: "en".to_string(),
       ..Default::default()
     };
     runtime.update_choices().unwrap();
-    let choices = runtime.get_choices_strings();
+    let choices = runtime.get_current_choices_strings().unwrap();
     let expected_result = vec!["a".to_string(), "b".to_string()];
     assert_eq!(choices, expected_result);
   }
 
   #[test]
   fn updates_stack_to_first_child_correctly() {
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       children: vec![1, 2],
       ..Default::default()
     };
@@ -1118,12 +1358,12 @@ mod test {
 
     let child_1 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let child_2 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -1133,16 +1373,25 @@ mod test {
 
     let mut runtime = Runtime {
       database,
-      block_stack: vec![0],
+      block_stack: vec![BlockStackData {
+        id: 0,
+        chance: Chance::None,
+      }],
       ..Default::default()
     };
     Runtime::update_stack(&mut runtime).unwrap();
-    assert_eq!(*runtime.block_stack.last().unwrap(), 1);
+    assert_eq!(
+      *runtime.block_stack.last().unwrap(),
+      BlockStackData {
+        id: 1,
+        chance: Chance::None
+      }
+    );
   }
 
   #[test]
   fn update_stack_to_next_sibling_correctly() {
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       children: vec![2, 3, 4],
       ..Default::default()
     };
@@ -1154,22 +1403,22 @@ mod test {
 
     let sibling = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let child_1 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let child_2 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let child_3 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -1185,21 +1434,48 @@ mod test {
 
     let mut runtime = Runtime {
       database,
-      block_stack: vec![0, 2],
+      block_stack: vec![
+        BlockStackData {
+          id: 0,
+          chance: Chance::None,
+        },
+        BlockStackData {
+          id: 2,
+          chance: Chance::None,
+        },
+      ],
       ..Default::default()
     };
 
     Runtime::update_stack(&mut runtime).unwrap();
-    assert_eq!(*runtime.block_stack.last().unwrap(), 3);
+    assert_eq!(
+      *runtime.block_stack.last().unwrap(),
+      BlockStackData {
+        id: 3,
+        chance: Chance::None
+      }
+    );
     Runtime::update_stack(&mut runtime).unwrap();
-    assert_eq!(*runtime.block_stack.last().unwrap(), 4);
+    assert_eq!(
+      *runtime.block_stack.last().unwrap(),
+      BlockStackData {
+        id: 4,
+        chance: Chance::None
+      }
+    );
     Runtime::update_stack(&mut runtime).unwrap();
-    assert_eq!(*runtime.block_stack.last().unwrap(), 1);
+    assert_eq!(
+      *runtime.block_stack.last().unwrap(),
+      BlockStackData {
+        id: 1,
+        chance: Chance::None
+      }
+    );
   }
 
   #[test]
   fn current_block_works_correctly() {
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       children: vec![1, 2],
       ..Default::default()
     };
@@ -1210,12 +1486,12 @@ mod test {
 
     let choice_1 = Block::Choice {
       id: "1".to_string(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let choice_2 = Block::Choice {
       id: "2".to_string(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let mut en: LanguageDb = HashMap::default();
@@ -1239,16 +1515,26 @@ mod test {
 
     let mut runtime = Runtime {
       database,
-      block_stack: vec![0],
+      block_stack: vec![BlockStackData {
+        id: 0,
+        chance: Chance::None,
+      }],
       current_locale: "en".to_string(),
       ..Default::default()
     };
 
     runtime.update_choices().unwrap();
-    let output = runtime.current_block().unwrap();
-    let expected_output = crate::Block {
+    let output = runtime.current().unwrap();
+    let block = runtime
+      .get_block(&BlockStackData {
+        id: 0,
+        chance: Chance::None,
+      })
+      .unwrap();
+    let expected_output = crate::Output {
       text: "parent".to_string(),
       choices: vec!["1".to_string(), "2".to_string()],
+      blocks: vec![block],
       ..Default::default()
     };
 
@@ -1257,7 +1543,7 @@ mod test {
 
   #[test]
   fn next_block_works_correctly() {
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       children: vec![1, 2],
       ..Default::default()
     };
@@ -1269,12 +1555,12 @@ mod test {
 
     let choice_1 = Block::Choice {
       id: "1".to_string(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let choice_2 = Block::Choice {
       id: "2".to_string(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let mut en: LanguageDb = HashMap::default();
@@ -1302,29 +1588,34 @@ mod test {
       ..Default::default()
     };
 
-    let output = runtime.next_block().unwrap();
-    let expected_output = (
-      crate::Block {
-        text: "parent".to_string(),
-        choices: vec!["1".to_string(), "2".to_string()],
-        ..Default::default()
-      },
-      Vec::default(),
-    );
+    let output = runtime.progress_story().unwrap();
+    let block = runtime
+      .get_block(&BlockStackData {
+        id: 0,
+        chance: Chance::None,
+      })
+      .unwrap();
+
+    let expected_output = crate::Output {
+      text: "parent".to_string(),
+      choices: vec!["1".to_string(), "2".to_string()],
+      blocks: vec![block],
+      ..Default::default()
+    };
 
     assert_eq!(output, expected_output);
-    assert_eq!(runtime.block_stack, vec![0]);
+    assert_eq!(
+      runtime.block_stack,
+      vec![BlockStackData {
+        id: 0,
+        chance: Chance::None
+      }]
+    );
   }
-  /*
-  #[test]
-  fn next_output_doesnt_work_with_empty_file() {
-    let mut runtime = Runtime::new(Database::default());
-    assert_eq!(runtime.next_block(), None);
-  } */
 
   #[test]
   fn get_random_block_from_bucket_works_correctly() {
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       children: vec![1, 2],
       ..Default::default()
     };
@@ -1334,7 +1625,7 @@ mod test {
       settings,
     };
 
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       chance: cuentitos_common::Chance::Frequency(50),
       ..Default::default()
     };
@@ -1344,7 +1635,7 @@ mod test {
       settings,
     };
 
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       chance: cuentitos_common::Chance::Frequency(50),
       ..Default::default()
     };
@@ -1360,20 +1651,31 @@ mod test {
     };
     let mut runtime = Runtime {
       database,
-      block_stack: vec![0],
+      block_stack: vec![BlockStackData {
+        id: 0,
+        chance: Chance::None,
+      }],
       ..Default::default()
     };
 
     runtime.set_seed(2);
 
-    let bucket_settings = runtime.get_block(0).get_settings().clone();
+    let bucket_settings = runtime
+      .get_cuentitos_block(0)
+      .unwrap()
+      .get_settings()
+      .clone();
     let id = runtime
       .get_random_block_from_bucket(&bucket_settings)
       .unwrap()
       .unwrap();
     assert_eq!(id, 1);
     Runtime::push_stack_until_text(&mut runtime, 1).unwrap();
-    let bucket_settings = runtime.get_block(0).get_settings().clone();
+    let bucket_settings = runtime
+      .get_cuentitos_block(0)
+      .unwrap()
+      .get_settings()
+      .clone();
     let id = runtime
       .get_random_block_from_bucket(&bucket_settings)
       .unwrap()
@@ -1444,8 +1746,9 @@ mod test {
       operator: ModifierOperator::Divide,
     };
 
-    let settings = BlockSettings {
-      modifiers: vec![modifier_1, modifier_2, modifier_3, modifier_4],
+    let modifiers = vec![modifier_1, modifier_2, modifier_3, modifier_4];
+    let settings = cuentitos_common::BlockSettings {
+      modifiers: modifiers.clone(),
       ..Default::default()
     };
     let block = Block::Text {
@@ -1460,11 +1763,14 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let current_health: i32 = runtime.get_variable("health").unwrap();
     let expected_value = variable_kind.get_default_value().parse().unwrap();
     assert_eq!(current_health, expected_value);
-    runtime.apply_modifiers().unwrap();
+    runtime.apply_modifiers(&modifiers).unwrap();
     let current_health: i32 = runtime.get_variable("health").unwrap();
     assert_eq!(current_health, 75);
   }
@@ -1503,8 +1809,9 @@ mod test {
       operator: ModifierOperator::Divide,
     };
 
-    let settings = BlockSettings {
-      modifiers: vec![modifier_1, modifier_2, modifier_3, modifier_4],
+    let modifiers = vec![modifier_1, modifier_2, modifier_3, modifier_4];
+    let settings = cuentitos_common::BlockSettings {
+      modifiers: modifiers.clone(),
       ..Default::default()
     };
     let block = Block::Text {
@@ -1519,11 +1826,14 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let current_speed: f32 = runtime.get_variable("speed").unwrap();
     let expected_value = variable_kind.get_default_value().parse().unwrap();
     assert_eq!(current_speed, expected_value);
-    runtime.apply_modifiers().unwrap();
+    runtime.apply_modifiers(&modifiers).unwrap();
     let current_speed: f32 = runtime.get_variable("speed").unwrap();
     assert_eq!(current_speed, 0.75);
   }
@@ -1544,8 +1854,8 @@ mod test {
       value: "true".to_string(),
       ..Default::default()
     };
-    let settings = BlockSettings {
-      modifiers: vec![modifier],
+    let settings = cuentitos_common::BlockSettings {
+      modifiers: vec![modifier.clone()],
       ..Default::default()
     };
     let block = Block::Text {
@@ -1560,11 +1870,14 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let current_bike: bool = runtime.get_variable("bike").unwrap();
     let expected_value = variable_kind.get_default_value().parse().unwrap();
     assert_eq!(current_bike, expected_value);
-    runtime.apply_modifiers().unwrap();
+    runtime.apply_modifiers(&vec![modifier]).unwrap();
     let current_bike: bool = runtime.get_variable("bike").unwrap();
     assert_eq!(current_bike, true);
   }
@@ -1585,8 +1898,8 @@ mod test {
       value: "hello".to_string(),
       ..Default::default()
     };
-    let settings = BlockSettings {
-      modifiers: vec![modifier],
+    let settings = cuentitos_common::BlockSettings {
+      modifiers: vec![modifier.clone()],
       ..Default::default()
     };
     let block = Block::Text {
@@ -1601,12 +1914,15 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let current_message: String = runtime.get_variable("message").unwrap();
     let expected_value = variable_kind.get_default_value();
     assert_eq!(current_message, expected_value);
 
-    runtime.apply_modifiers().unwrap();
+    runtime.apply_modifiers(&vec![modifier]).unwrap();
     let current_message: String = runtime.get_variable("message").unwrap();
     assert_eq!(current_message, "hello".to_string());
   }
@@ -1627,8 +1943,8 @@ mod test {
       value: "Night".to_string(),
       ..Default::default()
     };
-    let settings = BlockSettings {
-      modifiers: vec![modifier],
+    let settings = cuentitos_common::BlockSettings {
+      modifiers: vec![modifier.clone()],
       ..Default::default()
     };
     let block = Block::Text {
@@ -1643,13 +1959,16 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
 
     let current_time_of_day: TimeOfDay = runtime.get_variable("time_of_day").unwrap();
     let expected_value = variable_kind.get_default_value().parse().unwrap();
     assert_eq!(current_time_of_day, expected_value);
 
-    runtime.apply_modifiers().unwrap();
+    runtime.apply_modifiers(&vec![modifier]).unwrap();
     let current_time_of_day: TimeOfDay = runtime.get_variable("time_of_day").unwrap();
     assert_eq!(current_time_of_day, TimeOfDay::Night);
   }
@@ -1788,7 +2107,7 @@ mod test {
         value: "100".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -1804,7 +2123,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("health", 100).unwrap();
@@ -1833,7 +2155,7 @@ mod test {
         value: "100".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -1849,7 +2171,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("health", 100).unwrap();
@@ -1878,7 +2203,7 @@ mod test {
         value: "100".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -1894,7 +2219,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("health", 100).unwrap();
@@ -1923,7 +2251,7 @@ mod test {
         value: "100".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -1939,7 +2267,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("health", 100).unwrap();
@@ -1967,7 +2298,7 @@ mod test {
         value: "100".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -1983,7 +2314,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("health", 100).unwrap();
@@ -2011,7 +2345,7 @@ mod test {
         value: "100".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2027,7 +2361,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("health", 100).unwrap();
@@ -2055,7 +2392,7 @@ mod test {
         value: "1.5".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2071,7 +2408,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("speed", 1.5 as f32).unwrap();
@@ -2100,7 +2440,7 @@ mod test {
         value: "1.5".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2116,7 +2456,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("speed", 1.5 as f32).unwrap();
@@ -2145,7 +2488,7 @@ mod test {
         value: "1.5".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2161,7 +2504,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("speed", 1.5 as f32).unwrap();
@@ -2190,7 +2536,7 @@ mod test {
         value: "1.5".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2206,7 +2552,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("speed", 1.5 as f32).unwrap();
@@ -2234,7 +2583,7 @@ mod test {
         value: "1.5".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2250,7 +2599,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("speed", 1.5 as f32).unwrap();
@@ -2278,7 +2630,7 @@ mod test {
         value: "1.5".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2294,7 +2646,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("speed", 1.5 as f32).unwrap();
@@ -2323,7 +2678,7 @@ mod test {
         value: "true".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2339,7 +2694,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime.set_variable("bike", true).unwrap();
@@ -2365,7 +2723,7 @@ mod test {
         value: "true".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2381,7 +2739,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime.set_variable("bike", true).unwrap();
@@ -2407,7 +2768,7 @@ mod test {
         value: "hello".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2423,7 +2784,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime
@@ -2451,7 +2815,7 @@ mod test {
         value: "hello".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2467,7 +2831,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime
@@ -2495,7 +2862,7 @@ mod test {
         value: "Night".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2511,7 +2878,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(!meets_requirement);
     runtime
@@ -2539,7 +2909,7 @@ mod test {
         value: "Night".to_string(),
       },
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       requirements: vec![requirement],
       ..Default::default()
     };
@@ -2555,7 +2925,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let meets_requirement = runtime.meets_requirements(0).unwrap();
     assert!(meets_requirement);
     runtime
@@ -2584,9 +2957,9 @@ mod test {
       },
       value: -100,
     };
-    let settings = BlockSettings {
+    let settings = cuentitos_common::BlockSettings {
       frequency_modifiers: vec![freq_mod],
-      chance: Chance::Frequency(100),
+      chance: cuentitos_common::Chance::Frequency(100),
       ..Default::default()
     };
     let block = Block::Text {
@@ -2601,7 +2974,10 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![0];
+    runtime.block_stack = vec![BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    }];
     let frequency_with_modifier = runtime.get_frequency_with_modifier(&settings).unwrap();
     assert_eq!(frequency_with_modifier, 100);
     runtime.set_variable("bike", true).unwrap();
@@ -2613,7 +2989,7 @@ mod test {
   fn unique_only_plays_once() {
     let section = Block::Section {
       id: "section".to_string(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         children: vec![1, 2, 3],
         ..Default::default()
       },
@@ -2622,15 +2998,15 @@ mod test {
     let mut sections: HashMap<Section, usize> = HashMap::default();
     sections.insert(
       Section {
-        section_name: "section".to_string(),
-        subsection_name: None,
+        name: "section".to_string(),
+        parent: None,
       },
       0,
     );
 
     let text_1 = Block::Text {
       id: String::default(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         unique: true,
         ..Default::default()
       },
@@ -2638,15 +3014,15 @@ mod test {
 
     let text_2 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let divert = Block::Divert {
       next: NextBlock::Section(Section {
-        section_name: "section".to_string(),
-        subsection_name: None,
+        name: "section".to_string(),
+        parent: None,
       }),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -2657,11 +3033,11 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     Runtime::update_stack(&mut runtime).unwrap();
-    assert_eq!(1, *runtime.block_stack.last().unwrap());
+    assert_eq!(1, runtime.block_stack.last().unwrap().id);
     Runtime::update_stack(&mut runtime).unwrap();
-    assert_eq!(2, *runtime.block_stack.last().unwrap());
+    assert_eq!(2, runtime.block_stack.last().unwrap().id);
     Runtime::update_stack(&mut runtime).unwrap();
-    assert_eq!(2, *runtime.block_stack.last().unwrap());
+    assert_eq!(2, runtime.block_stack.last().unwrap().id);
   }
 
   #[test]
@@ -2669,7 +3045,7 @@ mod test {
     let tags = vec!["a_tag".to_string()];
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         tags: tags.clone(),
         ..Default::default()
       },
@@ -2680,7 +3056,15 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(database);
-    let output_tags = runtime.next_block().unwrap().0.tags;
+    let output_tags = runtime
+      .progress_story()
+      .unwrap()
+      .blocks
+      .last()
+      .unwrap()
+      .get_settings()
+      .clone()
+      .tags;
     assert_eq!(tags, output_tags);
   }
 
@@ -2693,7 +3077,7 @@ mod test {
 
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         functions: functions.clone(),
         ..Default::default()
       },
@@ -2704,7 +3088,16 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(database);
-    let output_functions = runtime.next_block().unwrap().0.functions;
+    let output_functions = runtime
+      .progress_story()
+      .unwrap()
+      .blocks
+      .last()
+      .unwrap()
+      .clone()
+      .get_settings()
+      .clone()
+      .functions;
     assert_eq!(functions, output_functions);
   }
 
@@ -2712,7 +3105,7 @@ mod test {
   fn invalid_id_in_stack_throws_error() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -2720,7 +3113,10 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(database);
-    runtime.block_stack.push(1);
+    runtime.block_stack.push(BlockStackData {
+      id: 1,
+      chance: Chance::None,
+    });
     let err = Runtime::update_stack(&mut runtime).unwrap_err();
     assert_eq!(err, RuntimeError::InvalidBlockId(1));
   }
@@ -2729,7 +3125,7 @@ mod test {
   fn invalid_id_in_choice_throws_error() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -2746,7 +3142,7 @@ mod test {
   fn next_block_throws_error_if_theres_a_choice() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings {
+      settings: cuentitos_common::BlockSettings {
         children: vec![2],
         ..Default::default()
       },
@@ -2754,12 +3150,12 @@ mod test {
 
     let choice = Block::Choice {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let text_2 = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -2776,37 +3172,10 @@ mod test {
   }
 
   #[test]
-  fn section_at_lower_level_throws_error() {
-    let text = Block::Text {
-      id: String::default(),
-      settings: BlockSettings {
-        children: vec![1],
-        ..Default::default()
-      },
-    };
-
-    let section = Block::Section {
-      id: "section".to_string(),
-      settings: BlockSettings::default(),
-    };
-
-    let database = Database {
-      blocks: vec![text, section],
-      ..Default::default()
-    };
-    let mut runtime = Runtime::new(database);
-    Runtime::update_stack(&mut runtime).unwrap();
-    let err = Runtime::update_stack(&mut runtime).unwrap_err();
-    assert_eq!(
-      err,
-      RuntimeError::SectionAtLowerLevel("section".to_string())
-    );
-  }
-  #[test]
   fn throws_error_when_story_finishes() {
     let text: Block = Block::Divert {
       next: NextBlock::EndOfFile,
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -2821,12 +3190,12 @@ mod test {
   #[test]
   fn divert_throws_error_if_section_doesnt_exist() {
     let section_key = Section {
-      section_name: "section".to_string(),
-      subsection_name: Some("subsection".to_string()),
+      name: "section".to_string(),
+      parent: None,
     };
     let divert = Block::Divert {
       next: NextBlock::Section(section_key.clone()),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
     let database = Database {
       blocks: vec![divert],
@@ -2841,7 +3210,7 @@ mod test {
   fn current_block_can_only_be_text() {
     let choice = Block::Choice {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -2849,8 +3218,11 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(database);
-    runtime.block_stack.push(0);
-    let err = runtime.current_block().unwrap_err();
+    runtime.block_stack.push(BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    });
+    let err = runtime.current().unwrap_err();
 
     assert_eq!(
       err,
@@ -2865,7 +3237,7 @@ mod test {
   fn current_block_throws_error_on_empty_stack() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -2873,23 +3245,7 @@ mod test {
       ..Default::default()
     };
     let runtime = Runtime::new(database);
-    let err = runtime.current_block().unwrap_err();
-    assert_eq!(err, RuntimeError::EmptyStack);
-  }
-
-  #[test]
-  fn apply_modifiers_throws_error_on_empty_stack() {
-    let text = Block::Text {
-      id: String::default(),
-      settings: BlockSettings::default(),
-    };
-
-    let database = Database {
-      blocks: vec![text],
-      ..Default::default()
-    };
-    let mut runtime = Runtime::new(database);
-    let err = runtime.apply_modifiers().unwrap_err();
+    let err = runtime.current().unwrap_err();
     assert_eq!(err, RuntimeError::EmptyStack);
   }
 
@@ -2899,7 +3255,7 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(database);
-    let err = runtime.next_block().unwrap_err();
+    let err = runtime.progress_story().unwrap_err();
     assert_eq!(err, RuntimeError::EmptyDatabase);
     let err = Runtime::update_stack(&mut runtime).unwrap_err();
     assert_eq!(err, RuntimeError::EmptyDatabase);
@@ -2911,7 +3267,7 @@ mod test {
   fn picking_choice_when_no_options_throws_error() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -2928,7 +3284,7 @@ mod test {
   fn picking_invalid_choice_throws_error() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -2951,7 +3307,7 @@ mod test {
   fn setting_unsupported_variable_type_throws_error() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let mut config = Config::default();
@@ -2981,7 +3337,7 @@ mod test {
   fn getting_unsupported_variable_type_throws_error() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let mut config = Config::default();
@@ -3011,7 +3367,7 @@ mod test {
   fn setting_non_existent_variable_throws_error() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -3031,7 +3387,7 @@ mod test {
   fn getting_non_existent_variable_throws_error() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
@@ -3051,7 +3407,7 @@ mod test {
   fn getting_non_existent_variable_kind_throws_error() {
     let text = Block::Text {
       id: String::default(),
-      settings: BlockSettings::default(),
+      settings: cuentitos_common::BlockSettings::default(),
     };
 
     let database = Database {
