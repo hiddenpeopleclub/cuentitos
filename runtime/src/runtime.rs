@@ -316,8 +316,12 @@ impl Runtime {
       return Err(RuntimeError::InvalidBlockId(choices[choice]));
     }
 
-    Self::push_stack_until_text(self, choices[choice])?;
-    self.progress_story()
+    let mut blocks = Self::push_stack_until_text(self, choices[choice])?;
+    let mut output = self.progress_story()?;
+    blocks.append(&mut output.blocks);
+    output.blocks = blocks;
+
+    Ok(output)
   }
 
   pub fn set_variable<R, T>(&mut self, variable: R, value: T) -> Result<(), RuntimeError>
@@ -3428,6 +3432,94 @@ mod test {
       err,
       RuntimeError::VariableDoesntExist("variable".to_string())
     );
+  }
+
+  #[test]
+  fn changed_variables_works_on_progress_story() {
+    let text = Block::Text {
+      id: String::default(),
+      settings: cuentitos_common::BlockSettings {
+        modifiers: vec![Modifier {
+          variable: "health".to_string(),
+          value: "10".to_string(),
+          operator: ModifierOperator::Set,
+        }],
+        ..Default::default()
+      },
+    };
+
+    let mut config = Config::default();
+    config
+      .variables
+      .insert("health".to_string(), VariableKind::Integer);
+
+    let database = Database {
+      blocks: vec![text],
+      config,
+      ..Default::default()
+    };
+    let mut runtime = Runtime::new(database);
+
+    let modified_variables = runtime.progress_story().unwrap().blocks[0]
+      .clone()
+      .get_settings()
+      .changed_variables
+      .clone();
+
+    assert_eq!(modified_variables, vec!["health".to_string()]);
+  }
+
+  #[test]
+  fn changed_variables_works_on_pick_choice() {
+    let text = Block::Text {
+      id: String::default(),
+      settings: cuentitos_common::BlockSettings {
+        children: vec![1],
+        ..Default::default()
+      },
+    };
+
+    let choice = Block::Choice {
+      id: String::default(),
+      settings: cuentitos_common::BlockSettings {
+        modifiers: vec![Modifier {
+          variable: "health".to_string(),
+          value: "10".to_string(),
+          operator: ModifierOperator::Set,
+        }],
+        children: vec![2],
+        ..Default::default()
+      },
+    };
+
+    let end_text = Block::Text {
+      id: String::default(),
+      settings: cuentitos_common::BlockSettings {
+        children: vec![1],
+        ..Default::default()
+      },
+    };
+
+    let mut config = Config::default();
+    config
+      .variables
+      .insert("health".to_string(), VariableKind::Integer);
+
+    let database = Database {
+      blocks: vec![text, choice, end_text],
+      config,
+      ..Default::default()
+    };
+    let mut runtime = Runtime::new(database);
+
+    runtime.progress_story().unwrap();
+    let modified_variables = runtime.pick_choice(0).unwrap().blocks[0]
+      .clone()
+      .get_settings()
+      .changed_variables
+      .clone();
+
+    assert_eq!(modified_variables, vec!["health".to_string()]);
   }
 
   #[derive(Debug, Default, PartialEq, Eq)]

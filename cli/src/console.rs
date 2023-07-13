@@ -516,7 +516,7 @@ mod test {
     let stack_found = runtime.block_stack.clone();
     assert_eq!(expected_stack, stack_found);
 
-    let expected_str = "Entered section 'second_day'\n\nEntered section 'second_day/museum'\n\nYou get to the museum door. You watch through the window. It seems crowded.";
+    let expected_str = "Entered section 'second_day/museum'\n\nYou get to the museum door. You watch through the window. It seems crowded.";
     let str_found =
       Console::process_line(Ok("->second_day/museum".to_string()), &mut rl, &mut runtime).unwrap();
     assert_eq!(expected_str, &str_found);
@@ -529,10 +529,6 @@ mod test {
     assert_eq!(section_found, expected_section);
 
     let expected_stack: Vec<BlockStackData> = vec![
-      BlockStackData {
-        id: 10,
-        chance: Chance::None,
-      },
       BlockStackData {
         id: 18,
         chance: Chance::None,
@@ -576,7 +572,7 @@ mod test {
     let stack_found = runtime.block_stack.clone();
     assert_eq!(expected_stack, stack_found);
 
-    let expected_str = "Entered section 'second_day'\n\nEntered section 'second_day/museum'\n\nYou get to the museum door. You watch through the window. It seems crowded.";
+    let expected_str = "Entered section 'second_day/museum'\n\nYou get to the museum door. You watch through the window. It seems crowded.";
     let str_found = Console::process_line(
       Ok("<->second_day/museum".to_string()),
       &mut rl,
@@ -599,10 +595,6 @@ mod test {
       },
       BlockStackData {
         id: 17,
-        chance: Chance::None,
-      },
-      BlockStackData {
-        id: 10,
         chance: Chance::None,
       },
       BlockStackData {
