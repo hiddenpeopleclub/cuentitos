@@ -916,7 +916,7 @@ fn update_children_probabilities_to_frequency(
 
   for child in children.iter().rev() {
     let child = &mut blocks[child_order + 1][*child];
-    let mut child_settings = child.get_settings_mut();
+    let child_settings = child.get_settings_mut();
     if let Chance::Probability(chance) = child_settings.chance {
       child_settings.chance = Chance::Frequency((chance * 100.) as u32);
     }
