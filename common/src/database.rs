@@ -1,4 +1,4 @@
-use crate::{Block, BlockId, Config, I18n, Result, SectionKey};
+use crate::{Block, BlockId, Config, I18n, Result, Section};
 use rmp_serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -6,7 +6,7 @@ use std::collections::HashMap;
 #[derive(Debug, Default, Serialize, PartialEq, Deserialize, Clone)]
 pub struct Database {
   pub blocks: Vec<Block>,
-  pub sections: HashMap<SectionKey, BlockId>,
+  pub sections: HashMap<Section, BlockId>,
   pub config: Config,
   pub i18n: I18n,
 }

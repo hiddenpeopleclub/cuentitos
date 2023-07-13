@@ -1,4 +1,4 @@
-ReservedKeywords = { "req" | "freq" | "mod" | "unique" | "->" | "`" | "*" | "#" | "##" | "//" }
+ReservedKeywords = { "req" | "freq" | "set" | "unique" | "->" | "`" | "*" | "#" | "##" | "//" | "END" | "<->" }
 Char = { (!NewLine ~ ANY)+ }
 Integer = { "-"? ~ ASCII_DIGIT+ }
 Float = { Integer ~ "." ~ ASCII_DIGIT* }
@@ -17,21 +17,24 @@ Condition = { ( Identifier ~ " "* ~ ( ComparisonOperator ~ " "* )? ~ Value? ) | 
 Requirement = { "req" ~ " "+ ~ Condition ~ " "* }
 Frequency = { "freq" ~ " "+ ~ Condition ~ " "+ ~ ( Float | Integer ) ~ " "* }
 Modifier = { "set" ~ " "+ ~ ( (Identifier ~ " "+ ~ ModifierOperator? ~ " "* ~ Value) | (NotOperator? ~ " "* ~ Identifier) ) ~ " "* }
-Divert = { "->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)? ~ " "*}
 Function = {"`" ~ " "* ~ Identifier ~ (" " ~ Value)* ~ " "* ~ "`"}
 Tag = {"tag" ~ " "+ ~ Identifier}
 Unique = {"unique"}
 
-Command = {NewLine ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Divert | Function | Unique | Tag) } 
+Command = {NewLine+ ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Function | Unique | Tag) } 
 
 Chance = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
 
-Section = {"#" ~ " "* ~ Identifier ~ " "* ~ Command* ~ NewLine ~ ( NewLine | NewBlock | Subsection )* }
-Subsection = { "##" ~ " "* ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
+Section = {"#"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ ( NewLine | NewBlock | Subsection )* }
+Subsection = { Indentation* ~ "##"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine | Subsubsection)*}
+Subsubsection = { Indentation* ~ "###"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine | Subsubsubsection)*}
+Subsubsubsection = { Indentation* ~ "####"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
 
 Text = { !Indentation ~ !ReservedKeywords ~ Chance? ~ String }
 Choice = { "*" ~ " "* ~ Chance? ~ String }
 NamedBucket = { "[" ~ " "* ~ Chance? ~ SnakeCase ~ " "* ~ "]" }
+Divert = { Chance? ~ "->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)* }
+BoomerangDivert = { Chance? ~ "<->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)* }
 
 NewBlock = {
     // The first line in the block
@@ -43,7 +46,7 @@ NewBlock = {
 }
 
 Block = {
-    (NamedBucket | Choice | Text)  ~  " "* ~ Command* ~ " "* ~ (NewLine | EOI) ~ NewBlock*
+    (NamedBucket | Choice | Text | Divert | BoomerangDivert )  ~  " "* ~ Command* ~ " "* ~ (NewLine+ | EOI) ~ NewBlock*
 }
 
 Database = { SOI ~ (NewLine | Block | Section )* ~ EOI }

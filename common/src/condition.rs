@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::VariableId;
 
 use serde::{Deserialize, Serialize};
@@ -13,6 +15,18 @@ pub enum ComparisonOperator {
   LessOrEqualThan,
 }
 
+impl Display for ComparisonOperator {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      ComparisonOperator::Equal => write!(f, "="),
+      ComparisonOperator::NotEqual => write!(f, "!"),
+      ComparisonOperator::GreaterThan => write!(f, ">"),
+      ComparisonOperator::LessThan => write!(f, "<"),
+      ComparisonOperator::GreaterOrEqualThan => write!(f, ">="),
+      ComparisonOperator::LessOrEqualThan => write!(f, "<="),
+    }
+  }
+}
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Condition {
   pub variable: VariableId,
