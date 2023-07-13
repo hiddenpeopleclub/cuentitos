@@ -160,7 +160,15 @@ fn parse_database(
 
   let end_block = Block::Divert {
     next: NextBlock::EndOfFile,
-    settings: BlockSettings::default(),
+    settings: BlockSettings {
+      script: parsing_data.blocks[0]
+        .last()
+        .unwrap()
+        .get_settings()
+        .script
+        .clone(),
+      ..Default::default()
+    },
   };
   parsing_data.blocks[0].push(end_block);
 
