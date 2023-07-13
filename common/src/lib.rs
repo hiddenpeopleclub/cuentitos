@@ -1,40 +1,50 @@
-mod database;
-pub use database::*;
+use serde::{Deserialize, Serialize};
 
-mod knot;
-pub use knot::*;
+pub mod test_utils;
 
-mod stitch;
-pub use stitch::*;
+mod event;
+pub use event::*;
 
-mod block;
-pub use block::*;
+mod event_choice;
+pub use event_choice::*;
 
-mod requirement;
-pub use requirement::*;
+mod event_requirement;
+pub use event_requirement::*;
 
-mod condition;
-pub use condition::*;
-
-mod variable;
-pub use variable::*;
-
-mod frequency;
-pub use frequency::*;
-
-mod divert;
-pub use divert::*;
+mod item;
+pub use item::*;
 
 mod modifier;
 pub use modifier::*;
 
-mod config;
-pub use config::*;
+mod event_result;
+pub use event_result::*;
 
-pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+mod variable;
+pub use variable::*;
+
+mod config;
+pub use config::Config;
+
+mod database;
+pub use database::Database;
 
 mod i18n;
 pub use i18n::*;
 
-mod function;
-pub use function::*;
+pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+pub type ItemId = String;
+pub type ReputationId = String;
+pub type DecisionId = String;
+pub type TileId = String;
+pub type AchievementId = String;
+
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub enum TimeOfDay {
+  #[default]
+  Morning,
+  Noon,
+  Evening,
+  Night,
+}

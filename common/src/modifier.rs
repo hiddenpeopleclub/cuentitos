@@ -1,10 +1,26 @@
+use crate::AchievementId;
+use crate::DecisionId;
+use crate::ItemId;
+use crate::ReputationId;
+use crate::VariableId;
 use serde::{Deserialize, Serialize};
 
-use crate::VariableId;
-
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub struct Modifier {
-  pub variable: VariableId,
-  pub added_value: String,
-  pub is_override: bool,
+pub enum Modifier {
+  #[default]
+  Empty,
+  Variable {
+    id: VariableId,
+    value: String,
+  },
+  Item {
+    id: ItemId,
+    value: String,
+  },
+  Reputation {
+    id: ReputationId,
+    value: String,
+  },
+  Decision(DecisionId),
+  Achievement(AchievementId),
 }

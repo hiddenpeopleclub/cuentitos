@@ -1,37 +1,20 @@
-pub type VariableId = String;
-
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
+pub type VariableId = String;
+
+#[derive(Debug, PartialEq, Eq, Default, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "lowercase")]
 pub enum VariableKind {
   #[default]
   Integer,
   Float,
   Bool,
-  String,
-  Enum(Vec<String>),
+  Enum {
+    values: Vec<String>,
+  },
 }
 
-impl VariableKind {
-  pub fn get_default_value(&self) -> String {
-    match self {
-      VariableKind::Integer => "0".to_string(),
-      VariableKind::Float => "0.0".to_string(),
-      VariableKind::Bool => "false".to_string(),
-      VariableKind::String => "".to_string(),
-      VariableKind::Enum(values) => {
-        if values.is_empty() {
-          "".to_string()
-        } else {
-          values[0].clone()
-        }
-      }
-    }
-  }
-}
-
-#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct Variable {
   pub id: VariableId,
   pub kind: VariableKind,
@@ -58,8 +41,15 @@ mod test {
     let variable_kind = VariableKind::Bool;
     assert!(variable_kind == VariableKind::Bool);
 
-    let variable_kind = VariableKind::Enum(vec!["a-value".to_string()]);
-    assert!(variable_kind == VariableKind::Enum(vec!["a-value".to_string()]));
+    let variable_kind = VariableKind::Enum {
+      values: vec!["a-value".to_string()],
+    };
+    assert!(
+      variable_kind
+        == VariableKind::Enum {
+          values: vec!["a-value".to_string()]
+        }
+    );
   }
 
   #[test]

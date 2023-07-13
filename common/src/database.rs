@@ -1,13 +1,16 @@
-use crate::{Block, BlockId, Config, Result, SectionKey, I18n};
+use crate::Config;
+use crate::Event;
+use crate::I18n;
+use crate::Item;
+use crate::Result;
 use rmp_serde::Deserializer;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
-#[derive(Debug, Default, Serialize, PartialEq, Deserialize, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Database {
-  pub blocks: Vec<Block>,
-  pub sections: HashMap<SectionKey, BlockId>,
   pub config: Config,
+  pub events: Vec<Event>,
+  pub items: Vec<Item>,
   pub i18n: I18n,
 }
 
@@ -17,8 +20,24 @@ impl Database {
     let db: std::result::Result<Database, rmp_serde::decode::Error> =
       Deserialize::deserialize(&mut de);
     match db {
-      Ok(db) => Ok(db),
+      Ok(database) => Ok(database),
       Err(error) => Err(Box::new(error)),
     }
   }
+}
+
+#[cfg(test)]
+mod test {
+  // use crate::test_utils::load_mp_fixture;
+  // use crate::Database;
+
+  // #[test]
+  // fn load_binary_db() {
+  //   let db = load_mp_fixture("database").unwrap();
+  //   let database = Database::from_u8(&db).unwrap();
+
+  //   println!("{:?}", database);
+
+  //   assert_eq!(database.events.len(), 5);
+  // }
 }

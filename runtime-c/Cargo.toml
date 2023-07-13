@@ -1,0 +1,19 @@
+[package]
+name = "cuentitos-runtime-c"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[build-dependencies]
+cbindgen = "0.1.29"
+
+[dependencies]
+cuentitos-common = { path = "../common" }
+cuentitos-runtime = { path = "../runtime" }
+
+serde = { version = "1.0.144", features = ["derive"] }
+rmp-serde = "1.1.1"
+rmp = "^0.8"
+libc = "0.2.139"

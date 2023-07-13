@@ -1,7 +1,9 @@
-use clap::{Parser, Subcommand};
 use notify::event::AccessKind::Close;
 use notify::event::AccessMode::Write;
-use notify::{EventKind, RecursiveMode, Result, Watcher};
+use notify::EventKind;
+use notify::{RecursiveMode, Result, Watcher};
+
+use clap::{Parser, Subcommand};
 use std::path::Path;
 
 mod console;
@@ -17,6 +19,7 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
   Compile {
+    #[clap(default_value = ".")]
     source_path: std::path::PathBuf,
     #[clap(default_value = "./build/cuentitos.db")]
     build_path: std::path::PathBuf,
@@ -40,32 +43,42 @@ where
   T: AsRef<Path>,
   U: AsRef<Path>,
 {
-  cuentitos_compiler::compile(&source_path, destination_path);
-}
+  let result = cuentitos_compiler::compile(&source_path, destination_path).unwrap();
+  let source_path = source_path.as_ref();
+  println!();
+  println!(
+    "Parse result for events in '{}/events'",
+    source_path.display()
+  );
+  println!();
 
-fn main() {
-  let cli = Cli::parse();
+  for (id, event) in result.events {
+    match event {
+      Ok(_) => println!("  ✔️  {}", id),
+      Err(error) => {
+        println!("  ❌  {}:", id);
+        println!("    - {}", error);
+      }
+    }
+  }
 
-  match cli.command {
-    Some(Commands::Compile {
-      source_path,
-      build_path,
-    }) => {
-      compile(source_path, build_path);
+  println!();
+  println!(
+    "Parse result for items in '{}/items'",
+    source_path.display()
+  );
+  println!();
+
+  for (id, item) in result.items {
+    match item {
+      Ok(_) => println!("  ✔️  {}", id),
+      Err(error) => {
+        println!("  ❌  {}:", id);
+        println!("    - {}", error);
+      }
     }
-    Some(Commands::Run { source_path }) => {
-      Console::start(source_path);
-    }
-    Some(Commands::Watch {
-      source_path,
-      build_path,
-    }) => {
-      watch(source_path, build_path).unwrap();
-    }
-    None => {}
   }
 }
-
 
 fn watch<T, U>(source_path: T, destination_path: U) -> Result<()>
 where
@@ -103,4 +116,27 @@ where
   }
 
   loop {}
+}
+
+fn main() {
+  let cli = Cli::parse();
+
+  match cli.command {
+    Some(Commands::Compile {
+      source_path,
+      build_path,
+    }) => {
+      compile(source_path, build_path);
+    }
+    Some(Commands::Run { source_path }) => {
+      Console::start(source_path);
+    }
+    Some(Commands::Watch {
+      source_path,
+      build_path,
+    }) => {
+      watch(source_path, build_path).unwrap();
+    }
+    None => {}
+  }
 }
