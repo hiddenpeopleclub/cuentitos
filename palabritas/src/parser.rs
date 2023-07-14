@@ -336,15 +336,15 @@ fn parse_str(input: &str, rule: Rule) -> Result<Pair<'_, Rule>, PalabritasError>
 fn parse_section(
   token: Pair<Rule>,
   parsing_data: &mut ParsingData,
-  child_order: usize,
+  level: usize,
 ) -> Result<Block, PalabritasError> {
   match_rule(&token, Rule::Section, &parsing_data.file)?;
   if parsing_data.blocks.is_empty() {
     parsing_data.blocks.push(Vec::default());
   }
 
-  parsing_data.blocks[child_order].push(Block::default());
-  let block_id = parsing_data.blocks[child_order].len() - 1;
+  parsing_data.blocks[level].push(Block::default());
+  let block_id = parsing_data.blocks[level].len() - 1;
   let script = Script {
     line: token.line_col().0,
     col: token.line_col().1,
@@ -389,26 +389,26 @@ fn parse_section(
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
-          parse_block(inner_blocks_token, parsing_data, child_order + 1)?;
+          parse_block(inner_blocks_token, parsing_data, level + 1)?;
           settings
             .children
-            .push(parsing_data.blocks[child_order + 1].len() - 1);
+            .push(parsing_data.blocks[level + 1].len() - 1);
         }
       }
       Rule::Subsection => {
-        parse_subsection(inner_token, parsing_data, child_order + 1)?;
+        parse_subsection(inner_token, parsing_data, level + 1)?;
         parsing_data.current_section = settings.section.clone();
         settings
           .children
-          .push(parsing_data.blocks[child_order + 1].len() - 1);
+          .push(parsing_data.blocks[level + 1].len() - 1);
       }
       _ => {}
     }
   }
 
   let section = Block::Section { id, settings };
-  check_invalid_frequency(&section, script, string, &parsing_data.blocks, child_order)?;
-  parsing_data.blocks[0][block_id] = section.clone();
+  check_invalid_frequency(&section, script, string, &parsing_data.blocks, level)?;
+  parsing_data.blocks[level][block_id] = section.clone();
 
   Ok(section)
 }
@@ -416,7 +416,7 @@ fn parse_section(
 fn parse_subsection(
   token: Pair<Rule>,
   parsing_data: &mut ParsingData,
-  child_order: usize,
+  level: usize,
 ) -> Result<(), PalabritasError> {
   match token.as_rule() {
     Rule::Subsection => {}
@@ -435,12 +435,12 @@ fn parse_subsection(
     }
   };
 
-  while child_order >= parsing_data.blocks.len() {
+  while level >= parsing_data.blocks.len() {
     parsing_data.blocks.push(Vec::default());
   }
 
-  parsing_data.blocks[child_order].push(Block::default());
-  let block_id = parsing_data.blocks[child_order].len() - 1;
+  parsing_data.blocks[level].push(Block::default());
+  let block_id = parsing_data.blocks[level].len() - 1;
   let script = Script {
     line: token.line_col().0,
     col: token.line_col().1,
@@ -488,44 +488,40 @@ fn parse_subsection(
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
-          parse_block(inner_blocks_token, parsing_data, child_order + 1)?;
+          parse_block(inner_blocks_token, parsing_data, level + 1)?;
           settings
             .children
-            .push(parsing_data.blocks[child_order + 1].len() - 1);
+            .push(parsing_data.blocks[level + 1].len() - 1);
         }
       }
       Rule::Subsubsection => {
-        parse_subsection(inner_token, parsing_data, child_order + 1)?;
+        parse_subsection(inner_token, parsing_data, level + 1)?;
+        parsing_data.current_section = settings.section.clone();
         settings
           .children
-          .push(parsing_data.blocks[child_order + 1].len() - 1);
+          .push(parsing_data.blocks[level + 1].len() - 1);
       }
       Rule::Subsubsubsection => {
-        parse_subsection(inner_token, parsing_data, child_order + 1)?;
+        parse_subsection(inner_token, parsing_data, level + 1)?;
+        parsing_data.current_section = settings.section.clone();
         settings
           .children
-          .push(parsing_data.blocks[child_order + 1].len() - 1);
+          .push(parsing_data.blocks[level + 1].len() - 1);
       }
       _ => {}
     }
   }
 
   let subsection = Block::Section { id, settings };
-  check_invalid_frequency(
-    &subsection,
-    script,
-    string,
-    &parsing_data.blocks,
-    child_order,
-  )?;
-  parsing_data.blocks[child_order][block_id] = subsection;
+  check_invalid_frequency(&subsection, script, string, &parsing_data.blocks, level)?;
+  parsing_data.blocks[level][block_id] = subsection;
 
   Ok(())
 }
 fn parse_block(
   token: Pair<Rule>,
   parsing_data: &mut ParsingData,
-  child_order: usize,
+  level: usize,
 ) -> Result<(), PalabritasError> {
   match_rule(&token, Rule::Block, &parsing_data.file)?;
 
@@ -567,10 +563,10 @@ fn parse_block(
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
           let settings = block.get_settings_mut();
-          parse_block(inner_blocks_token, parsing_data, child_order + 1)?;
+          parse_block(inner_blocks_token, parsing_data, level + 1)?;
           settings
             .children
-            .push(parsing_data.blocks[child_order + 1].len() - 1);
+            .push(parsing_data.blocks[level + 1].len() - 1);
         }
       }
       _ => {}
@@ -579,7 +575,7 @@ fn parse_block(
 
   block.get_settings_mut().section = parsing_data.current_section.clone();
 
-  while child_order >= parsing_data.blocks.len() {
+  while level >= parsing_data.blocks.len() {
     parsing_data.blocks.push(Vec::default());
   }
 
@@ -591,38 +587,38 @@ fn parse_block(
     col: line_col.1,
   };
 
-  parsing_data.blocks[child_order].push(block);
+  parsing_data.blocks[level].push(block);
 
-  let block_id = parsing_data.blocks[child_order].len() - 1;
+  let block_id = parsing_data.blocks[level].len() - 1;
 
   if let Block::Bucket {
     name: _,
     settings: _,
-  } = parsing_data.blocks[child_order][block_id]
+  } = parsing_data.blocks[level][block_id]
   {
     validate_bucket_data(
       block_id,
       &mut parsing_data.blocks,
-      child_order,
+      level,
       line_col,
       &parsing_data.file,
     )?;
 
     update_children_probabilities_to_frequency(
-      parsing_data.blocks[child_order].len() - 1,
+      parsing_data.blocks[level].len() - 1,
       &mut parsing_data.blocks,
-      child_order,
+      level,
     );
-  } else if is_child_unnamed_bucket(block_id, &parsing_data.blocks, child_order) {
-    make_childs_bucket(block_id, &mut parsing_data.blocks, child_order);
+  } else if is_child_unnamed_bucket(block_id, &parsing_data.blocks, level) {
+    make_childs_bucket(block_id, &mut parsing_data.blocks, level);
   }
 
   check_invalid_frequency(
-    &parsing_data.blocks[child_order][block_id],
+    &parsing_data.blocks[level][block_id],
     script,
     string,
     &parsing_data.blocks,
-    child_order,
+    level,
   )?;
 
   Ok(())
@@ -633,7 +629,7 @@ fn check_invalid_frequency(
   script: Script,
   string: String,
   blocks: &[Vec<Block>],
-  child_order: usize,
+  level: usize,
 ) -> Result<(), PalabritasError> {
   fn freq_modifier_matches_chance(
     settings: &BlockSettings,
@@ -668,13 +664,13 @@ fn check_invalid_frequency(
     }
     _ => {
       freq_modifier_matches_chance(block.get_settings(), &script, &string)?;
-      if child_order == 0 {
+      if level == 0 {
         if let Chance::Frequency(_) = block.get_settings().chance {
           return Err(PalabritasError::FrequencyOutOfBucket(script, string));
         }
       }
       for child in &block.get_settings().children {
-        if let Chance::Frequency(_) = blocks[child_order + 1][*child].get_settings().chance {
+        if let Chance::Frequency(_) = blocks[level + 1][*child].get_settings().chance {
           return Err(PalabritasError::FrequencyOutOfBucket(script, string));
         }
       }
@@ -707,20 +703,20 @@ fn update_i18n(block: &mut Block, i18n: &mut I18n, line: usize) {
   }
 }
 
-fn is_child_unnamed_bucket(block: usize, blocks: &Vec<Vec<Block>>, child_order: usize) -> bool {
-  let block = &blocks[child_order][block];
+fn is_child_unnamed_bucket(block: usize, blocks: &Vec<Vec<Block>>, level: usize) -> bool {
+  let block = &blocks[level][block];
   let children = &block.get_settings().children;
 
-  if children.len() < 2 || child_order + 1 >= blocks.len() {
+  if children.len() < 2 || level + 1 >= blocks.len() {
     return false;
   }
 
   let mut total_probability = 0.;
   let mut is_frequency: bool = false;
-  for i in 0..blocks[child_order + 1].len() {
+  for i in 0..blocks[level + 1].len() {
     for child in children {
       if *child == i {
-        match blocks[child_order + 1][i].get_settings().chance {
+        match blocks[level + 1][i].get_settings().chance {
           cuentitos_common::Chance::None => {
             return false;
           }
@@ -746,14 +742,14 @@ fn is_child_unnamed_bucket(block: usize, blocks: &Vec<Vec<Block>>, child_order: 
   total_probability == 1.
 }
 
-fn make_childs_bucket(block_id: usize, blocks: &mut Vec<Vec<Block>>, child_order: usize) {
-  if child_order + 1 >= blocks.len() {
+fn make_childs_bucket(block_id: usize, blocks: &mut Vec<Vec<Block>>, level: usize) {
+  if level + 1 >= blocks.len() {
     return;
   }
 
-  update_children_probabilities_to_frequency(block_id, blocks, child_order);
+  update_children_probabilities_to_frequency(block_id, blocks, level);
 
-  let block = blocks[child_order][block_id].clone();
+  let block = blocks[level][block_id].clone();
   let block_settings = block.get_settings();
   let bucket = Block::Bucket {
     name: None,
@@ -763,12 +759,12 @@ fn make_childs_bucket(block_id: usize, blocks: &mut Vec<Vec<Block>>, child_order
     },
   };
 
-  blocks[child_order].push(bucket);
+  blocks[level].push(bucket);
 
-  move_to_lower_level(blocks[child_order].len() - 1, blocks, child_order);
+  move_to_lower_level(blocks[level].len() - 1, blocks, level);
 
-  let new_children = vec![blocks[child_order + 1].len() - 1];
-  let block = &mut blocks[child_order][block_id];
+  let new_children = vec![blocks[level + 1].len() - 1];
+  let block = &mut blocks[level][block_id];
   let block_settings = block.get_settings_mut();
   block_settings.children = new_children;
 }
@@ -776,11 +772,11 @@ fn make_childs_bucket(block_id: usize, blocks: &mut Vec<Vec<Block>>, child_order
 fn validate_bucket_data(
   bucket: usize,
   blocks: &mut [Vec<Block>],
-  child_order: usize,
+  level: usize,
   line_col: (usize, usize),
   file: &str,
 ) -> Result<(), PalabritasError> {
-  let bucket = &blocks[child_order][bucket];
+  let bucket = &blocks[level][bucket];
   let settings = bucket.get_settings();
 
   let bucket_name = match bucket {
@@ -797,7 +793,7 @@ fn validate_bucket_data(
   let mut inner_line = line_col.0;
   for child in &settings.children {
     inner_line += 1;
-    let child_block = &blocks[child_order + 1][*child];
+    let child_block = &blocks[level + 1][*child];
     let child_settings = child_block.get_settings();
     match child_settings.chance {
       Chance::None => {
@@ -852,44 +848,44 @@ fn validate_bucket_data(
   Ok(())
 }
 
-fn move_to_lower_level(index: usize, blocks: &mut Vec<Vec<Block>>, child_order: usize) {
-  update_higher_level(index, blocks, child_order);
+fn move_to_lower_level(index: usize, blocks: &mut Vec<Vec<Block>>, level: usize) {
+  update_higher_level(index, blocks, level);
 
-  let child_count = blocks[child_order][index].get_settings().children.len();
+  let child_count = blocks[level][index].get_settings().children.len();
   for i in 0..child_count {
     for e in i..child_count {
-      if blocks[child_order][index].get_settings().children[e]
-        > blocks[child_order][index].get_settings().children[i]
+      if blocks[level][index].get_settings().children[e]
+        > blocks[level][index].get_settings().children[i]
       {
-        blocks[child_order][index].get_settings_mut().children[e] -= 1;
+        blocks[level][index].get_settings_mut().children[e] -= 1;
       }
     }
 
-    let child_index = blocks[child_order][index].get_settings().children[i];
-    move_to_lower_level(child_index, blocks, child_order + 1);
+    let child_index = blocks[level][index].get_settings().children[i];
+    move_to_lower_level(child_index, blocks, level + 1);
   }
 
-  let mut block: Block = blocks[child_order].remove(index);
-  if blocks.len() <= child_order + 1 {
+  let mut block: Block = blocks[level].remove(index);
+  if blocks.len() <= level + 1 {
     blocks.push(Vec::default());
   }
 
   let mut new_children = Vec::default();
   for i in 0..child_count {
-    let new_child_index = blocks[child_order + 2].len() - 1 - i;
+    let new_child_index = blocks[level + 2].len() - 1 - i;
     new_children.push(new_child_index);
   }
 
   new_children.reverse();
 
   block.get_settings_mut().children = new_children;
-  blocks[child_order + 1].push(block);
+  blocks[level + 1].push(block);
 
-  fn update_higher_level(index: usize, blocks: &mut [Vec<Block>], child_order: usize) {
-    if child_order == 0 {
+  fn update_higher_level(index: usize, blocks: &mut [Vec<Block>], level: usize) {
+    if level == 0 {
       return;
     }
-    for higher_level_block in &mut blocks[child_order - 1] {
+    for higher_level_block in &mut blocks[level - 1] {
       let higher_level_settings = higher_level_block.get_settings_mut();
       if higher_level_settings.children.contains(&index) {
         continue;
@@ -906,16 +902,16 @@ fn move_to_lower_level(index: usize, blocks: &mut Vec<Vec<Block>>, child_order: 
 fn update_children_probabilities_to_frequency(
   block: usize,
   blocks: &mut Vec<Vec<Block>>,
-  child_order: usize,
+  level: usize,
 ) {
-  if child_order + 1 >= blocks.len() {
+  if level + 1 >= blocks.len() {
     return;
   }
-  let block = blocks[child_order][block].clone();
+  let block = blocks[level][block].clone();
   let children = &block.get_settings().children;
 
   for child in children.iter().rev() {
-    let child = &mut blocks[child_order + 1][*child];
+    let child = &mut blocks[level + 1][*child];
     let child_settings = child.get_settings_mut();
     if let Chance::Probability(chance) = child_settings.chance {
       child_settings.chance = Chance::Frequency((chance * 100.) as u32);
@@ -1350,7 +1346,6 @@ fn validate_diverts(
         }
 
         section.parent = section.parent.unwrap().parent;
-
         if section_map.contains_key(&section) {
           continue;
         }

@@ -9,6 +9,22 @@ pub struct Section {
   pub parent: Option<Box<Section>>,
 }
 
+impl Section {
+  pub fn contains_subsection(&self, subsection: &Section) -> bool {
+    if subsection == self {
+      return true;
+    } else if let Some(parent) = &subsection.parent {
+      return self.contains_subsection(parent);
+    }
+
+    false
+  }
+
+  pub fn is_child_of(&self, section: &Section) -> bool {
+    section.contains_subsection(self)
+  }
+}
+
 /// Errors that can occur when deserializing a type.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Error {

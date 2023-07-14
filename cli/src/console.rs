@@ -141,7 +141,7 @@ fn get_variables_string(variables: &Vec<String>, runtime: &Runtime) -> String {
   for variable in variables {
     variables_string += &format!("{}\n", get_variable_string(variable, runtime));
   }
-  variables_string.trim().to_string()
+  variables_string.to_string()
 }
 
 fn get_output_string(output: Output, runtime: &Runtime) -> String {
@@ -200,13 +200,13 @@ fn get_change_string(chance: &Chance) -> String {
   match chance {
     Chance::None => String::default(),
     Chance::Probability(value) => {
-      format!("🎲 ({}%)", value)
+      format!("🎲 ({}%) ", value)
     }
     Chance::Frequency {
       value,
       total_frequency,
     } => {
-      format!("🎲 ({}/{})", value, total_frequency)
+      format!("🎲 ({}/{}) ", value, total_frequency)
     }
   }
 }
@@ -516,7 +516,7 @@ mod test {
     let stack_found = runtime.block_stack.clone();
     assert_eq!(expected_stack, stack_found);
 
-    let expected_str = "Entered section 'second_day'\n\nEntered section 'second_day/museum'\n\nYou get to the museum door. You watch through the window. It seems crowded.";
+    let expected_str = "Entered section 'second_day/museum'\n\nYou get to the museum door. You watch through the window. It seems crowded.";
     let str_found =
       Console::process_line(Ok("->second_day/museum".to_string()), &mut rl, &mut runtime).unwrap();
     assert_eq!(expected_str, &str_found);
@@ -529,10 +529,6 @@ mod test {
     assert_eq!(section_found, expected_section);
 
     let expected_stack: Vec<BlockStackData> = vec![
-      BlockStackData {
-        id: 10,
-        chance: Chance::None,
-      },
       BlockStackData {
         id: 18,
         chance: Chance::None,
@@ -576,7 +572,7 @@ mod test {
     let stack_found = runtime.block_stack.clone();
     assert_eq!(expected_stack, stack_found);
 
-    let expected_str = "Entered section 'second_day'\n\nEntered section 'second_day/museum'\n\nYou get to the museum door. You watch through the window. It seems crowded.";
+    let expected_str = "Entered section 'second_day/museum'\n\nYou get to the museum door. You watch through the window. It seems crowded.";
     let str_found = Console::process_line(
       Ok("<->second_day/museum".to_string()),
       &mut rl,
@@ -599,10 +595,6 @@ mod test {
       },
       BlockStackData {
         id: 17,
-        chance: Chance::None,
-      },
-      BlockStackData {
-        id: 10,
         chance: Chance::None,
       },
       BlockStackData {
