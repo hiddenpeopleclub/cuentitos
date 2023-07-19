@@ -159,6 +159,7 @@ pub struct Runtime {
   rng: Option<Pcg32>,
   seed: u64,
   pub current_locale: LanguageId,
+  pub section: Option<Section>,
 }
 
 impl Runtime {
@@ -173,11 +174,18 @@ impl Runtime {
     }
   }
 
-  pub fn reset(&mut self) {
-    self.block_stack.clear();
-    self.choices.clear();
-    self.game_state = GameState::from_config(&self.database.config);
+  pub fn reset_story(&mut self) {
     self.set_seed(self.seed);
+    self.block_stack.clear();
+    self.section = None;
+    self.choices.clear();
+  }
+  pub fn reset_state(&mut self) {
+    self.game_state = GameState::from_config(&self.database.config);
+  }
+  pub fn reset_all(&mut self) {
+    self.reset_story();
+    self.reset_state();
   }
 
   pub fn set_locale<T>(&mut self, locale: T) -> Result<(), String>
@@ -199,20 +207,38 @@ impl Runtime {
   }
 
   pub fn divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError> {
-    let new_stack = self.get_section_block_ids(section)?;
+    let new_stack: Vec<usize> = self.get_section_block_ids(section)?;
     self.block_stack.clear();
     let mut blocks_added = Vec::default();
     for block in new_stack {
+      if !self.meets_requirements(block)? {
+        self.block_stack.push(BlockStackData {
+          id: block,
+          chance: Chance::None,
+        });
+        blocks_added.append(&mut self.pop_stack_and_push_next()?);
+        return Ok(blocks_added);
+      }
       blocks_added.push(Self::push_stack(self, block)?);
     }
+
     Ok(blocks_added)
   }
 
   pub fn boomerang_divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError> {
     let new_stack = self.get_section_block_ids(section)?;
-    let mut blocks_added = Vec::default();
 
+    let mut blocks_added = Vec::default();
     for block in new_stack {
+      if !self.meets_requirements(block)? {
+        self.block_stack.push(BlockStackData {
+          id: block,
+          chance: Chance::None,
+        });
+
+        blocks_added.append(&mut self.pop_stack_and_push_next()?);
+        return Ok(blocks_added);
+      }
       blocks_added.push(Self::push_stack(self, block)?);
     }
     Ok(blocks_added)
@@ -472,7 +498,7 @@ impl Runtime {
   ) -> Result<(), RuntimeError> {
     match self.database.sections.get(target_section) {
       Some(id) => {
-        if let Some(current_section) = &self.game_state.section {
+        if let Some(current_section) = &self.section {
           if current_section.is_child_of(target_section) {
             return Ok(());
           }
@@ -501,7 +527,7 @@ impl Runtime {
 
     let section_exists = match self.database.sections.contains_key(&section_mut) {
       true => true,
-      false => match &self.game_state.section {
+      false => match &self.section {
         Some(current_section) => {
           append_to_parent(current_section.clone(), &mut section_mut);
           match self.database.sections.contains_key(&section_mut) {
@@ -526,8 +552,8 @@ impl Runtime {
     target_section: &Section,
   ) -> Result<Vec<BlockId>, RuntimeError> {
     let target_section = self.get_actual_section(target_section)?;
-    if let Some(current_section) = &self.game_state.section {
-      if current_section == &target_section {
+    if let Some(current_section) = &self.section {
+      if current_section.is_child_of(&target_section) {
         if let Some(id) = self.database.sections.get(&target_section) {
           return Ok(vec![*id]);
         }
@@ -756,7 +782,7 @@ impl Runtime {
 
   fn push_stack_until_text(&mut self, id: BlockId) -> Result<Vec<Block>, RuntimeError> {
     if !self.meets_requirements_and_chance(id)? {
-      return self.find_next(id);
+      return self.push_next(id);
     }
     let mut blocks = Vec::default();
     blocks.push(self.push_stack(id)?);
@@ -794,7 +820,6 @@ impl Runtime {
             blocks.append(&mut self.push_stack_until_text(id)?)
           }
           NextBlock::EndOfFile => {
-            self.reset();
             return Err(RuntimeError::StoryFinished);
           }
           NextBlock::Section(section) => {
@@ -808,7 +833,6 @@ impl Runtime {
         match next {
           NextBlock::BlockId(id) => blocks.append(&mut self.push_stack_until_text(id)?),
           NextBlock::EndOfFile => {
-            self.reset();
             return Err(RuntimeError::StoryFinished);
           }
           NextBlock::Section(section) => {
@@ -851,7 +875,7 @@ impl Runtime {
       self.game_state.uniques_played.push(id);
     }
 
-    self.game_state.section = cuentitos_block.get_settings().section.clone();
+    self.section = cuentitos_block.get_settings().section.clone();
     let modifiers = self
       .get_cuentitos_block(block_stack_data.id)?
       .get_settings()
@@ -894,7 +918,7 @@ impl Runtime {
       }
     }
 
-    self.pop_stack_and_find_next()
+    self.pop_stack_and_push_next()
   }
 
   fn get_next_child_in_stack(
@@ -921,7 +945,7 @@ impl Runtime {
     }
   }
 
-  fn find_next(&mut self, previous_id: BlockId) -> Result<Vec<Block>, RuntimeError> {
+  fn push_next(&mut self, previous_id: BlockId) -> Result<Vec<Block>, RuntimeError> {
     if self.block_stack.is_empty() {
       return self.push_stack_until_text(previous_id + 1);
     }
@@ -949,17 +973,17 @@ impl Runtime {
       }
     }
 
-    self.pop_stack_and_find_next()
+    self.pop_stack_and_push_next()
   }
 
-  fn pop_stack_and_find_next(&mut self) -> Result<Vec<Block>, RuntimeError> {
+  fn pop_stack_and_push_next(&mut self) -> Result<Vec<Block>, RuntimeError> {
     let last_block_id: usize = match self.block_stack.last() {
       Some(block_stack_data) => block_stack_data.id,
       None => return Err(RuntimeError::EmptyStack),
     };
 
     self.block_stack.pop();
-    self.find_next(last_block_id)
+    self.push_next(last_block_id)
   }
 
   fn get_total_frequency(
@@ -1045,19 +1069,70 @@ mod test {
 
   use crate::{
     runtime::{BlockStackData, Chance},
-    Runtime, RuntimeError,
+    GameState, Runtime, RuntimeError,
   };
   use cuentitos_common::{
     condition::ComparisonOperator, modifier::ModifierOperator, Block, Condition, Config, Database,
     FrequencyModifier, Function, I18n, LanguageDb, LanguageId, Modifier, NextBlock, Requirement,
     Section, VariableKind,
   };
+  use rand::SeedableRng;
+  use rand_pcg::Pcg32;
 
   #[test]
   fn new_runtime_works_correctly() {
     let database = Database::default();
     let runtime = Runtime::new(database.clone());
     assert_eq!(runtime.database, database);
+  }
+
+  #[test]
+  fn divert_to_played_unique_goes_to_next() {
+    let section_block = Block::Section {
+      id: "section".to_string(),
+      settings: cuentitos_common::BlockSettings {
+        unique: true,
+        ..Default::default()
+      },
+    };
+    let next_block = Block::default();
+
+    let mut sections: HashMap<Section, usize> = HashMap::default();
+
+    let section = Section {
+      name: "section".to_string(),
+      parent: None,
+    };
+
+    sections.insert(section.clone(), 0);
+
+    let database = Database {
+      blocks: vec![section_block, next_block],
+      sections,
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime {
+      database,
+      ..Default::default()
+    };
+    runtime.divert(&section).unwrap();
+    assert_eq!(
+      runtime.block_stack,
+      vec![BlockStackData {
+        id: 0,
+        chance: Chance::None
+      }]
+    );
+
+    runtime.divert(&section).unwrap();
+    assert_eq!(
+      runtime.block_stack,
+      vec![BlockStackData {
+        id: 1,
+        chance: Chance::None
+      }]
+    );
   }
 
   #[test]
@@ -3528,6 +3603,73 @@ mod test {
       .clone();
 
     assert_eq!(modified_variables, vec!["health".to_string()]);
+  }
+
+  #[test]
+  fn reset_state() {
+    let mut runtime = Runtime::default();
+    runtime.game_state.uniques_played.push(0);
+    runtime
+      .game_state
+      .variables
+      .insert("variable".to_string(), "true".to_string());
+    assert_ne!(runtime.game_state, GameState::default());
+    runtime.reset_state();
+    assert_eq!(runtime.game_state, GameState::default());
+  }
+
+  #[test]
+  fn reset_story() {
+    let mut runtime = Runtime::default();
+    runtime.random_float();
+    runtime.block_stack.push(BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    });
+    runtime.choices.push(1);
+    runtime.section = Some(Section::default());
+
+    assert_ne!(runtime.rng, Some(Pcg32::seed_from_u64(runtime.seed)));
+    assert!(!runtime.block_stack.is_empty());
+    assert!(!runtime.choices.is_empty());
+    assert!(runtime.section.is_some());
+    runtime.reset_story();
+
+    assert_eq!(runtime.rng, Some(Pcg32::seed_from_u64(runtime.seed)));
+    assert!(runtime.block_stack.is_empty());
+    assert!(runtime.choices.is_empty());
+    assert!(runtime.section.is_none());
+  }
+
+  #[test]
+  fn reset_all() {
+    let mut runtime = Runtime::default();
+    runtime.game_state.uniques_played.push(0);
+    runtime
+      .game_state
+      .variables
+      .insert("variable".to_string(), "true".to_string());
+    runtime.random_float();
+    runtime.block_stack.push(BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    });
+    runtime.choices.push(1);
+    runtime.section = Some(Section::default());
+
+    assert_ne!(runtime.game_state, GameState::default());
+    assert_ne!(runtime.rng, Some(Pcg32::seed_from_u64(runtime.seed)));
+    assert!(!runtime.block_stack.is_empty());
+    assert!(!runtime.choices.is_empty());
+    assert!(runtime.section.is_some());
+
+    runtime.reset_all();
+
+    assert_eq!(runtime.game_state, GameState::default());
+    assert_eq!(runtime.rng, Some(Pcg32::seed_from_u64(runtime.seed)));
+    assert!(runtime.block_stack.is_empty());
+    assert!(runtime.choices.is_empty());
+    assert!(runtime.section.is_none());
   }
 
   #[derive(Debug, Default, PartialEq, Eq)]

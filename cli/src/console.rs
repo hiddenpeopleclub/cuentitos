@@ -36,7 +36,7 @@ impl Console {
     rl.load_history("history.txt").unwrap_or_default();
 
     loop {
-      let read_line = Self::prompt(&mut rl, &runtime.game_state.section);
+      let read_line = Self::prompt(&mut rl, &runtime.section);
       match Self::process_line(read_line, &mut rl, &mut runtime) {
         Some(message) => println!("{}", message),
         None => break,
@@ -97,6 +97,7 @@ fn run_command(command: &str, parameters: Vec<&str>, runtime: &mut Runtime) -> S
     "set" => set_command(parameters, runtime),
     "->" => divert(parameters, runtime),
     "<->" => boomerang_divert(parameters, runtime),
+    "reset" => reset_command(parameters, runtime),
     str => {
       if str.starts_with("->") {
         let substr: String = str.chars().skip(2).collect();
@@ -211,8 +212,12 @@ fn get_change_string(chance: &Chance) -> String {
   }
 }
 
-fn get_runtime_error_string(error: RuntimeError, runtime: &Runtime) -> String {
+fn get_runtime_error_string(error: RuntimeError, runtime: &mut Runtime) -> String {
   match error {
+    RuntimeError::StoryFinished => {
+      runtime.reset_story();
+      format!("{}", error)
+    }
     RuntimeError::WaitingForChoice(_) => format!(
       "Make a choice:\n\n{}",
       get_output_string(runtime.current().unwrap(), runtime)
@@ -291,7 +296,24 @@ fn parameters_to_pattern(parameters: Vec<&str>) -> String {
   pattern.trim().to_string()
 }
 
-fn state_command(parameters: Vec<&str>, runtime: &Runtime) -> String {
+fn reset_command(parameters: Vec<&str>, runtime: &mut Runtime) -> String {
+
+  if parameters.is_empty() || parameters.contains(&"all") || ( parameters.contains(&"story") && parameters.contains(&"reset")){
+    runtime.reset_all();
+    "State and story reset".to_string()
+  } else if parameters.contains(&"state") {
+    runtime.reset_state();
+    "State reset".to_string()
+  } else if parameters.contains(&"story") {
+    runtime.reset_story();
+    "Story reset".to_string()
+  } else {
+    format!("Unknown parameters: '{:?}'", parameters)
+  }
+
+}
+
+fn state_command(parameters: Vec<&str>, runtime: &mut Runtime) -> String {
   let mut string = String::default();
   if !runtime.block_stack.is_empty() {
     match runtime.current() {
@@ -412,6 +434,64 @@ fn divert(parameters: Vec<&str>, runtime: &mut Runtime) -> String {
 mod test {
 
   use crate::console::*;
+
+  #[test]
+  fn reset_command() {
+    let mut rl = DefaultEditor::new().unwrap();
+    let mut runtime = Runtime::default();
+    runtime.game_state.uniques_played.push(0);
+    runtime
+      .game_state
+      .variables
+      .insert("variable".to_string(), "true".to_string());
+    assert_ne!(runtime.game_state, GameState::default());
+
+    let str_found =
+      Console::process_line(Ok("reset state".to_string()), &mut rl, &mut runtime).unwrap();
+    assert_eq!(str_found, "State reset".to_string());
+    assert_eq!(runtime.game_state, GameState::default());
+
+    runtime.block_stack.push(BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    });
+    runtime.choices.push(1);
+    runtime.section = Some(Section::default());
+
+    assert!(!runtime.block_stack.is_empty());
+    assert!(!runtime.choices.is_empty());
+    assert!(runtime.section.is_some());
+    let str_found =
+      Console::process_line(Ok("reset story".to_string()), &mut rl, &mut runtime).unwrap();
+    assert_eq!(str_found, "Story reset".to_string());
+    assert!(runtime.block_stack.is_empty());
+    assert!(runtime.choices.is_empty());
+    assert!(runtime.section.is_none());
+    runtime.game_state.uniques_played.push(0);
+    runtime
+      .game_state
+      .variables
+      .insert("variable".to_string(), "true".to_string());
+    runtime.block_stack.push(BlockStackData {
+      id: 0,
+      chance: Chance::None,
+    });
+    runtime.choices.push(1);
+    runtime.section = Some(Section::default());
+
+    assert_ne!(runtime.game_state, GameState::default());
+    assert!(!runtime.block_stack.is_empty());
+    assert!(!runtime.choices.is_empty());
+    assert!(runtime.section.is_some());
+    
+    let str_found = Console::process_line(Ok("reset".to_string()), &mut rl, &mut runtime).unwrap();
+    assert_eq!(str_found, "State and story reset".to_string());
+    assert_eq!(runtime.game_state, GameState::default());
+    assert!(runtime.block_stack.is_empty());
+    assert!(runtime.choices.is_empty());
+    assert!(runtime.section.is_none());
+  }
+
   #[test]
   fn q_command() {
     let mut runtime = Runtime::default();
@@ -496,7 +576,7 @@ mod test {
       Console::process_line(Ok("-> second_day".to_string()), &mut rl, &mut runtime).unwrap();
     assert_eq!(expected_str, &str_found);
 
-    let section_found = runtime.game_state.section.clone().unwrap();
+    let section_found = runtime.section.clone().unwrap();
     let expected_section = Section {
       name: "second_day".to_string(),
       parent: None,
@@ -521,7 +601,7 @@ mod test {
       Console::process_line(Ok("->second_day/museum".to_string()), &mut rl, &mut runtime).unwrap();
     assert_eq!(expected_str, &str_found);
 
-    let section_found = runtime.game_state.section.unwrap();
+    let section_found = runtime.section.unwrap();
     let expected_section = Section {
       name: "museum".to_string(),
       parent: Some(Box::new(expected_section)),
@@ -552,7 +632,7 @@ mod test {
       Console::process_line(Ok("<-> second_day".to_string()), &mut rl, &mut runtime).unwrap();
     assert_eq!(expected_str, &str_found);
 
-    let section_found = runtime.game_state.section.clone().unwrap();
+    let section_found = runtime.section.clone().unwrap();
     let expected_section = Section {
       name: "second_day".to_string(),
       parent: None,
@@ -581,7 +661,7 @@ mod test {
     .unwrap();
     assert_eq!(expected_str, &str_found);
 
-    let section_found = runtime.game_state.section.unwrap();
+    let section_found = runtime.section.unwrap();
     let expected_section = Section {
       name: "museum".to_string(),
       parent: Some(Box::new(expected_section)),
