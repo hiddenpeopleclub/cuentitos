@@ -127,7 +127,7 @@ You can also create what we call `named buckets`. These buckets support probabil
       You feel they're too busy to bother them with questions.
 ```
 
-To create one of these you wrap the name and probability with `[]`, for example `[(50%) my_name]`. The name must to be snake case (lower_case_and_underscored). Then you can apply `req`, `mod` or `set`
+To create one of these you wrap the name and probability with `[]`, for example `[(50%) my_name]`. The name must to be snake case (lower_case_and_underscored). Then you can apply `req`, `set` or `set`
 
 
 ## Probability of Options
@@ -264,11 +264,13 @@ The next thing we want to talk about is modifying state.
 ```cuentitos
   * I go to bed
     Feeling depleted of spoons, you go right back to bed.
-    mod energy 10
-    mod time -7.5
+    set energy 10
+    set day +1
+    set time -7.5
 ``` 
 
-For that we use the `mod` command with the variable name (in this case `energy` and `time`) and the value modification we want to apply. In this case we added `10` to `energy` and subtracted `7.5` to `time`. From this we infer that `energy` is a variable of type `integer` and `time` is of type `float`. We also supoprt `bool` and `enum`, check the `Configuration` section below.
+For that we use the `set` command with the variable name (in this case `energy`, `day` and `time`) and the value modification we want to apply. In this case, we set `energy` to `10`, added `1` to `day`, and subtracted `7.5` from `time`. From this we can infer that `energy` and `day` are variables of the `integer` type and `time` is of the `float` type. We also support `bool`, `enum` and `string` types. Check the `Configuration` section below for more details.
+Also, you can add `+`, subtract `-`, multiply `*` and divide `/` your integers and floats!
 
 ## Sections, diverts and subsections
 
@@ -281,13 +283,14 @@ A `section` is a part of the story that you assign a name to so that you can mov
 You wake up feeling refreshed.
 ```
 
-Then you can go to a section by using the arrow (divert) command `->`.
+Then you can go to a section by using the arrow (`divert`) command `->`.
 
 ```cuentitos
   * I go to bed
     Feeling depleted of spoons, you go right back to bed.
-    mod energy 10
-    mod time -7.5
+    set energy 10
+    set day +1
+    set time -7.5
     -> second_day
 ```
 
@@ -326,12 +329,52 @@ For example:
 ### Finishing the game
 `-> END`
 
+### Boomerang divert
+
+Another way to access a section is using the `boomerang divert` command `<->`. Unlike the regular `divert`, the `boomerang divert` command will take you back to your original spot once you're done with the section. 
+
+```cuentitos
+  * I go to bed
+    Feeling depleted of spoons, you go right back to bed.
+    set energy 10
+    set day +1
+    set time -7.5
+    <-> second_day
+  
+    At last the end has come.
+    -> END
+  
+# second_day
+  You wake up feeling refreshed. Let's see what this day brings.
+```
+
+In this example, once the section second_day finishes, the story goes back to where the `boomerang divert` was and shows the line `At last the end has come.`.
+
+### Unique command
+
+To make sure that the story never reaches the same spot twice, you can use the `unique` command.
+
+```cuentitos
+# quest_giver
+  You've come seeking a brave quest.
+    -> quest_pool
+    
+# quest_pool
+  (50%) Slay the dragon.
+    unique
+  (50%) Pick up 30 yellow flowers.
+  ->quest_giver
+```
+
+In this example, the quest to slay the dragon has a 50% chance to appear. Once it shows up, it will never reappear in the story. 
+
 ## Comments
 A line that starts with `//` is ignored.
 
-## Functions
+## Functions and tags
+
 You can dynamically communicate with your runtime by the way of functions.
-To run a function you start and finish a line with backticks.
+To run a `function` you start and finish a line with backticks.
 
 Example:
 
@@ -341,7 +384,7 @@ Example:
   `play_sound alarm`
 ```
 
-The runtime will receive a function call with "alarm" as a parameter.
+The runtime will receive a `function` call with "alarm" as a parameter.
 
 Since this is dynamic, the compiler can't check if the types are the right ones, you'll have to do this yourself.
 
@@ -353,10 +396,34 @@ You can use an arbitrary amount of parameters, they will be passed to the runtim
 It's up to the runtime how to interpret `0.3` in this case, and cuentitos will just pass it through.
 You can always use variables as a way to communicate with the runtime and check for types in compile time.
 
+Another way to communicate with your runtime is by using a `tag`. This serves as a marker that you can place on any line.
+
+```cuentitos
+# second_day_happy
+  * Shelter the dog.
+  tag important_decision
+```
+
+The runtime will receive a `tag` named `important_decision` so the runtime can, for example, warn the player about the consequences of taking this path.
+
 ## Configuration
-### Variables
-#### Bool
-#### Integer
-#### Float
-#### Enum
-#### String
+
+A user can define variables and their types to use inside conditions.
+
+This is done in the configuration file `cuentitos.toml`.
+
+These can be of type `integer`, `float`, and `bool`, `enum` and `string`.
+
+```toml
+[variables]
+health = "integer"
+money = "integer"
+day = { enum = [ "friday", "saturday", "sunday"] }
+```
+
+Once defined, you can use them in your story by using the commands `req`, `set` and `freq`.
+
+```
+The weekend is finally here!
+  req day saturday
+```
