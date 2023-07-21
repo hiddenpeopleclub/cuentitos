@@ -410,6 +410,10 @@ fn parse_section(
   check_invalid_frequency(&section, script, string, &parsing_data.blocks, level)?;
   parsing_data.blocks[level][block_id] = section.clone();
 
+  if is_child_unnamed_bucket(block_id, &parsing_data.blocks, level) {
+    make_childs_bucket(block_id, &mut parsing_data.blocks, level);
+  }
+
   Ok(section)
 }
 
@@ -515,6 +519,10 @@ fn parse_subsection(
   let subsection = Block::Section { id, settings };
   check_invalid_frequency(&subsection, script, string, &parsing_data.blocks, level)?;
   parsing_data.blocks[level][block_id] = subsection;
+
+  if is_child_unnamed_bucket(block_id, &parsing_data.blocks, level) {
+    make_childs_bucket(block_id, &mut parsing_data.blocks, level);
+  }
 
   Ok(())
 }
@@ -3395,6 +3403,34 @@ mod test {
     let identifier = make_random_identifier();
     assert_parse_rule(Rule::Subsection, &format!("  ## {}", identifier));
   }
+
+  #[test]
+  fn unnamed_buckets_works() {
+    let text_with_bucket = "text\n  (50%)Text 1\n  (50%)Text 2\n";
+    let token = parse_str(&text_with_bucket, Rule::Database).unwrap();
+    let database = parse_database(token, ParsingData::default()).unwrap();
+    let expected_bucket: Block = Block::Bucket {
+      name: None,
+      settings: BlockSettings {
+        children: vec![3, 4],
+        ..Default::default()
+      },
+    };
+    assert_eq!(database.blocks[2], expected_bucket);
+
+    let section_with_bucket = "#section\n  (50%)Text 1\n  (50%)Text 2\n";
+    let token = parse_str(&section_with_bucket, Rule::Database).unwrap();
+    let database = parse_database(token, ParsingData::default()).unwrap();
+    let expected_bucket: Block = Block::Bucket {
+      name: None,
+      settings: BlockSettings {
+        children: vec![3, 4],
+        ..Default::default()
+      },
+    };
+    assert_eq!(database.blocks[2], expected_bucket);
+  }
+
   #[test]
   fn choices_with_empty_lines() {
     let text = make_random_string();
