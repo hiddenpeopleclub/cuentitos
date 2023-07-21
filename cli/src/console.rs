@@ -297,8 +297,10 @@ fn parameters_to_pattern(parameters: Vec<&str>) -> String {
 }
 
 fn reset_command(parameters: Vec<&str>, runtime: &mut Runtime) -> String {
-
-  if parameters.is_empty() || parameters.contains(&"all") || ( parameters.contains(&"story") && parameters.contains(&"reset")){
+  if parameters.is_empty()
+    || parameters.contains(&"all")
+    || (parameters.contains(&"story") && parameters.contains(&"reset"))
+  {
     runtime.reset_all();
     "State and story reset".to_string()
   } else if parameters.contains(&"state") {
@@ -310,7 +312,6 @@ fn reset_command(parameters: Vec<&str>, runtime: &mut Runtime) -> String {
   } else {
     format!("Unknown parameters: '{:?}'", parameters)
   }
-
 }
 
 fn state_command(parameters: Vec<&str>, runtime: &mut Runtime) -> String {
@@ -483,7 +484,7 @@ mod test {
     assert!(!runtime.block_stack.is_empty());
     assert!(!runtime.choices.is_empty());
     assert!(runtime.section.is_some());
-    
+
     let str_found = Console::process_line(Ok("reset".to_string()), &mut rl, &mut runtime).unwrap();
     assert_eq!(str_found, "State and story reset".to_string());
     assert_eq!(runtime.game_state, GameState::default());
