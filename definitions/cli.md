@@ -30,6 +30,7 @@ Once in `run` mode, you have the following commands available:
 - `reset story`: resets the story back to the beginning.
 - `reset state`: resets the state of cuentitos back to default.
 - `reset` / `reset all`: resets both the story and the state of cuentitos to default.
+- `h` / `help`: prints all of the available commands with a brief desciption.
 
 
 ### Filters
@@ -53,3 +54,15 @@ vida: 10
 ``` 
 
 In the latter example, only variables that contain the string `vid` are displayed. 
+
+## Help
+
+You can use the `help` command to see all the available commands for the cli.
+
+## Watch
+
+You can use the `watch` command to compile a story and run it aftewards. This command also watches for changes in the script directory so if the script or the configuration files change, the cli will prompt you for confirmation in case you want to recompile or restart the story.
+
+```
+watch {path to script file}
+```
