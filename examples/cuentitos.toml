@@ -4,9 +4,6 @@ default_locale = 'en'
 [variables]
 energy = "integer"
 time = "float"
-
-[variables.time_of_day]
-enum = ["morning", "night"]
-
-[variables.item]
-enum = ["tea"]
+day = "integer"
+time_of_day = { enum = [ "morning", "night"] }
+item = {enum = ["tea", "spoon"]}
