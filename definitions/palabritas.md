@@ -127,7 +127,7 @@ You can also create what we call `named buckets`. These buckets support probabil
       You feel they're too busy to bother them with questions.
 ```
 
-To create one of these you wrap the name and probability with `[]`, for example `[(50%) my_name]`. The name must to be snake case (lower_case_and_underscored). Then you can apply `req`, `mod` or `set`
+To create one of these you wrap the name and probability with `[]`, for example `[(50%) my_name]`. The name must to be snake case (lower_case_and_underscored). Then you can apply `req` or `set`.
 
 
 ## Probability of Options
@@ -264,11 +264,13 @@ The next thing we want to talk about is modifying state.
 ```cuentitos
   * I go to bed
     Feeling depleted of spoons, you go right back to bed.
-    mod energy 10
-    mod time -7.5
+    set energy 10
+    set day +1
+    set time -7.5
 ``` 
 
-For that we use the `mod` command with the variable name (in this case `energy` and `time`) and the value modification we want to apply. In this case we added `10` to `energy` and subtracted `7.5` to `time`. From this we infer that `energy` is a variable of type `integer` and `time` is of type `float`. We also supoprt `bool` and `enum`, check the `Configuration` section below.
+For that we use the `set` command with the variable name (in this case `energy`, `day` and `time`) and the value modification we want to apply. In this case, we set `energy` to `10`, added `1` to `day`, and subtracted `7.5` from `time`. From this we can infer that `energy` and `day` are variables of the `integer` type and `time` is of the `float` type. We also support `bool`, `enum` and `string` types. Check the `Configuration` section below for more details.
+Also, you can add `+`, subtract `-`, multiply `*` and divide `/` your integers and floats!
 
 ## Sections, diverts and subsections
 
@@ -286,8 +288,9 @@ Then you can go to a section by using the arrow (divert) command `->`.
 ```cuentitos
   * I go to bed
     Feeling depleted of spoons, you go right back to bed.
-    mod energy 10
-    mod time -7.5
+    set energy 10
+    set day +1
+    set time -7.5
     -> second_day
 ```
 
@@ -323,15 +326,62 @@ For example:
   You wake up feeling refreshed. Let's see what this day brings.
 ```
 
-### Finishing the game
+### Stopping the runtime
 `-> END`
+
+### Boomerang divert
+
+Another way to access a section is using the boomerang divert command `<->`. Unlike the regular divert, the boomerang divert command will take you back to your original spot once you're done with the section. 
+
+```cuentitos
+## farmers_market
+  You get to the farmer's market. It's very early and some stands are still being set up.
+  You take a stroll while patiently waiting for the market to finish setting up.
+  The fruit looks very appetizing and you feel like trying some.
+  <-> buy_fruit
+  You feel satisfied with the fruit you bought and return home with a smile on your face.
+  -> END
+
+### buy_fruit
+  You stop by a fruit stand that sells apples and oranges.
+    * Buy an apple
+      You buy an apple and take a bite. Hmm, delicious.
+    * Buy an orange
+      You buy an orange and take a bite. Hmm, refreshing. 
+
+```
+
+In this example, once the subsection buy_fruit finishes, the story goes back to where the boomerang divert was and shows the line `You feel satisfied with the fruit you bought and return home with a smile on your face.`.
+
+### Unique command
+
+To make sure that the story never reaches the same spot twice, you can use the `unique` command.
+
+```cuentitos
+### tour_museum
+  Where should I go?
+    * Go to the dinosaur section.
+      unique
+      The Tyrannosaurus Rex is scary up close.
+      -> tour_museum
+    * Go to the art section.
+      unique
+      You admire the paintings.
+      -> tour_museum
+    * Go home.
+      You learn something new today and return home with a smile on your face.
+      -> END
+```
+
+In this example, you can only explore any part of the museum once. 
 
 ## Comments
 A line that starts with `//` is ignored.
 
-## Functions
-You can dynamically communicate with your runtime by the way of functions.
-To run a function you start and finish a line with backticks.
+## Functions and tags
+
+You can dynamically communicate with your game engine by the way of functions.
+To run a `function` you start and finish a line with backticks.
 
 Example:
 
@@ -341,22 +391,53 @@ Example:
   `play_sound alarm`
 ```
 
-The runtime will receive a function call with "alarm" as a parameter.
+The game engine will receive a `function` call with "alarm" as a parameter.
 
 Since this is dynamic, the compiler can't check if the types are the right ones, you'll have to do this yourself.
 
-You can use an arbitrary amount of parameters, they will be passed to the runtime as a vector.
+You can use an arbitrary amount of parameters, they will be passed to the game engine as a vector.
 
 ```cuentitos
 `play_sound alarm 0.3`
 ```
-It's up to the runtime how to interpret `0.3` in this case, and cuentitos will just pass it through.
-You can always use variables as a way to communicate with the runtime and check for types in compile time.
+It's up to the game engine how to interpret `0.3` in this case, and cuentitos will just pass it through.
+You can always use variables as a way to communicate with the game engine and check for types in compile time.
+
+Another way to communicate with your game engine is by using a `tag`. This serves as a marker that you can place on any line.
+
+```cuentitos
+# second_day_happy
+  * Shelter the dog.
+    tag important_decision
+```
+
+The game engine will receive a `tag` named `important_decision` so the game engine can, for example, warn the player about the consequences of taking this path.
 
 ## Configuration
-### Variables
-#### Bool
-#### Integer
-#### Float
-#### Enum
-#### String
+
+A user can define variables and their types to use inside conditions.
+
+This is done in the configuration file `cuentitos.toml`.
+
+These can be of type `integer`, `float`, and `bool`, `enum` and `string`.
+
+```toml
+[variables]
+energy = "integer"
+time = "float"
+day = "integer"
+time_of_day = { enum = [ "morning", "night"] }
+item = {enum = ["tea", "spoon"]}
+```
+
+Once defined, you can use them in your story by using the commands `req`, `set` and `freq`.
+
+```cuentitos
+Feeling mentally and physically exhausted from the day's adventures, you decide it's time to head back to your hotel.
+As you enter the peaceful sanctuary of your room, you take a deep breath, relieved to have a quiet space where you can recharge and prepare for the challenges ahead.
+
+The sun shines bright through the window.
+  req time_of_day !night
+The moonlight gives the room a peaceful tone.
+  req time_of_day night
+```

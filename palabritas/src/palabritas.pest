@@ -1,4 +1,4 @@
-ReservedKeywords = { "req" | "freq" | "set" | "unique" | "->" | "`" | "*" | "#" | "//" | "END" | "<->" }
+ReservedKeywords = { "req" | "freq" | "set" | "unique" | "->" | "`" | "*" | "#" | "//" | "END" | "<->" | "tag" }
 Char = { (!NewLine ~ ANY)+ }
 Integer = { "-"? ~ ASCII_DIGIT+ }
 Float = { Integer ~ "." ~ ASCII_DIGIT* }

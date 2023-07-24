@@ -55,7 +55,8 @@ You decide to focus on the now...
     -> second_day
   * I go to bed
     Feeling depleted of spoons, you go right back to bed.
-    set energy +10
+    set energy 10
+    set day +1
     set time -7.5
     -> second_day
   * I call my parents
@@ -83,7 +84,34 @@ You decide to focus on the now...
       -> second_day/farmers_market
 
 ## museum
-  You get to the museum door. You watch through the window. It seems crowded.
+  You enter the museum, it is crowded but the exhibitions look amazing.
+  -> tour_museum
+
+### tour_museum
+  Where should I go?
+    * Go to the dinosaur section.
+      unique
+      The Tyrannosaurus Rex is scary up close.
+      -> tour_museum
+    * Go to the art section.
+      unique
+      You admire the paintings.
+      -> tour_museum
+    * Go home.
+      You learn something new today and return home with a smile on your face.
+      -> END
 
 ## farmers_market
   You get to the farmer's market. It's very early and some stands are still being set up.
+  You take a stroll while patiently waiting for the market to finish setting up.
+  The fruit looks very appetizing and you feel like trying some.
+  <-> buy_fruit
+  You feel satisfied with the fruit you bought and return home with a smile on your face.
+  -> END
+
+### buy_fruit
+  You stop by a fruit stand that sells apples and oranges.
+    * Buy an apple
+      You buy an apple and take a bite. Hmm, delicious.
+    * Buy an orange
+      You buy an orange and take a bite. Hmm, refreshing. 
