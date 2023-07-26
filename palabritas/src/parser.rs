@@ -414,6 +414,12 @@ fn parse_section(
     make_childs_bucket(block_id, &mut parsing_data.blocks, level);
   }
 
+  check_options(
+    &parsing_data.blocks[level][block_id],
+    &parsing_data.blocks,
+    level,
+  )?;
+
   Ok(section)
 }
 
@@ -524,6 +530,12 @@ fn parse_subsection(
     make_childs_bucket(block_id, &mut parsing_data.blocks, level);
   }
 
+  check_options(
+    &parsing_data.blocks[level][block_id],
+    &parsing_data.blocks,
+    level,
+  )?;
+
   Ok(())
 }
 fn parse_block(
@@ -628,6 +640,48 @@ fn parse_block(
     &parsing_data.blocks,
     level,
   )?;
+
+  check_options(
+    &parsing_data.blocks[level][block_id],
+    &parsing_data.blocks,
+    level,
+  )?;
+
+  Ok(())
+}
+
+fn check_options(
+  block: &Block,
+  blocks: &[Vec<Block>],
+  level: usize,
+) -> Result<(), PalabritasError> {
+  if level == 0 {
+    if let Block::Choice { id: _, settings } = block {
+      return Err(PalabritasError::OrphanOption(settings.script.clone()));
+    }
+  }
+
+  let mut first_choice_child_script = None;
+  let mut has_non_choice_child = false;
+
+  for child in block.get_settings().children.iter().rev() {
+    let child = &blocks[level + 1][*child];
+    if let Block::Choice { id: _, settings } = child {
+      first_choice_child_script = Some(settings.script.clone());
+    } else {
+      has_non_choice_child = true;
+    }
+  }
+
+  if let Some(first_choice_child_script) = first_choice_child_script {
+    if let Block::Text { id: _, settings: _ } = block {
+      if has_non_choice_child {
+        return Err(PalabritasError::InvalidOption(first_choice_child_script));
+      }
+    } else {
+      return Err(PalabritasError::OrphanOption(first_choice_child_script));
+    }
+  }
 
   Ok(())
 }
@@ -3488,6 +3542,45 @@ mod test {
     };
 
     assert_eq!(database, expected_database);
+  }
+
+  #[test]
+  fn orphan_choices_throws_error() {
+    let choice_text = make_random_identifier();
+    let database = format!("* {}", choice_text);
+    let err = parse_database_str(&database, &Config::default()).unwrap_err();
+    let expected_error = PalabritasError::OrphanOption(Script {
+      line: 1,
+      col: 1,
+      ..Default::default()
+    });
+    assert_eq!(expected_error, err);
+
+    let choice_text = make_random_identifier();
+    let section_text = make_random_identifier();
+    let database = format!("#{}\n  * {}", section_text, choice_text);
+    let err = parse_database_str(&database, &Config::default()).unwrap_err();
+    let expected_error = PalabritasError::OrphanOption(Script {
+      line: 2,
+      col: 3,
+      ..Default::default()
+    });
+    assert_eq!(expected_error, err);
+  }
+
+  #[test]
+  fn choices_with_non_choice_siblings_throw_error() {
+    let text_1 = make_random_string();
+    let text_2 = make_random_string();
+    let choice_text = make_random_identifier();
+    let database = format!("{}\n  * {}\n  {}", text_1, choice_text, text_2);
+    let err = parse_database_str(&database, &Config::default()).unwrap_err();
+    let expected_error = PalabritasError::InvalidOption(Script {
+      line: 2,
+      col: 3,
+      ..Default::default()
+    });
+    assert_eq!(expected_error, err);
   }
 
   fn assert_parse_rule(rule: Rule, input: &str) {
