@@ -1006,6 +1006,11 @@ impl Runtime {
     settings: &cuentitos_common::BlockSettings,
   ) -> Result<Option<BlockId>, RuntimeError> {
     let total_frequency = self.get_total_frequency(settings)?;
+    
+    if total_frequency == 0 {
+      return Ok(None);
+    }
+
     let mut random_number = self.random_with_max(total_frequency);
 
     for child in &settings.children {
