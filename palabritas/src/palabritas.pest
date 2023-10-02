@@ -51,6 +51,6 @@ Block = {
 
 Database = { SOI ~ (NewLine | Block | Section )* ~ EOI }
 
-COMMENT = _{ "//" ~ (!(NewLine | EOI) ~ ANY)* ~ (NewLine | EOI) }
+COMMENT = _{ " "* ~"//" ~ (!(NewLine | EOI) ~ ANY)* ~ (NewLine | EOI) }
 NewLine = _{ EmptyLine | NEWLINE }
 EmptyLine = _{" "* ~ NEWLINE }

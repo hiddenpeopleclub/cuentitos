@@ -959,17 +959,28 @@ impl Runtime {
 
     let parent_settings = parent.get_settings();
     let mut previous_block_found = false;
-    for sibling in &parent_settings.children {
-      if previous_block_found {
-        if let cuentitos_common::Block::Choice { id: _, settings: _ } =
-          self.get_cuentitos_block(*sibling)?
-        {
-          continue;
-        }
-        return self.push_stack_until_text(*sibling);
+
+    let skip_siblings = matches!(
+      parent,
+      cuentitos_common::Block::Bucket {
+        name: _,
+        settings: _,
       }
-      if *sibling == previous_id {
-        previous_block_found = true;
+    );
+
+    if !skip_siblings {
+      for sibling in &parent_settings.children {
+        if previous_block_found {
+          if let cuentitos_common::Block::Choice { id: _, settings: _ } =
+            self.get_cuentitos_block(*sibling)?
+          {
+            continue;
+          }
+          return self.push_stack_until_text(*sibling);
+        }
+        if *sibling == previous_id {
+          previous_block_found = true;
+        }
       }
     }
 
@@ -1006,7 +1017,7 @@ impl Runtime {
     settings: &cuentitos_common::BlockSettings,
   ) -> Result<Option<BlockId>, RuntimeError> {
     let total_frequency = self.get_total_frequency(settings)?;
-    
+
     if total_frequency == 0 {
       return Ok(None);
     }
