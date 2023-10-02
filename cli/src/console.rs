@@ -97,6 +97,8 @@ fn run_command(command: &str, parameters: Vec<&str>, runtime: &mut Runtime) -> S
     "set" => set_command(parameters, runtime),
     "->" => divert(parameters, runtime),
     "<->" => boomerang_divert(parameters, runtime),
+    "skip" => skip(runtime),
+    "skip-all" => skip_all(runtime),
     "reset" => reset_command(parameters, runtime),
     str => {
       if str.starts_with("->") {
@@ -386,6 +388,34 @@ fn set_command(parameters: Vec<&str>, runtime: &mut Runtime) -> String {
       Err(error) => format!("{}", error),
     },
     Err(error) => format!("{}", error),
+  }
+}
+
+fn skip(runtime: &mut Runtime) -> String {
+  match runtime.skip() {
+    Ok(output) => {
+      let mut output_string = output.text;
+      let choices_string = get_choices_string(output.choices);
+      if !choices_string.is_empty() {
+        output_string += &format!("\n{}", choices_string);
+      }
+      output_string
+    }
+    Err(error) => get_runtime_error_string(error, runtime),
+  }
+}
+
+fn skip_all(runtime: &mut Runtime) -> String {
+  match runtime.skip_all() {
+    Ok(output) => {
+      let mut output_string = output.text;
+      let choices_string = get_choices_string(output.choices);
+      if !choices_string.is_empty() {
+        output_string += &format!("\n{}", choices_string);
+      }
+      output_string
+    }
+    Err(error) => get_runtime_error_string(error, runtime),
   }
 }
 
@@ -689,5 +719,26 @@ mod test {
     ];
     let stack_found = runtime.block_stack.clone();
     assert_eq!(expected_stack, stack_found);
+  }
+
+  #[test]
+  fn skip_command() {
+    let mut runtime = Console::load_runtime("./fixtures/script");
+    let mut rl = DefaultEditor::new().unwrap();
+
+    let expected_str = "You've just arrived in the bustling city, full of excitement and anticipation for your new job.\nThe skyline reaches for the clouds, and the sounds of traffic and people surround you.\nAs you take your first steps in this urban jungle, you feel a mix of emotions, hoping to find your place in this new environment.\n  (1)I take a walk through a nearby park to relax and acclimate to the city.\n  (2)I visit a popular street market to experience the city's unique flavors and energy.\n";
+    let str_found = Console::process_line(Ok("skip".to_string()), &mut rl, &mut runtime).unwrap();
+    assert_eq!(expected_str, &str_found);
+  }
+
+  #[test]
+  fn skip_all_command() {
+    let mut runtime = Console::load_runtime("./fixtures/script");
+    let mut rl = DefaultEditor::new().unwrap();
+
+    let expected_str = "As you take your first steps in this urban jungle, you feel a mix of emotions, hoping to find your place in this new environment.\n  (1)I take a walk through a nearby park to relax and acclimate to the city.\n  (2)I visit a popular street market to experience the city's unique flavors and energy.\n";
+    let str_found =
+      Console::process_line(Ok("skip-all".to_string()), &mut rl, &mut runtime).unwrap();
+    assert_eq!(expected_str, &str_found);
   }
 }
