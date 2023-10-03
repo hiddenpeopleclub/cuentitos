@@ -13,7 +13,7 @@ pub enum PalabritasError {
   PathIsNotAFile(PathBuf),
   PathDoesntExist(PathBuf),
   CantReadFile {
-    path: PathBuf,
+    path: String,
     message: String,
   },
   BucketSumIsNot1(Script, String),
@@ -62,6 +62,7 @@ pub enum PalabritasError {
   FrequencyModifierWithoutFrequencyChance(Script, String),
   OrphanOption(Script),
   InvalidOption(Script),
+  IncludeFileDoesntExist(Script, String),
 }
 
 impl Error for PalabritasError {}
@@ -179,6 +180,12 @@ impl Display for PalabritasError {
           f,
           "{} \n  Options can't have non-option siblings",
           script,
+        ),
+        PalabritasError::IncludeFileDoesntExist(script,file) => write!(
+          f,
+          "{} \n  included file '{}' doesn't exist",
+          script,
+          file
         ),
     }
   }

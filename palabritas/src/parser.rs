@@ -1,6 +1,7 @@
 extern crate pest;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::vec;
 
 use cuentitos_common::condition::ComparisonOperator;
@@ -19,7 +20,7 @@ use crate::error::PalabritasError;
 #[grammar = "palabritas.pest"]
 struct PalabritasParser;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct ParsingData {
   pub blocks: Vec<Vec<Block>>,
   pub i18n: I18n,
@@ -62,7 +63,7 @@ where
     Ok(config) => config,
     Err(err) => {
       return Err(PalabritasError::CantReadFile {
-        path: config_path,
+        path: config_path.to_str().unwrap_or_default().to_string(),
         message: err.to_string(),
       });
     }
@@ -72,7 +73,7 @@ where
     Ok(str) => str,
     Err(e) => {
       return Err(PalabritasError::CantReadFile {
-        path: story_path,
+        path: story_path.to_str().unwrap_or_default().to_string(),
         message: e.to_string(),
       });
     }
@@ -107,10 +108,48 @@ where
   }
 }
 
-fn parse_database(
-  token: Pair<Rule>,
-  mut parsing_data: ParsingData,
-) -> Result<Database, PalabritasError> {
+fn order_database(parsing_data: &ParsingData) -> Result<Vec<Block>, PalabritasError> {
+  if parsing_data.blocks.is_empty() {
+    return Err(PalabritasError::FileIsEmpty);
+  }
+
+  let mut parsing_data = parsing_data.clone();
+  let end_block = Block::Divert {
+    next: NextBlock::EndOfFile,
+    settings: BlockSettings {
+      script: parsing_data.blocks[0]
+        .last()
+        .unwrap()
+        .get_settings()
+        .script
+        .clone(),
+      ..Default::default()
+    },
+  };
+  parsing_data.blocks[0].push(end_block);
+
+  let mut ordered_blocks = Vec::default();
+
+  for child_level in 0..parsing_data.blocks.len() {
+    let mut index_offset = 0;
+    for childs_in_level in parsing_data.blocks.iter().take(child_level + 1) {
+      index_offset += childs_in_level.len();
+    }
+
+    for block in &mut parsing_data.blocks[child_level] {
+      let settings = block.get_settings_mut();
+      for child in &mut settings.children {
+        *child += index_offset;
+      }
+
+      ordered_blocks.push(block.clone());
+    }
+  }
+
+  Ok(ordered_blocks)
+}
+
+fn make_section_map(level_0_size: usize, ordered_blocks: &Vec<Block>) -> HashMap<Section, usize> {
   fn add_section(
     name: &str,
     children: &Vec<BlockId>,
@@ -140,57 +179,6 @@ fn parse_database(
     }
   }
 
-  match_rule(&token, Rule::Database, &parsing_data.file)?;
-
-  for inner_token in token.into_inner() {
-    match inner_token.as_rule() {
-      Rule::Block => {
-        parse_block(inner_token, &mut parsing_data, 0)?;
-      }
-      Rule::Section => {
-        parse_section(inner_token, &mut parsing_data, 0)?;
-      }
-      _ => {}
-    }
-  }
-
-  if parsing_data.blocks.is_empty() {
-    return Err(PalabritasError::FileIsEmpty);
-  }
-
-  let end_block = Block::Divert {
-    next: NextBlock::EndOfFile,
-    settings: BlockSettings {
-      script: parsing_data.blocks[0]
-        .last()
-        .unwrap()
-        .get_settings()
-        .script
-        .clone(),
-      ..Default::default()
-    },
-  };
-  parsing_data.blocks[0].push(end_block);
-
-  let level_0_size = parsing_data.blocks[0].len();
-  let mut ordered_blocks = Vec::default();
-
-  for child_level in 0..parsing_data.blocks.len() {
-    let mut index_offset = 0;
-    for childs_in_level in parsing_data.blocks.iter().take(child_level + 1) {
-      index_offset += childs_in_level.len();
-    }
-
-    for block in &mut parsing_data.blocks[child_level] {
-      let settings = block.get_settings_mut();
-      for child in &mut settings.children {
-        *child += index_offset;
-      }
-
-      ordered_blocks.push(block.clone());
-    }
-  }
-
   let mut section_map = HashMap::default();
 
   for i in 0..level_0_size {
@@ -205,6 +193,42 @@ fn parse_database(
       );
     }
   }
+
+  section_map
+}
+
+fn update_database_parsing_data(
+  token: Pair<Rule>,
+  parsing_data: &mut ParsingData,
+) -> Result<(), PalabritasError> {
+  match_rule(&token, Rule::Database, &parsing_data.file)?;
+
+  for inner_token in token.into_inner() {
+    match inner_token.as_rule() {
+      Rule::Block => {
+        parse_block(inner_token, parsing_data, 0)?;
+      }
+      Rule::Section => {
+        parse_section(inner_token, parsing_data)?;
+      }
+      Rule::INCLUDE => {
+        parse_include(inner_token, parsing_data)?;
+      }
+      _ => {}
+    }
+  }
+
+  Ok(())
+}
+fn parse_database(
+  token: Pair<Rule>,
+  mut parsing_data: ParsingData,
+) -> Result<Database, PalabritasError> {
+  update_database_parsing_data(token, &mut parsing_data)?;
+
+  let level_0_size = parsing_data.blocks[0].len();
+  let ordered_blocks = order_database(&parsing_data)?;
+  let section_map = make_section_map(level_0_size, &ordered_blocks);
 
   validate_diverts(&ordered_blocks, &section_map)?;
   check_duplicate_sections(&ordered_blocks, level_0_size)?;
@@ -251,7 +275,7 @@ pub fn parse_choice_str(input: &str) -> Result<Block, PalabritasError> {
 pub fn parse_section_str(input: &str, config: &Config) -> Result<Block, PalabritasError> {
   let token = parse_str(input, Rule::Section)?;
   let mut parsing_data = ParsingData::new(config.clone(), String::default());
-  parse_section(token, &mut parsing_data, 0)
+  parse_section(token, &mut parsing_data)
 }
 
 pub fn parse_tag_str(input: &str) -> Result<String, PalabritasError> {
@@ -333,18 +357,17 @@ fn parse_str(input: &str, rule: Rule) -> Result<Pair<'_, Rule>, PalabritasError>
   }
 }
 
-fn parse_section(
+fn parse_include(
   token: Pair<Rule>,
   parsing_data: &mut ParsingData,
-  level: usize,
 ) -> Result<Block, PalabritasError> {
-  match_rule(&token, Rule::Section, &parsing_data.file)?;
+  match_rule(&token, Rule::INCLUDE, &parsing_data.file)?;
   if parsing_data.blocks.is_empty() {
     parsing_data.blocks.push(Vec::default());
   }
 
-  parsing_data.blocks[level].push(Block::default());
-  let block_id = parsing_data.blocks[level].len() - 1;
+  parsing_data.blocks[0].push(Block::default());
+  let block_id = parsing_data.blocks[0].len() - 1;
   let script = Script {
     line: token.line_col().0,
     col: token.line_col().1,
@@ -354,11 +377,129 @@ fn parse_section(
   let string = token.as_str().to_string();
 
   let mut settings = BlockSettings {
-    script: Script {
-      file: parsing_data.file.clone(),
-      line: token.line_col().0,
-      col: token.line_col().1,
-    },
+    script: script.clone(),
+    ..Default::default()
+  };
+  let mut id: String = String::default();
+  //INCLUDE = { "include " ~ String ~ (NewLine | EOI) }
+  for inner_token in token.into_inner() {
+    match inner_token.as_rule() {
+      Rule::String => {
+        let mut include_path = match PathBuf::from_str(&parsing_data.file) {
+          Ok(path) => path,
+          Err(err) => {
+            return Err(PalabritasError::CantReadFile {
+              path: parsing_data.file.clone(),
+              message: err.to_string(),
+            })
+          }
+        };
+        include_path.pop();
+        include_path.push(Path::new(inner_token.as_str()));
+        id = inner_token.as_str().to_string();
+
+        parsing_data.current_section = Some(Section {
+          name: id.clone(),
+          parent: None,
+        });
+        settings.section = parsing_data.current_section.clone();
+        if !Path::new(&include_path).exists() {
+          return Err(PalabritasError::IncludeFileDoesntExist(
+            script,
+            inner_token.as_str().to_string(),
+          ));
+        }
+
+        let mut new_parsing_data = ParsingData {
+          blocks: Vec::default(),
+          i18n: parsing_data.i18n.clone(),
+          config: parsing_data.config.clone(),
+          file: include_path.to_str().unwrap_or_default().to_string(),
+          current_section: None,
+        };
+
+        let database_str = match std::fs::read_to_string(&include_path) {
+          Ok(str) => str,
+          Err(e) => {
+            return Err(PalabritasError::CantReadFile {
+              path: include_path.to_str().unwrap_or_default().to_string(),
+              message: e.to_string(),
+            });
+          }
+        };
+
+        let token = match PalabritasParser::parse(Rule::Database, &database_str) {
+          Ok(mut result) => result.next().unwrap(),
+          Err(error) => {
+            let (line, col) = match error.line_col {
+              LineColLocation::Pos(line_col) => line_col,
+              LineColLocation::Span(start, _) => (start.0, start.1),
+            };
+
+            return Err(PalabritasError::ParseError {
+              reason: error.to_string(),
+              script: Script {
+                line,
+                col,
+                file: include_path.display().to_string(),
+              },
+            });
+          }
+        };
+
+        update_database_parsing_data(token, &mut new_parsing_data)?;
+        for level in 0..new_parsing_data.blocks.len() {
+          for block in &new_parsing_data.blocks[level] {
+            if level + 1 >= parsing_data.blocks.len() {
+              parsing_data.blocks.push(Vec::default());
+            }
+            let mut new_block = block.clone();
+            //Update id... maybe try database_from_path and update ids from there
+            parsing_data.blocks[level + 1].push(block.clone());
+            if level == 0 {
+              settings.children.push(parsing_data.blocks[1].len() - 1);
+            }
+          }
+        }
+      }
+      _ => {}
+    }
+  }
+
+  let section = Block::Section { id, settings };
+  check_invalid_frequency(&section, script, string, &parsing_data.blocks, 0)?;
+  parsing_data.blocks[0][block_id] = section.clone();
+
+  if is_child_unnamed_bucket(block_id, &parsing_data.blocks, 0) {
+    make_childs_bucket(block_id, &mut parsing_data.blocks, 0);
+  }
+
+  check_options(&parsing_data.blocks[0][block_id], &parsing_data.blocks, 0)?;
+
+  Ok(section)
+}
+
+fn parse_section(
+  token: Pair<Rule>,
+  parsing_data: &mut ParsingData,
+) -> Result<Block, PalabritasError> {
+  match_rule(&token, Rule::Section, &parsing_data.file)?;
+  if parsing_data.blocks.is_empty() {
+    parsing_data.blocks.push(Vec::default());
+  }
+
+  parsing_data.blocks[0].push(Block::default());
+  let block_id = parsing_data.blocks[0].len() - 1;
+  let script = Script {
+    line: token.line_col().0,
+    col: token.line_col().1,
+    file: parsing_data.file.clone(),
+  };
+
+  let string = token.as_str().to_string();
+
+  let mut settings = BlockSettings {
+    script: script.clone(),
     ..Default::default()
   };
   let mut id: String = String::default();
@@ -389,36 +530,28 @@ fn parse_section(
       }
       Rule::NewBlock => {
         for inner_blocks_token in get_blocks_from_new_block(inner_token) {
-          parse_block(inner_blocks_token, parsing_data, level + 1)?;
-          settings
-            .children
-            .push(parsing_data.blocks[level + 1].len() - 1);
+          parse_block(inner_blocks_token, parsing_data, 1)?;
+          settings.children.push(parsing_data.blocks[1].len() - 1);
         }
       }
       Rule::Subsection => {
-        parse_subsection(inner_token, parsing_data, level + 1)?;
+        parse_subsection(inner_token, parsing_data, 1)?;
         parsing_data.current_section = settings.section.clone();
-        settings
-          .children
-          .push(parsing_data.blocks[level + 1].len() - 1);
+        settings.children.push(parsing_data.blocks[1].len() - 1);
       }
       _ => {}
     }
   }
 
   let section = Block::Section { id, settings };
-  check_invalid_frequency(&section, script, string, &parsing_data.blocks, level)?;
-  parsing_data.blocks[level][block_id] = section.clone();
+  check_invalid_frequency(&section, script, string, &parsing_data.blocks, 0)?;
+  parsing_data.blocks[0][block_id] = section.clone();
 
-  if is_child_unnamed_bucket(block_id, &parsing_data.blocks, level) {
-    make_childs_bucket(block_id, &mut parsing_data.blocks, level);
+  if is_child_unnamed_bucket(block_id, &parsing_data.blocks, 0) {
+    make_childs_bucket(block_id, &mut parsing_data.blocks, 0);
   }
 
-  check_options(
-    &parsing_data.blocks[level][block_id],
-    &parsing_data.blocks,
-    level,
-  )?;
+  check_options(&parsing_data.blocks[0][block_id], &parsing_data.blocks, 0)?;
 
   Ok(section)
 }
@@ -1991,7 +2124,7 @@ mod test {
 
     let token = parse_str(&section_string, Rule::Section).unwrap();
     let mut parsing_data = ParsingData::default();
-    parse_section(token, &mut parsing_data, 0).unwrap();
+    parse_section(token, &mut parsing_data).unwrap();
 
     let section_block = parsing_data.blocks[0][0].clone();
 
@@ -3583,6 +3716,21 @@ mod test {
     assert_eq!(expected_error, err);
   }
 
+  #[test]
+  fn include_inexistent_file_throws_error() {
+    let include_file = make_random_string();
+    let database = format!("include {}", include_file);
+    let err = parse_database_str(&database, &Config::default()).unwrap_err();
+    let expected_error = PalabritasError::IncludeFileDoesntExist(
+      Script {
+        line: 1,
+        col: 1,
+        ..Default::default()
+      },
+      include_file,
+    );
+    assert_eq!(expected_error, err);
+  }
   fn assert_parse_rule(rule: Rule, input: &str) {
     let pair = PalabritasParser::parse(rule, input)
       .expect("unsuccessful parse")

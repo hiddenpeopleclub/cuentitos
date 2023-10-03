@@ -1,4 +1,4 @@
-ReservedKeywords = { "req" | "freq" | "set" | "unique" | "->" | "`" | "*" | "#" | "//" | "END" | "<->" | "tag" }
+ReservedKeywords = { "req" | "freq" | "set" | "unique" | "->" | "`" | "*" | "#" | "//" | "END" | "<->" | "tag" | "include" }
 Char = { (!NewLine ~ ANY)+ }
 Integer = { "-"? ~ ASCII_DIGIT+ }
 Float = { Integer ~ "." ~ ASCII_DIGIT* }
@@ -49,8 +49,10 @@ Block = {
     (NamedBucket | Choice | Text | Divert | BoomerangDivert )  ~  " "* ~ Command* ~ " "* ~ (NewLine+ | EOI) ~ NewBlock*
 }
 
-Database = { SOI ~ (NewLine | Block | Section )* ~ EOI }
+Database = { SOI ~ ( NewLine | Block | Section | INCLUDE )* ~ EOI }
 
 COMMENT = _{ " "* ~"//" ~ (!(NewLine | EOI) ~ ANY)* ~ (NewLine | EOI) }
+INCLUDE = { "include " ~ String ~ (NewLine | EOI) }
+
 NewLine = _{ EmptyLine | NEWLINE }
 EmptyLine = _{" "* ~ NEWLINE }
