@@ -107,7 +107,7 @@ pub enum Block {
   },
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Default)]
 pub struct BlockSettings {
   pub id: BlockId,
   pub script: Script,
@@ -226,7 +226,7 @@ impl Runtime {
   }
 
   pub fn boomerang_divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError> {
-    let new_stack = self.get_section_block_ids(section)?;
+    let new_stack: Vec<usize> = self.get_section_block_ids(section)?;
 
     let mut blocks_added = Vec::default();
     for block in new_stack {
@@ -254,13 +254,47 @@ impl Runtime {
     Output::from_blocks(blocks, self)
   }
 
-  pub fn progress_story(&mut self) -> Result<Output, RuntimeError> {
+  pub fn next_block(&mut self) -> Result<Output, RuntimeError> {
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
     }
 
     let blocks = Self::update_stack(self)?;
     Output::from_blocks(blocks, self)
+  }
+
+  pub fn progress_story(&mut self) -> Result<Output, RuntimeError> {
+    match self.database.config.story_progress_style {
+      cuentitos_common::StoryProgressStyle::Next => self.next_block(),
+      cuentitos_common::StoryProgressStyle::Skip => self.skip(),
+    }
+  }
+
+  pub fn skip(&mut self) -> Result<Output, RuntimeError> {
+    let mut output = self.next_block()?;
+
+    while output.choices.is_empty() {
+      let mut new_output = self.next_block()?;
+      output.blocks.append(&mut new_output.blocks);
+      output.choices = new_output.choices;
+      output.text += "\n";
+      output.text += &new_output.text;
+    }
+
+    Ok(output)
+  }
+
+  pub fn skip_all(&mut self) -> Result<Output, RuntimeError> {
+    let mut output = self.next_block()?;
+
+    while output.choices.is_empty() {
+      let mut new_output = self.next_block()?;
+      output.blocks.append(&mut new_output.blocks);
+      output.choices = new_output.choices;
+      output.text = new_output.text;
+    }
+
+    Ok(output)
   }
 
   pub fn get_block(&self, stack_data: &BlockStackData) -> Result<Block, RuntimeError> {
@@ -342,7 +376,7 @@ impl Runtime {
       return Err(RuntimeError::InvalidBlockId(choices[choice]));
     }
 
-    let mut blocks = Self::push_stack_until_text(self, choices[choice])?;
+    let mut blocks = Self::push_stack_until_text_or_choice(self, choices[choice])?;
     let mut output = self.progress_story()?;
     blocks.append(&mut output.blocks);
     output.blocks = blocks;
@@ -780,7 +814,7 @@ impl Runtime {
     Ok(())
   }
 
-  fn push_stack_until_text(&mut self, id: BlockId) -> Result<Vec<Block>, RuntimeError> {
+  fn push_stack_until_text_or_choice(&mut self, id: BlockId) -> Result<Vec<Block>, RuntimeError> {
     if !self.meets_requirements_and_chance(id)? {
       return self.push_next(id);
     }
@@ -806,7 +840,7 @@ impl Runtime {
         settings: _,
       } => {
         if let Some(next) = self.get_random_block_from_bucket(block.get_settings())? {
-          blocks.append(&mut self.push_stack_until_text(next)?);
+          blocks.append(&mut self.push_stack_until_text_or_choice(next)?);
           Ok(blocks)
         } else {
           blocks.append(&mut self.update_stack()?);
@@ -817,7 +851,7 @@ impl Runtime {
         match next {
           NextBlock::BlockId(id) => {
             self.block_stack.clear();
-            blocks.append(&mut self.push_stack_until_text(id)?)
+            blocks.append(&mut self.push_stack_until_text_or_choice(id)?)
           }
           NextBlock::EndOfFile => {
             return Err(RuntimeError::StoryFinished);
@@ -831,7 +865,7 @@ impl Runtime {
       }
       cuentitos_common::Block::BoomerangDivert { next, settings: _ } => {
         match next {
-          NextBlock::BlockId(id) => blocks.append(&mut self.push_stack_until_text(id)?),
+          NextBlock::BlockId(id) => blocks.append(&mut self.push_stack_until_text_or_choice(id)?),
           NextBlock::EndOfFile => {
             return Err(RuntimeError::StoryFinished);
           }
@@ -895,7 +929,7 @@ impl Runtime {
     }
 
     if self.block_stack.is_empty() {
-      return self.push_stack_until_text(0);
+      return self.push_stack_until_text_or_choice(0);
     }
 
     let last_block_id = match self.block_stack.last() {
@@ -914,7 +948,7 @@ impl Runtime {
 
     if !settings.children.is_empty() {
       if let Some(child) = self.get_next_child_in_stack(&settings, 0)? {
-        return self.push_stack_until_text(child);
+        return self.push_stack_until_text_or_choice(child);
       }
     }
 
@@ -947,7 +981,7 @@ impl Runtime {
 
   fn push_next(&mut self, previous_id: BlockId) -> Result<Vec<Block>, RuntimeError> {
     if self.block_stack.is_empty() {
-      return self.push_stack_until_text(previous_id + 1);
+      return self.push_stack_until_text_or_choice(previous_id + 1);
     }
 
     let new_block_id: usize = match self.block_stack.last() {
@@ -976,7 +1010,7 @@ impl Runtime {
           {
             continue;
           }
-          return self.push_stack_until_text(*sibling);
+          return self.push_stack_until_text_or_choice(*sibling);
         }
         if *sibling == previous_id {
           previous_block_found = true;
@@ -1084,16 +1118,152 @@ mod test {
   use std::{collections::HashMap, fmt::Display, str::FromStr, vec};
 
   use crate::{
-    runtime::{BlockStackData, Chance},
-    GameState, Runtime, RuntimeError,
+    runtime::{self, BlockStackData, Chance},
+    GameState, Output, Runtime, RuntimeError,
   };
   use cuentitos_common::{
-    condition::ComparisonOperator, modifier::ModifierOperator, Block, Condition, Config, Database,
-    FrequencyModifier, Function, I18n, LanguageDb, LanguageId, Modifier, NextBlock, Requirement,
-    Section, VariableKind,
+    condition::ComparisonOperator, modifier::ModifierOperator, Block, BlockSettings, Condition,
+    Config, Database, FrequencyModifier, Function, I18n, LanguageDb, LanguageId, Modifier,
+    NextBlock, Requirement, Section, VariableKind,
   };
   use rand::SeedableRng;
   use rand_pcg::Pcg32;
+
+  #[test]
+  fn skip() {
+    let text_1 = Block::Text {
+      id: "a".to_string(),
+      settings: BlockSettings::default(),
+    };
+    let text_2 = Block::Text {
+      id: "b".to_string(),
+      settings: BlockSettings {
+        children: vec![2],
+        ..Default::default()
+      },
+    };
+    let choice = Block::Choice {
+      id: "c".to_string(),
+      settings: BlockSettings::default(),
+    };
+
+    let mut en: LanguageDb = HashMap::default();
+    en.insert("a".to_string(), "Text 1".to_string());
+    en.insert("b".to_string(), "Text 2".to_string());
+    en.insert("c".to_string(), "Choice".to_string());
+    let mut strings: HashMap<LanguageId, LanguageDb> = HashMap::default();
+    strings.insert("en".to_string(), en);
+
+    let i18n = I18n {
+      locales: vec!["en".to_string()],
+      default_locale: "en".to_string(),
+      strings,
+    };
+
+    let database = Database {
+      blocks: vec![text_1, text_2, choice],
+      i18n,
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime {
+      database,
+      current_locale: "en".to_string(),
+      ..Default::default()
+    };
+
+    let output_text_1 = runtime::Block::Text {
+      text: "Text 1".to_string(),
+      settings: runtime::BlockSettings {
+        id: 0,
+        ..Default::default()
+      },
+    };
+    let output_text_2 = runtime::Block::Text {
+      text: "Text 2".to_string(),
+      settings: runtime::BlockSettings {
+        id: 1,
+        ..Default::default()
+      },
+    };
+
+    let output = runtime.skip().unwrap();
+    let expected_output = Output {
+      text: "Text 1\nText 2".to_string(),
+      choices: vec!["Choice".to_string()],
+      blocks: vec![output_text_1, output_text_2],
+    };
+
+    assert_eq!(output, expected_output);
+  }
+
+  #[test]
+  fn skip_all() {
+    let text_1 = Block::Text {
+      id: "a".to_string(),
+      settings: BlockSettings::default(),
+    };
+    let text_2 = Block::Text {
+      id: "b".to_string(),
+      settings: BlockSettings {
+        children: vec![2],
+        ..Default::default()
+      },
+    };
+    let choice = Block::Choice {
+      id: "c".to_string(),
+      settings: BlockSettings::default(),
+    };
+
+    let mut en: LanguageDb = HashMap::default();
+    en.insert("a".to_string(), "Text 1".to_string());
+    en.insert("b".to_string(), "Text 2".to_string());
+    en.insert("c".to_string(), "Choice".to_string());
+    let mut strings: HashMap<LanguageId, LanguageDb> = HashMap::default();
+    strings.insert("en".to_string(), en);
+
+    let i18n = I18n {
+      locales: vec!["en".to_string()],
+      default_locale: "en".to_string(),
+      strings,
+    };
+
+    let database = Database {
+      blocks: vec![text_1, text_2, choice],
+      i18n,
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime {
+      database,
+      current_locale: "en".to_string(),
+      ..Default::default()
+    };
+
+    let output_text_1 = runtime::Block::Text {
+      text: "Text 1".to_string(),
+      settings: runtime::BlockSettings {
+        id: 0,
+        ..Default::default()
+      },
+    };
+    let output_text_2 = runtime::Block::Text {
+      text: "Text 2".to_string(),
+      settings: runtime::BlockSettings {
+        id: 1,
+        ..Default::default()
+      },
+    };
+
+    let output = runtime.skip_all().unwrap();
+    let expected_output = Output {
+      text: "Text 2".to_string(),
+      choices: vec!["Choice".to_string()],
+      blocks: vec![output_text_1, output_text_2],
+    };
+
+    assert_eq!(output, expected_output);
+  }
 
   #[test]
   fn new_runtime_works_correctly() {
@@ -1652,7 +1822,7 @@ mod test {
   }
 
   #[test]
-  fn next_block_works_correctly() {
+  fn next_works_correctly() {
     let settings = cuentitos_common::BlockSettings {
       children: vec![1, 2],
       ..Default::default()
@@ -1698,7 +1868,7 @@ mod test {
       ..Default::default()
     };
 
-    let output = runtime.progress_story().unwrap();
+    let output = runtime.next_block().unwrap();
     let block = runtime
       .get_block(&BlockStackData {
         id: 0,
@@ -1780,7 +1950,7 @@ mod test {
       .unwrap()
       .unwrap();
     assert_eq!(id, 1);
-    Runtime::push_stack_until_text(&mut runtime, 1).unwrap();
+    Runtime::push_stack_until_text_or_choice(&mut runtime, 1).unwrap();
     let bucket_settings = runtime
       .get_cuentitos_block(0)
       .unwrap()
@@ -3249,7 +3419,7 @@ mod test {
   }
 
   #[test]
-  fn next_block_throws_error_if_theres_a_choice() {
+  fn next_throws_error_if_theres_a_choice() {
     let text = Block::Text {
       id: String::default(),
       settings: cuentitos_common::BlockSettings {
@@ -3688,6 +3858,186 @@ mod test {
     assert!(runtime.section.is_none());
   }
 
+  #[test]
+  fn progress_story_works_with_next() {
+    let text_1 = Block::Text {
+      id: "text_1".to_string(),
+      settings: BlockSettings::default(),
+    };
+
+    let settings = cuentitos_common::BlockSettings {
+      children: vec![2, 3],
+      ..Default::default()
+    };
+    let text_2 = Block::Text {
+      id: "text_2".to_string(),
+      settings,
+    };
+
+    let choice_1 = Block::Choice {
+      id: "1".to_string(),
+      settings: cuentitos_common::BlockSettings::default(),
+    };
+
+    let choice_2 = Block::Choice {
+      id: "2".to_string(),
+      settings: cuentitos_common::BlockSettings::default(),
+    };
+
+    let mut en: LanguageDb = HashMap::default();
+    en.insert("1".to_string(), "1".to_string());
+    en.insert("2".to_string(), "2".to_string());
+    en.insert("text_1".to_string(), "text_1".to_string());
+    en.insert("text_2".to_string(), "text_2".to_string());
+
+    let mut strings: HashMap<LanguageId, LanguageDb> = HashMap::default();
+    strings.insert("en".to_string(), en);
+
+    let i18n = I18n {
+      locales: vec!["en".to_string()],
+      default_locale: "en".to_string(),
+      strings,
+    };
+
+    let database = Database {
+      blocks: vec![
+        text_1.clone(),
+        text_2.clone(),
+        choice_1.clone(),
+        choice_2.clone(),
+      ],
+      i18n,
+      config: Config {
+        story_progress_style: cuentitos_common::StoryProgressStyle::Next,
+        ..Default::default()
+      },
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime {
+      database,
+      current_locale: "en".to_string(),
+      ..Default::default()
+    };
+
+    let output = runtime.progress_story().unwrap();
+    let block = runtime
+      .get_block(&BlockStackData {
+        id: 0,
+        chance: Chance::None,
+      })
+      .unwrap();
+
+    let expected_output = crate::Output {
+      text: "text_1".to_string(),
+      choices: Vec::default(),
+      blocks: vec![block],
+      ..Default::default()
+    };
+
+    assert_eq!(output, expected_output);
+    assert_eq!(
+      runtime.block_stack,
+      vec![BlockStackData {
+        id: 0,
+        chance: Chance::None
+      }]
+    );
+  }
+
+  #[test]
+  fn progress_story_works_with_skip() {
+    let text_1 = Block::Text {
+      id: "text_1".to_string(),
+      settings: BlockSettings::default(),
+    };
+
+    let settings = cuentitos_common::BlockSettings {
+      children: vec![2, 3],
+      ..Default::default()
+    };
+    let text_2 = Block::Text {
+      id: "text_2".to_string(),
+      settings,
+    };
+
+    let choice_1 = Block::Choice {
+      id: "1".to_string(),
+      settings: cuentitos_common::BlockSettings::default(),
+    };
+
+    let choice_2 = Block::Choice {
+      id: "2".to_string(),
+      settings: cuentitos_common::BlockSettings::default(),
+    };
+
+    let mut en: LanguageDb = HashMap::default();
+    en.insert("1".to_string(), "1".to_string());
+    en.insert("2".to_string(), "2".to_string());
+    en.insert("text_1".to_string(), "text_1".to_string());
+    en.insert("text_2".to_string(), "text_2".to_string());
+
+    let mut strings: HashMap<LanguageId, LanguageDb> = HashMap::default();
+    strings.insert("en".to_string(), en);
+
+    let i18n = I18n {
+      locales: vec!["en".to_string()],
+      default_locale: "en".to_string(),
+      strings,
+    };
+
+    let database = Database {
+      blocks: vec![
+        text_1.clone(),
+        text_2.clone(),
+        choice_1.clone(),
+        choice_2.clone(),
+      ],
+      i18n,
+      config: Config {
+        story_progress_style: cuentitos_common::StoryProgressStyle::Skip,
+        ..Default::default()
+      },
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime {
+      database,
+      current_locale: "en".to_string(),
+      ..Default::default()
+    };
+
+    let output = runtime.progress_story().unwrap();
+    let block_1 = runtime
+      .get_block(&BlockStackData {
+        id: 0,
+        chance: Chance::None,
+      })
+      .unwrap();
+
+    let block_2 = runtime
+      .get_block(&BlockStackData {
+        id: 1,
+        chance: Chance::None,
+      })
+      .unwrap();
+
+    let expected_output = crate::Output {
+      text: "text_1\ntext_2".to_string(),
+      choices: vec!["1".to_string(), "2".to_string()],
+      blocks: vec![block_1, block_2],
+      ..Default::default()
+    };
+
+    assert_eq!(output, expected_output);
+    assert_eq!(
+      runtime.block_stack,
+      vec![BlockStackData {
+        id: 1,
+        chance: Chance::None
+      }]
+    );
+  }
   #[derive(Debug, Default, PartialEq, Eq)]
   enum TimeOfDay {
     #[default]
