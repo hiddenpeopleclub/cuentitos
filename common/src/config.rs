@@ -14,6 +14,15 @@ pub struct Config {
   pub variables: HashMap<String, VariableKind>,
   pub locales: Vec<String>,
   pub default_locale: String,
+  #[serde(default)]
+  pub story_progress_style: StoryProgressStyle,
+}
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum StoryProgressStyle {
+  #[default]
+  Next,
+  Skip,
 }
 
 impl Config {

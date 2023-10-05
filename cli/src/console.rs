@@ -91,13 +91,14 @@ impl Console {
 fn run_command(command: &str, parameters: Vec<&str>, runtime: &mut Runtime) -> String {
   match command {
     "" => progress_story(runtime),
+    "next" | "n" => next_block(runtime),
     "sections" => sections_command(parameters, runtime),
     "?" => state_command(parameters, runtime),
     "variables" => variables_command(parameters, runtime),
     "set" => set_command(parameters, runtime),
     "->" => divert(parameters, runtime),
     "<->" => boomerang_divert(parameters, runtime),
-    "skip" => skip(runtime),
+    "skip" | "s" => skip(runtime),
     "skip-all" => skip_all(runtime),
     "reset" => reset_command(parameters, runtime),
     str => {
@@ -152,9 +153,11 @@ fn get_output_string(output: Output, runtime: &Runtime) -> String {
   for block in output.blocks {
     let block_output = get_block_string(block, runtime);
     if !block_output.is_empty() {
-      output_string += &block_output;
+      output_string = output_string + &block_output + "\n";
     }
   }
+
+  output_string = output_string.trim_end().to_string();
 
   let choices_string = get_choices_string(output.choices);
   if !choices_string.is_empty() {
@@ -197,6 +200,8 @@ fn get_block_string(block: Block, runtime: &Runtime) -> String {
     }
     _ => block_string,
   }
+  .trim_end()
+  .to_string()
 }
 
 fn get_change_string(chance: &Chance) -> String {
@@ -252,6 +257,13 @@ fn get_choices_string(choices: Vec<String>) -> String {
 
 fn progress_story(runtime: &mut Runtime) -> String {
   match runtime.progress_story() {
+    Ok(output) => get_output_string(output, runtime),
+    Err(error) => get_runtime_error_string(error, runtime),
+  }
+}
+
+fn next_block(runtime: &mut Runtime) -> String {
+  match runtime.next_block() {
     Ok(output) => get_output_string(output, runtime),
     Err(error) => get_runtime_error_string(error, runtime),
   }
@@ -542,7 +554,11 @@ mod test {
     let str_found = Console::process_line(Ok("".to_string()), &mut rl, &mut runtime).unwrap();
     assert_eq!(expected_str, &str_found);
 
-    let str_found = runtime.current().unwrap().text;
+    runtime.reset_all();
+    runtime.database.config.story_progress_style = StoryProgressStyle::Skip;
+
+    let expected_str = "You've just arrived in the bustling city, full of excitement and anticipation for your new job.\nThe skyline reaches for the clouds, and the sounds of traffic and people surround you.\nAs you take your first steps in this urban jungle, you feel a mix of emotions, hoping to find your place in this new environment.\n  (1)I take a walk through a nearby park to relax and acclimate to the city.\n  (2)I visit a popular street market to experience the city's unique flavors and energy.\n";
+    let str_found = Console::process_line(Ok("".to_string()), &mut rl, &mut runtime).unwrap();
     assert_eq!(expected_str, &str_found);
   }
 
@@ -729,6 +745,11 @@ mod test {
     let expected_str = "You've just arrived in the bustling city, full of excitement and anticipation for your new job.\nThe skyline reaches for the clouds, and the sounds of traffic and people surround you.\nAs you take your first steps in this urban jungle, you feel a mix of emotions, hoping to find your place in this new environment.\n  (1)I take a walk through a nearby park to relax and acclimate to the city.\n  (2)I visit a popular street market to experience the city's unique flavors and energy.\n";
     let str_found = Console::process_line(Ok("skip".to_string()), &mut rl, &mut runtime).unwrap();
     assert_eq!(expected_str, &str_found);
+
+    runtime.reset_all();
+
+    let str_found = Console::process_line(Ok("s".to_string()), &mut rl, &mut runtime).unwrap();
+    assert_eq!(expected_str, &str_found);
   }
 
   #[test]
@@ -739,6 +760,21 @@ mod test {
     let expected_str = "As you take your first steps in this urban jungle, you feel a mix of emotions, hoping to find your place in this new environment.\n  (1)I take a walk through a nearby park to relax and acclimate to the city.\n  (2)I visit a popular street market to experience the city's unique flavors and energy.\n";
     let str_found =
       Console::process_line(Ok("skip-all".to_string()), &mut rl, &mut runtime).unwrap();
+    assert_eq!(expected_str, &str_found);
+  }
+
+  #[test]
+  fn next_command() {
+    let mut runtime = Console::load_runtime("./fixtures/script");
+    let mut rl = DefaultEditor::new().unwrap();
+
+    let expected_str = "You've just arrived in the bustling city, full of excitement and anticipation for your new job.";
+    let str_found = Console::process_line(Ok("n".to_string()), &mut rl, &mut runtime).unwrap();
+    assert_eq!(expected_str, &str_found);
+
+    runtime.reset_all();
+
+    let str_found = Console::process_line(Ok("next".to_string()), &mut rl, &mut runtime).unwrap();
     assert_eq!(expected_str, &str_found);
   }
 }
