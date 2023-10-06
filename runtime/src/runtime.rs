@@ -274,7 +274,17 @@ impl Runtime {
     let mut output = self.next_block()?;
 
     while output.choices.is_empty() {
-      let mut new_output = self.next_block()?;
+      let pre_self = self.clone();
+      let mut new_output = match self.next_block() {
+        Ok(output) => output,
+        Err(err) => match err {
+          RuntimeError::StoryFinished => {
+            *self = pre_self;
+            break;
+          }
+          _ => return Err(err),
+        },
+      };
       output.blocks.append(&mut new_output.blocks);
       output.choices = new_output.choices;
       output.text += "\n";
@@ -288,7 +298,17 @@ impl Runtime {
     let mut output = self.next_block()?;
 
     while output.choices.is_empty() {
-      let mut new_output = self.next_block()?;
+      let pre_self = self.clone();
+      let mut new_output = match self.next_block() {
+        Ok(output) => output,
+        Err(err) => match err {
+          RuntimeError::StoryFinished => {
+            *self = pre_self;
+            break;
+          }
+          _ => return Err(err),
+        },
+      };
       output.blocks.append(&mut new_output.blocks);
       output.choices = new_output.choices;
       output.text = new_output.text;
@@ -1198,6 +1218,70 @@ mod test {
   }
 
   #[test]
+  fn skip_works_on_end() {
+    let text_1 = Block::Text {
+      id: "a".to_string(),
+      settings: BlockSettings::default(),
+    };
+    let text_2 = Block::Text {
+      id: "b".to_string(),
+      settings: BlockSettings::default(),
+    };
+    let end = Block::Divert {
+      next: NextBlock::EndOfFile,
+      settings: BlockSettings::default(),
+    };
+
+    let mut en: LanguageDb = HashMap::default();
+    en.insert("a".to_string(), "Text 1".to_string());
+    en.insert("b".to_string(), "Text 2".to_string());
+    let mut strings: HashMap<LanguageId, LanguageDb> = HashMap::default();
+    strings.insert("en".to_string(), en);
+
+    let i18n = I18n {
+      locales: vec!["en".to_string()],
+      default_locale: "en".to_string(),
+      strings,
+    };
+
+    let database = Database {
+      blocks: vec![text_1, text_2, end],
+      i18n,
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime {
+      database,
+      current_locale: "en".to_string(),
+      ..Default::default()
+    };
+
+    let output_text_1 = runtime::Block::Text {
+      text: "Text 1".to_string(),
+      settings: runtime::BlockSettings {
+        id: 0,
+        ..Default::default()
+      },
+    };
+    let output_text_2 = runtime::Block::Text {
+      text: "Text 2".to_string(),
+      settings: runtime::BlockSettings {
+        id: 1,
+        ..Default::default()
+      },
+    };
+
+    let output = runtime.skip().unwrap();
+    let expected_output = Output {
+      text: "Text 1\nText 2".to_string(),
+      choices: Vec::default(),
+      blocks: vec![output_text_1, output_text_2],
+    };
+
+    assert_eq!(output, expected_output);
+  }
+
+  #[test]
   fn skip_all() {
     let text_1 = Block::Text {
       id: "a".to_string(),
@@ -1259,6 +1343,70 @@ mod test {
     let expected_output = Output {
       text: "Text 2".to_string(),
       choices: vec!["Choice".to_string()],
+      blocks: vec![output_text_1, output_text_2],
+    };
+
+    assert_eq!(output, expected_output);
+  }
+
+  #[test]
+  fn skip_all_works_on_end() {
+    let text_1 = Block::Text {
+      id: "a".to_string(),
+      settings: BlockSettings::default(),
+    };
+    let text_2 = Block::Text {
+      id: "b".to_string(),
+      settings: BlockSettings::default(),
+    };
+    let end = Block::Divert {
+      next: NextBlock::EndOfFile,
+      settings: BlockSettings::default(),
+    };
+
+    let mut en: LanguageDb = HashMap::default();
+    en.insert("a".to_string(), "Text 1".to_string());
+    en.insert("b".to_string(), "Text 2".to_string());
+    let mut strings: HashMap<LanguageId, LanguageDb> = HashMap::default();
+    strings.insert("en".to_string(), en);
+
+    let i18n = I18n {
+      locales: vec!["en".to_string()],
+      default_locale: "en".to_string(),
+      strings,
+    };
+
+    let database = Database {
+      blocks: vec![text_1, text_2, end],
+      i18n,
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime {
+      database,
+      current_locale: "en".to_string(),
+      ..Default::default()
+    };
+
+    let output_text_1 = runtime::Block::Text {
+      text: "Text 1".to_string(),
+      settings: runtime::BlockSettings {
+        id: 0,
+        ..Default::default()
+      },
+    };
+    let output_text_2 = runtime::Block::Text {
+      text: "Text 2".to_string(),
+      settings: runtime::BlockSettings {
+        id: 1,
+        ..Default::default()
+      },
+    };
+
+    let output = runtime.skip_all().unwrap();
+    let expected_output = Output {
+      text: "Text 2".to_string(),
+      choices: Vec::default(),
       blocks: vec![output_text_1, output_text_2],
     };
 
