@@ -18,20 +18,20 @@ impl I18n {
   {
     // Load existing locales
     let mut base_path = base_path.as_ref().to_path_buf();
+    base_path.pop();
     base_path.push("locales");
 
     for locale in &database.i18n.locales {
       if locale != &database.i18n.default_locale {
         let mut path = base_path.clone();
         path.push(format!("{}.csv", locale));
-
         if path.is_file() {
           let mut reader = csv::Reader::from_path(path)?;
 
           if let Some(db) = database.i18n.strings.get_mut(locale) {
             for result in reader.deserialize() {
               let record: Record = result?;
-              if record.0.is_empty() && record.1.is_empty() {
+              if !record.0.is_empty() && !record.1.is_empty() {
                 db.insert(record.0, record.1);
               }
             }
@@ -47,8 +47,8 @@ impl I18n {
       path = path.parent().unwrap().to_path_buf();
     }
 
+    path.push("locales");
     std::fs::create_dir_all(&path)?;
-
     path.push(format!("{}.csv", database.i18n.default_locale));
 
     let mut wtr = csv::Writer::from_path(path)?;
