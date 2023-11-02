@@ -1,8 +1,0 @@
-reputations = [ "rep_1", "rep_2" ]
-locales = ['en', 'es', 'ru']
-default_locale = 'en'
-
-[variables]
-health = "integer"
-happy = "bool"
-tile = { enum = { values = ["forest"] }}

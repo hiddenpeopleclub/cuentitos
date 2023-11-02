@@ -1,0 +1,10 @@
+locales = ['en']
+default_locale = 'en'
+story_progress_style = 'next'
+
+[variables]
+energy = "integer"
+time = "float"
+day = "integer"
+time_of_day = { enum = [ "morning", "night"] }
+item = {enum = ["tea", "spoon"]}

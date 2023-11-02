@@ -1,6 +1,6 @@
 [package]
 name = "cuentitos-compiler"
-version = "0.0.0"
+version = "0.2.0"
 edition = "2021"
 
 [lib]
@@ -11,6 +11,7 @@ serde = { version = "1.0.144", features = ["derive"] }
 rmp-serde = "1.1.1"
 clap = { version = "4.0.17", features = ["derive"] }
 cuentitos-common = { path = "../common" }
+palabritas = { path = "../palabritas" }
 regex = "1.7.0"
 strum = "0.24.1"
 csv = "1.1"

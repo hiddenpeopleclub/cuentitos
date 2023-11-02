@@ -1,0 +1,56 @@
+ReservedKeywords = { "req" | "freq" | "set" | "unique" | "->" | "`" | "*" | "#" | "//" | "END" | "<->" | "tag" }
+Char = { (!NewLine ~ ANY)+ }
+Integer = { "-"? ~ ASCII_DIGIT+ }
+Float = { Integer ~ "." ~ ASCII_DIGIT* }
+Percentage = { Integer ~ "%" }
+Indentation = { "  " }
+String = @{ Char+ }
+ComparisonOperator = { "!=" | "=" | "<=" | ">=" | "<" | ">" | "!" }
+NotOperator = {"!"}
+ModifierOperator = {"+" | "-" | "*" | "/" | "="}
+
+SnakeCase = { ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | "_" | ASCII_DIGIT)* }
+Identifier = { (ASCII_ALPHA | "_" ) ~ (ASCII_ALPHANUMERIC | "_")* }
+Value = { Identifier | "="? ~ Float | Percentage | "="? ~ Integer }
+Condition = { ( Identifier ~ " "* ~ ( ComparisonOperator ~ " "* )? ~ Value? ) | ( NotOperator? ~ " "* ~ Identifier ~ " "*) }
+
+Requirement = { "req" ~ " "+ ~ Condition ~ " "* }
+Frequency = { "freq" ~ " "+ ~ Condition ~ " "+ ~ ( Float | Integer ) ~ " "* }
+Modifier = { "set" ~ " "+ ~ ( (Identifier ~ " "+ ~ ModifierOperator? ~ " "* ~ Value) | (NotOperator? ~ " "* ~ Identifier) ) ~ " "* }
+Function = {"`" ~ " "* ~ Identifier ~ (" " ~ Value)* ~ " "* ~ "`"}
+Tag = {"tag" ~ " "+ ~ Identifier}
+Unique = {"unique"}
+
+Command = {NewLine+ ~ (Indentation | " ")* ~ (Requirement | Frequency | Modifier | Function | Unique | Tag) } 
+
+Chance = { "(" ~ " "* ~ ( Percentage | Float | Integer ) ~ " "* ~ ")" ~ " "* }
+
+Section = {"#"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ ( NewLine | NewBlock | Subsection )* }
+Subsection = { Indentation* ~ "##"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine | Subsubsection)*}
+Subsubsection = { Indentation* ~ "###"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine | Subsubsubsection)*}
+Subsubsubsection = { Indentation* ~ "####"~ " "*  ~ Chance? ~ " "* ~ !ReservedKeywords ~ Identifier ~ " "* ~ Command* ~ (NewLine | EOI) ~ (NewBlock | NewLine)*}
+
+Text = { !Indentation ~ !ReservedKeywords ~ Chance? ~ String }
+Choice = { "*" ~ " "* ~ Chance? ~ String }
+NamedBucket = { "[" ~ " "* ~ Chance? ~ SnakeCase ~ " "* ~ "]" }
+Divert = { Chance? ~ "->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)* }
+BoomerangDivert = { Chance? ~ "<->"  ~ " "* ~ Identifier ~ ("/" ~ Identifier)* }
+
+NewBlock = {
+    // The first line in the block
+    PEEK_ALL ~ PUSH( Indentation+ ) ~ Block ~
+    // Subsequent lines in the block
+    (PEEK_ALL ~ Block)* ~
+    // Remove the last layer of indentation from the stack when exiting the block
+    DROP
+}
+
+Block = {
+    (NamedBucket | Choice | Text | Divert | BoomerangDivert )  ~  " "* ~ Command* ~ " "* ~ (NewLine+ | EOI) ~ NewBlock*
+}
+
+Database = { SOI ~ (NewLine | Block | Section )* ~ EOI }
+
+COMMENT = _{ " "* ~"//" ~ (!(NewLine | EOI) ~ ANY)* ~ (NewLine | EOI) }
+NewLine = _{ EmptyLine | NEWLINE }
+EmptyLine = _{" "* ~ NEWLINE }

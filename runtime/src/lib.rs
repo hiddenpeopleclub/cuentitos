@@ -1,15 +1,13 @@
 mod runtime;
-pub use runtime::Runtime;
+pub use runtime::*;
 
-mod runtime_state;
-pub use runtime_state::RuntimeState;
+pub use cuentitos_common::Database;
+pub use cuentitos_common::StoryProgressStyle;
 
 mod game_state;
+pub use cuentitos_common::Section;
+pub use cuentitos_common::VariableKind;
 pub use game_state::GameState;
 
-mod runtime_datatypes;
-pub use cuentitos_common::Database;
-pub use runtime_datatypes::Event;
-pub use runtime_datatypes::EventChoice;
-pub use runtime_datatypes::EventResult;
-pub use runtime_datatypes::Modifier;
+mod error;
+pub use error::RuntimeError;

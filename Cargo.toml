@@ -1,10 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-  "common",
-  "compiler",
   "runtime",
-  "runtime-c",
+  "palabritas",
+  "compiler",
+  "common",
   "cli",
-  "editor/src-tauri"
 ]
