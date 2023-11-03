@@ -40,8 +40,8 @@ impl I18n {
       }
     }
 
-    for record in &database.config.other_texts {
-      if let Some(locale) = database.i18n.strings.get_mut(&database.i18n.default_locale) {
+    if let Some(locale) = database.i18n.strings.get_mut(&database.i18n.default_locale) {
+      for record in &database.config.other_texts {
         locale.insert(record.0.clone(), record.1.clone());
       }
     }
