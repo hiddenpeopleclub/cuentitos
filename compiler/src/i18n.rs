@@ -40,6 +40,12 @@ impl I18n {
       }
     }
 
+    if let Some(locale) = database.i18n.strings.get_mut(&database.i18n.default_locale) {
+      for record in &database.config.other_texts {
+        locale.insert(record.0.clone(), record.1.clone());
+      }
+    }
+
     // Generate main translation file
     let mut path = destination_path.as_ref().to_path_buf();
 
