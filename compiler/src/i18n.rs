@@ -58,6 +58,10 @@ impl I18n {
       wtr.serialize(record)?;
     }
 
+    for record in &database.config.other_texts {
+      wtr.serialize(record)?;
+    }
+
     Ok(())
   }
 }
