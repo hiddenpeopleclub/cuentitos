@@ -40,6 +40,12 @@ impl I18n {
       }
     }
 
+    for record in &database.config.other_texts {
+      if let Some(locale) = database.i18n.strings.get_mut(&database.i18n.default_locale) {
+        locale.insert(record.0.clone(), record.1.clone());
+      }
+    }
+
     // Generate main translation file
     let mut path = destination_path.as_ref().to_path_buf();
 
@@ -55,10 +61,6 @@ impl I18n {
     wtr.write_record(["Id", "Text"])?;
 
     for record in database.i18n.strings[&database.i18n.default_locale].iter() {
-      wtr.serialize(record)?;
-    }
-
-    for record in &database.config.other_texts {
       wtr.serialize(record)?;
     }
 
