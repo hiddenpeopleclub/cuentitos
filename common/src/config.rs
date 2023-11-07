@@ -18,6 +18,8 @@ pub struct Config {
   pub other_texts: HashMap<String, String>,
   #[serde(default)]
   pub story_progress_style: StoryProgressStyle,
+  #[serde(default)]
+  pub keep_history: bool,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone, Eq)]

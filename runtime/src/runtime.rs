@@ -160,6 +160,7 @@ pub struct Runtime {
   seed: u64,
   pub current_locale: LanguageId,
   pub section: Option<Section>,
+  pub previous_state: Option<Box<Runtime>>,
 }
 
 impl Runtime {
@@ -178,6 +179,7 @@ impl Runtime {
     self.set_seed(self.seed);
     self.block_stack.clear();
     self.section = None;
+    self.previous_state = None;
     self.choices.clear();
   }
   pub fn reset_state(&mut self) {
@@ -188,7 +190,7 @@ impl Runtime {
     self.reset_state();
   }
 
-  pub fn set_locale<T>(&mut self, locale: T) -> Result<(), String>
+  pub fn set_locale<T>(&mut self, locale: T) -> Result<(), RuntimeError>
   where
     T: AsRef<str>,
   {
@@ -197,7 +199,7 @@ impl Runtime {
       self.current_locale = locale;
       Ok(())
     } else {
-      Err("Missing Locale".to_string())
+      Err(RuntimeError::MissingLocale(locale))
     }
   }
 
@@ -207,7 +209,10 @@ impl Runtime {
   }
 
   pub fn divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError> {
+    let previous_runtime = self.clone();
+
     let new_stack: Vec<usize> = self.get_section_block_ids(section)?;
+
     self.block_stack.clear();
     let mut blocks_added = Vec::default();
     for block in new_stack {
@@ -222,10 +227,15 @@ impl Runtime {
       blocks_added.push(Self::push_stack(self, block)?);
     }
 
+    if self.database.config.keep_history {
+      self.previous_state = Some(Box::new(previous_runtime));
+    }
     Ok(blocks_added)
   }
 
   pub fn boomerang_divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError> {
+    let previous_runtime = self.clone();
+
     let new_stack: Vec<usize> = self.get_section_block_ids(section)?;
 
     let mut blocks_added = Vec::default();
@@ -240,6 +250,10 @@ impl Runtime {
         return Ok(blocks_added);
       }
       blocks_added.push(Self::push_stack(self, block)?);
+    }
+
+    if self.database.config.keep_history {
+      self.previous_state = Some(Box::new(previous_runtime));
     }
     Ok(blocks_added)
   }
@@ -255,11 +269,17 @@ impl Runtime {
   }
 
   pub fn next_block(&mut self) -> Result<Output, RuntimeError> {
+    let previous_runtime = self.clone();
+
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
     }
 
     let blocks = Self::update_stack(self)?;
+
+    if self.database.config.keep_history {
+      self.previous_state = Some(Box::new(previous_runtime));
+    }
     Output::from_blocks(blocks, self)
   }
 
@@ -271,6 +291,8 @@ impl Runtime {
   }
 
   pub fn skip(&mut self) -> Result<Output, RuntimeError> {
+    let previous_runtime = self.clone();
+
     let mut output = self.next_block()?;
 
     while output.choices.is_empty() {
@@ -291,10 +313,15 @@ impl Runtime {
       output.text += &new_output.text;
     }
 
+    if self.database.config.keep_history {
+      self.previous_state = Some(Box::new(previous_runtime));
+    }
     Ok(output)
   }
 
   pub fn skip_all(&mut self) -> Result<Output, RuntimeError> {
+    let previous_runtime = self.clone();
+
     let mut output = self.next_block()?;
 
     while output.choices.is_empty() {
@@ -314,6 +341,9 @@ impl Runtime {
       output.text = new_output.text;
     }
 
+    if self.database.config.keep_history {
+      self.previous_state = Some(Box::new(previous_runtime));
+    }
     Ok(output)
   }
 
@@ -375,6 +405,8 @@ impl Runtime {
   }
 
   pub fn pick_choice(&mut self, choice: usize) -> Result<Output, RuntimeError> {
+    let previous_runtime = self.clone();
+
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
     }
@@ -401,7 +433,19 @@ impl Runtime {
     blocks.append(&mut output.blocks);
     output.blocks = blocks;
 
+    if self.database.config.keep_history {
+      self.previous_state = Some(Box::new(previous_runtime));
+    }
     Ok(output)
+  }
+
+  pub fn rewind(&mut self) -> Result<(), RuntimeError> {
+    if let Some(previous_state) = self.previous_state.clone() {
+      *self = *previous_state;
+      Ok(())
+    } else {
+      Err(RuntimeError::RewindWithNoHistory())
+    }
   }
 
   pub fn set_variable<R, T>(&mut self, variable: R, value: T) -> Result<(), RuntimeError>
@@ -4186,6 +4230,78 @@ mod test {
       }]
     );
   }
+
+  #[test]
+  fn rewind_story() {
+    let text_1 = Block::Text {
+      id: "text_1".to_string(),
+      settings: BlockSettings::default(),
+    };
+
+    let text_2 = Block::Text {
+      id: "text_2".to_string(),
+      settings: BlockSettings::default(),
+    };
+
+    let database = Database {
+      blocks: vec![text_1.clone(), text_2.clone()],
+      config: Config {
+        keep_history: false,
+        ..Default::default()
+      },
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime {
+      database,
+      ..Default::default()
+    };
+
+    runtime.progress_story().unwrap();
+    let err = runtime.rewind().unwrap_err();
+    assert_eq!(err, RuntimeError::RewindWithNoHistory());
+
+    runtime.database.config.keep_history = true;
+
+    let initial_runtime = runtime.clone();
+    runtime.progress_story().unwrap();
+
+    assert_ne!(runtime, initial_runtime);
+
+    runtime.rewind().unwrap();
+
+    assert_eq!(runtime, initial_runtime);
+  }
+
+  #[test]
+  fn missing_locale_throws_error() {
+    let mut strings: HashMap<LanguageId, LanguageDb> = HashMap::default();
+    strings.insert("en".to_string(), HashMap::default());
+
+    let i18n = I18n {
+      locales: vec!["en".to_string()],
+      default_locale: "en".to_string(),
+      strings,
+    };
+
+    let database = Database {
+      i18n,
+      config: Config {
+        story_progress_style: cuentitos_common::StoryProgressStyle::Skip,
+        ..Default::default()
+      },
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime {
+      database,
+      ..Default::default()
+    };
+
+    let runtime_error = runtime.set_locale("es").unwrap_err();
+    assert_eq!(runtime_error, RuntimeError::MissingLocale("es".to_string()));
+  }
+
   #[derive(Debug, Default, PartialEq, Eq)]
   enum TimeOfDay {
     #[default]
