@@ -448,6 +448,23 @@ impl Runtime {
     }
   }
 
+  pub fn rewind_to_choice(&mut self) -> Result<(), RuntimeError> {
+    if self.block_stack.is_empty() {
+      return Ok(());
+    }
+
+    if let Some(previous_state) = self.previous_state.clone() {
+      *self = *previous_state;
+      if self.choices.is_empty() {
+        self.rewind_to_choice()
+      } else {
+        Ok(())
+      }
+    } else {
+      Err(RuntimeError::RewindWithNoHistory())
+    }
+  }
+
   pub fn set_variable<R, T>(&mut self, variable: R, value: T) -> Result<(), RuntimeError>
   where
     T: Display + std::str::FromStr + Default,
@@ -4269,6 +4286,67 @@ mod test {
     assert_ne!(runtime, initial_runtime);
 
     runtime.rewind().unwrap();
+
+    assert_eq!(runtime, initial_runtime);
+  }
+
+  #[test]
+  fn rewind_to_choice() {
+    let text_1 = Block::Text {
+      id: "text_1".to_string(),
+      settings: BlockSettings {
+        children: vec![1],
+        ..Default::default()
+      },
+    };
+
+    let choice = Block::Choice {
+      id: "0".to_string(),
+      settings: BlockSettings {
+        children: vec![2, 3],
+        ..Default::default()
+      },
+    };
+
+    let text_2 = Block::Text {
+      id: "text_1".to_string(),
+      settings: BlockSettings::default(),
+    };
+
+    let text_3 = Block::Text {
+      id: "text_2".to_string(),
+      settings: BlockSettings::default(),
+    };
+
+    let database = Database {
+      blocks: vec![
+        text_1.clone(),
+        choice.clone(),
+        text_2.clone(),
+        text_3.clone(),
+      ],
+      config: Config {
+        keep_history: true,
+        ..Default::default()
+      },
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime {
+      database,
+      ..Default::default()
+    };
+
+    runtime.progress_story().unwrap();
+
+    let initial_runtime = runtime.clone();
+
+    runtime.pick_choice(0).unwrap();
+    runtime.progress_story().unwrap();
+
+    assert_ne!(runtime, initial_runtime);
+
+    runtime.rewind_to_choice().unwrap();
 
     assert_eq!(runtime, initial_runtime);
   }

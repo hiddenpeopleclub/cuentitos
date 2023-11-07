@@ -102,6 +102,7 @@ fn run_command(command: &str, parameters: Vec<&str>, runtime: &mut Runtime) -> S
     "skip-all" => skip_all(runtime),
     "reset" => reset_command(parameters, runtime),
     "rewind" => rewind_command(parameters, runtime),
+    "rewind_to_choice" => rewind_to_choice_command(runtime),
     str => {
       if str.starts_with("->") {
         let substr: String = str.chars().skip(2).collect();
@@ -327,6 +328,15 @@ fn rewind_command(parameters: Vec<&str>, runtime: &mut Runtime) -> String {
   } else {
     runtime.rewind().unwrap();
   }
+
+  match runtime.current() {
+    Ok(current) => get_output_string(current, runtime),
+    Err(err) => get_runtime_error_string(err, runtime),
+  }
+}
+
+fn rewind_to_choice_command(runtime: &mut Runtime) -> String {
+  runtime.rewind_to_choice().unwrap();
 
   match runtime.current() {
     Ok(current) => get_output_string(current, runtime),
@@ -820,6 +830,21 @@ mod test {
 
     let str_found =
       Console::process_line(Ok("rewind 2".to_string()), &mut rl, &mut runtime).unwrap();
+    assert_eq!(expected_str, &str_found);
+  }
+
+  #[test]
+  fn rewind_to_choice_command() {
+    let mut runtime = Console::load_runtime("./fixtures/script");
+    runtime.database.config.keep_history = true;
+    runtime.skip().unwrap();
+    runtime.pick_choice(0).unwrap();
+
+    let mut rl = DefaultEditor::new().unwrap();
+    let expected_str = "As you take your first steps in this urban jungle, you feel a mix of emotions, hoping to find your place in this new environment.\n  (1)I take a walk through a nearby park to relax and acclimate to the city.\n  (2)I visit a popular street market to experience the city's unique flavors and energy.\n";
+
+    let str_found =
+      Console::process_line(Ok("rewind_to_choice".to_string()), &mut rl, &mut runtime).unwrap();
     assert_eq!(expected_str, &str_found);
   }
 }
