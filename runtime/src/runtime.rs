@@ -4461,6 +4461,51 @@ mod test {
     assert_eq!(runtime_error, RuntimeError::MissingLocale("es".to_string()));
   }
 
+  #[test]
+  fn rewind_to_invalid_index_throws_error() {
+    let text_1 = Block::Text {
+      id: "text_1".to_string(),
+      settings: BlockSettings {
+        children: vec![1],
+        ..Default::default()
+      },
+    };
+
+    let text_2 = Block::Text {
+      id: "text_2".to_string(),
+      settings: BlockSettings::default(),
+    };
+
+    let text_3 = Block::Text {
+      id: "text_3".to_string(),
+      settings: BlockSettings::default(),
+    };
+
+    let database = Database {
+      blocks: vec![text_1.clone(), text_2.clone(), text_3.clone()],
+      config: Config {
+        keep_history: true,
+        ..Default::default()
+      },
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime {
+      database,
+      ..Default::default()
+    };
+
+    let err = runtime.rewind_to(1).unwrap_err();
+
+    assert_eq!(
+      RuntimeError::RewindWithToInvalidIndex {
+        index: 1,
+        current_index: 0
+      },
+      err
+    );
+  }
+
   #[derive(Debug, Default, PartialEq, Eq)]
   enum TimeOfDay {
     #[default]
