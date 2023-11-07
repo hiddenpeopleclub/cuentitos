@@ -329,7 +329,7 @@ fn rewind_command(parameters: Vec<&str>, runtime: &mut Runtime) -> String {
   }
 
   match runtime.current() {
-    Ok(current) => get_output_string(current, &runtime),
+    Ok(current) => get_output_string(current, runtime),
     Err(err) => get_runtime_error_string(err, runtime),
   }
 }
