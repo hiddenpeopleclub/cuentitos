@@ -12,6 +12,10 @@ type VariableName = String;
 pub enum RuntimeError {
   MissingLocale(String),
   RewindWithNoHistory(),
+  RewindWithToInvalidIndex {
+    index: usize,
+    current_index: usize,
+  },
   InvalidBlockId(BlockId),
   WaitingForChoice(Vec<String>),
   StoryFinished,
@@ -138,6 +142,16 @@ impl Display for RuntimeError {
       }
       RuntimeError::MissingLocale(s) => {
         write!(f, "Missing locale: {}", s)
+      }
+      RuntimeError::RewindWithToInvalidIndex {
+        index,
+        current_index,
+      } => {
+        write!(
+          f,
+          "Can't rewind to {} because the current index is {}.",
+          index, current_index
+        )
       }
     }
   }
