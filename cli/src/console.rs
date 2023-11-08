@@ -879,7 +879,8 @@ mod test {
     runtime.next_block().unwrap();
 
     let mut rl = DefaultEditor::new().unwrap();
-    let expected_str = "You've just arrived in the bustling city, full of excitement and anticipation for your new job.";
+    let expected_str =
+      "The skyline reaches for the clouds, and the sounds of traffic and people surround you.";
 
     let str_found =
       Console::process_line(Ok("rewind_to 1".to_string()), &mut rl, &mut runtime).unwrap();

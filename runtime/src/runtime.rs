@@ -161,7 +161,7 @@ pub struct Runtime {
   pub current_locale: LanguageId,
   pub section: Option<Section>,
   pub previous: Option<Box<Runtime>>,
-  pub rewind_count: usize,
+  pub rewind_index: usize,
 }
 
 impl Runtime {
@@ -181,7 +181,7 @@ impl Runtime {
     self.block_stack.clear();
     self.section = None;
     self.previous = None;
-    self.rewind_count = 0;
+    self.rewind_index = 0;
     self.choices.clear();
   }
   pub fn reset_state(&mut self) {
@@ -211,7 +211,7 @@ impl Runtime {
   }
 
   pub fn divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError> {
-    let previous_runtime = self.clone();
+    let history_entry = self.get_history_entry();
 
     let new_stack: Vec<usize> = self.get_section_block_ids(section)?;
 
@@ -229,16 +229,12 @@ impl Runtime {
       blocks_added.push(Self::push_stack(self, block)?);
     }
 
-    if self.database.config.keep_history {
-      self.previous = Some(Box::new(previous_runtime));
-      self.rewind_count += 1;
-    }
+    self.add_to_history(history_entry);
     Ok(blocks_added)
   }
 
   pub fn boomerang_divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError> {
-    let previous_runtime = self.clone();
-
+    let history_entry = self.get_history_entry();
     let new_stack: Vec<usize> = self.get_section_block_ids(section)?;
 
     let mut blocks_added = Vec::default();
@@ -254,11 +250,7 @@ impl Runtime {
       }
       blocks_added.push(Self::push_stack(self, block)?);
     }
-
-    if self.database.config.keep_history {
-      self.previous = Some(Box::new(previous_runtime));
-      self.rewind_count += 1;
-    }
+    self.add_to_history(history_entry);
     Ok(blocks_added)
   }
 
@@ -273,7 +265,7 @@ impl Runtime {
   }
 
   pub fn next_block(&mut self) -> Result<Output, RuntimeError> {
-    let previous_runtime = self.clone();
+    let history_entry = self.get_history_entry();
 
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
@@ -281,10 +273,8 @@ impl Runtime {
 
     let blocks = Self::update_stack(self)?;
 
-    if self.database.config.keep_history {
-      self.previous = Some(Box::new(previous_runtime));
-      self.rewind_count += 1;
-    }
+    self.add_to_history(history_entry);
+
     Output::from_blocks(blocks, self)
   }
 
@@ -296,8 +286,6 @@ impl Runtime {
   }
 
   pub fn skip(&mut self) -> Result<Output, RuntimeError> {
-    let previous_runtime = self.clone();
-
     let mut output = self.next_block()?;
 
     while output.choices.is_empty() {
@@ -318,16 +306,10 @@ impl Runtime {
       output.text += &new_output.text;
     }
 
-    if self.database.config.keep_history {
-      self.previous = Some(Box::new(previous_runtime));
-      self.rewind_count += 1;
-    }
     Ok(output)
   }
 
   pub fn skip_all(&mut self) -> Result<Output, RuntimeError> {
-    let previous_runtime = self.clone();
-
     let mut output = self.next_block()?;
 
     while output.choices.is_empty() {
@@ -347,10 +329,6 @@ impl Runtime {
       output.text = new_output.text;
     }
 
-    if self.database.config.keep_history {
-      self.previous = Some(Box::new(previous_runtime));
-      self.rewind_count += 1;
-    }
     Ok(output)
   }
 
@@ -412,7 +390,7 @@ impl Runtime {
   }
 
   pub fn pick_choice(&mut self, choice: usize) -> Result<Output, RuntimeError> {
-    let previous_runtime = self.clone();
+    let history_entry = self.get_history_entry();
 
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
@@ -440,10 +418,7 @@ impl Runtime {
     blocks.append(&mut output.blocks);
     output.blocks = blocks;
 
-    if self.database.config.keep_history {
-      self.previous = Some(Box::new(previous_runtime));
-      self.rewind_count += 1;
-    }
+    self.add_to_history(history_entry);
     Ok(output)
   }
 
@@ -478,14 +453,14 @@ impl Runtime {
       return Err(RuntimeError::RewindWithNoHistory());
     }
 
-    if index >= self.rewind_count {
+    if index >= self.rewind_index {
       return Err(RuntimeError::RewindWithToInvalidIndex {
         index,
-        current_index: self.rewind_count,
+        current_index: self.rewind_index,
       });
     }
 
-    while self.rewind_count > index {
+    while self.rewind_index > index {
       self.rewind()?;
     }
 
@@ -608,6 +583,23 @@ impl Runtime {
     }
 
     Ok(choices_strings)
+  }
+
+  fn get_history_entry(&self) -> Option<Runtime> {
+    if self.current().is_ok() && self.database.config.keep_history {
+      Some(self.clone())
+    } else {
+      None
+    }
+  }
+
+  fn add_to_history(&mut self, history_entry: Option<Runtime>) {
+    if let Some(history_entry) = history_entry {
+      if self.database.config.keep_history {
+        self.previous = Some(Box::new(history_entry));
+        self.rewind_index += 1;
+      }
+    }
   }
 
   fn get_cuentitos_block(&self, id: BlockId) -> Result<&cuentitos_common::Block, RuntimeError> {
@@ -4412,9 +4404,8 @@ mod test {
       ..Default::default()
     };
 
-    let initial_runtime = runtime.clone();
-
     runtime.progress_story().unwrap();
+    let initial_runtime = runtime.clone();
     runtime.progress_story().unwrap();
     runtime.progress_story().unwrap();
 
