@@ -160,6 +160,8 @@ pub struct Runtime {
   seed: u64,
   pub current_locale: LanguageId,
   pub section: Option<Section>,
+  pub previous: Option<Box<Runtime>>,
+  pub rewind_index: usize,
 }
 
 impl Runtime {
@@ -178,6 +180,8 @@ impl Runtime {
     self.set_seed(self.seed);
     self.block_stack.clear();
     self.section = None;
+    self.previous = None;
+    self.rewind_index = 0;
     self.choices.clear();
   }
   pub fn reset_state(&mut self) {
@@ -188,7 +192,7 @@ impl Runtime {
     self.reset_state();
   }
 
-  pub fn set_locale<T>(&mut self, locale: T) -> Result<(), String>
+  pub fn set_locale<T>(&mut self, locale: T) -> Result<(), RuntimeError>
   where
     T: AsRef<str>,
   {
@@ -197,7 +201,7 @@ impl Runtime {
       self.current_locale = locale;
       Ok(())
     } else {
-      Err("Missing Locale".to_string())
+      Err(RuntimeError::MissingLocale(locale))
     }
   }
 
@@ -207,7 +211,10 @@ impl Runtime {
   }
 
   pub fn divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError> {
+    let history_entry = self.get_history_entry();
+
     let new_stack: Vec<usize> = self.get_section_block_ids(section)?;
+
     self.block_stack.clear();
     let mut blocks_added = Vec::default();
     for block in new_stack {
@@ -222,10 +229,12 @@ impl Runtime {
       blocks_added.push(Self::push_stack(self, block)?);
     }
 
+    self.add_to_history(history_entry);
     Ok(blocks_added)
   }
 
   pub fn boomerang_divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError> {
+    let history_entry = self.get_history_entry();
     let new_stack: Vec<usize> = self.get_section_block_ids(section)?;
 
     let mut blocks_added = Vec::default();
@@ -241,6 +250,7 @@ impl Runtime {
       }
       blocks_added.push(Self::push_stack(self, block)?);
     }
+    self.add_to_history(history_entry);
     Ok(blocks_added)
   }
 
@@ -255,11 +265,16 @@ impl Runtime {
   }
 
   pub fn next_block(&mut self) -> Result<Output, RuntimeError> {
+    let history_entry = self.get_history_entry();
+
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
     }
 
     let blocks = Self::update_stack(self)?;
+
+    self.add_to_history(history_entry);
+
     Output::from_blocks(blocks, self)
   }
 
@@ -375,6 +390,8 @@ impl Runtime {
   }
 
   pub fn pick_choice(&mut self, choice: usize) -> Result<Output, RuntimeError> {
+    let history_entry = self.get_history_entry();
+
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
     }
@@ -401,7 +418,53 @@ impl Runtime {
     blocks.append(&mut output.blocks);
     output.blocks = blocks;
 
+    self.add_to_history(history_entry);
     Ok(output)
+  }
+
+  pub fn rewind(&mut self) -> Result<(), RuntimeError> {
+    if let Some(previous_state) = self.previous.clone() {
+      *self = *previous_state;
+      Ok(())
+    } else {
+      Err(RuntimeError::RewindWithNoHistory())
+    }
+  }
+
+  pub fn rewind_to_choice(&mut self) -> Result<(), RuntimeError> {
+    if self.block_stack.is_empty() {
+      return Ok(());
+    }
+
+    if let Some(previous_state) = self.previous.clone() {
+      *self = *previous_state;
+      if self.choices.is_empty() {
+        self.rewind_to_choice()
+      } else {
+        Ok(())
+      }
+    } else {
+      Err(RuntimeError::RewindWithNoHistory())
+    }
+  }
+
+  pub fn rewind_to(&mut self, index: usize) -> Result<(), RuntimeError> {
+    if !self.database.config.keep_history {
+      return Err(RuntimeError::RewindWithNoHistory());
+    }
+
+    if index >= self.rewind_index {
+      return Err(RuntimeError::RewindWithToInvalidIndex {
+        index,
+        current_index: self.rewind_index,
+      });
+    }
+
+    while self.rewind_index > index {
+      self.rewind()?;
+    }
+
+    Ok(())
   }
 
   pub fn set_variable<R, T>(&mut self, variable: R, value: T) -> Result<(), RuntimeError>
@@ -520,6 +583,23 @@ impl Runtime {
     }
 
     Ok(choices_strings)
+  }
+
+  fn get_history_entry(&self) -> Option<Runtime> {
+    if self.current().is_ok() && self.database.config.keep_history {
+      Some(self.clone())
+    } else {
+      None
+    }
+  }
+
+  fn add_to_history(&mut self, history_entry: Option<Runtime>) {
+    if let Some(history_entry) = history_entry {
+      if self.database.config.keep_history {
+        self.previous = Some(Box::new(history_entry));
+        self.rewind_index += 1;
+      }
+    }
   }
 
   fn get_cuentitos_block(&self, id: BlockId) -> Result<&cuentitos_common::Block, RuntimeError> {
@@ -4186,6 +4266,237 @@ mod test {
       }]
     );
   }
+
+  #[test]
+  fn rewind_story() {
+    let text_1 = Block::Text {
+      id: "text_1".to_string(),
+      settings: BlockSettings::default(),
+    };
+
+    let text_2 = Block::Text {
+      id: "text_2".to_string(),
+      settings: BlockSettings::default(),
+    };
+
+    let database = Database {
+      blocks: vec![text_1.clone(), text_2.clone()],
+      config: Config {
+        keep_history: false,
+        ..Default::default()
+      },
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime {
+      database,
+      ..Default::default()
+    };
+
+    runtime.progress_story().unwrap();
+    let err = runtime.rewind().unwrap_err();
+    assert_eq!(err, RuntimeError::RewindWithNoHistory());
+
+    runtime.database.config.keep_history = true;
+
+    let initial_runtime = runtime.clone();
+    runtime.progress_story().unwrap();
+
+    assert_ne!(runtime, initial_runtime);
+
+    runtime.rewind().unwrap();
+
+    assert_eq!(runtime, initial_runtime);
+  }
+
+  #[test]
+  fn rewind_to_choice() {
+    let text_1 = Block::Text {
+      id: "text_1".to_string(),
+      settings: BlockSettings {
+        children: vec![1],
+        ..Default::default()
+      },
+    };
+
+    let choice = Block::Choice {
+      id: "0".to_string(),
+      settings: BlockSettings {
+        children: vec![2, 3],
+        ..Default::default()
+      },
+    };
+
+    let text_2 = Block::Text {
+      id: "text_2".to_string(),
+      settings: BlockSettings::default(),
+    };
+
+    let text_3 = Block::Text {
+      id: "text_3".to_string(),
+      settings: BlockSettings::default(),
+    };
+
+    let database = Database {
+      blocks: vec![
+        text_1.clone(),
+        choice.clone(),
+        text_2.clone(),
+        text_3.clone(),
+      ],
+      config: Config {
+        keep_history: true,
+        ..Default::default()
+      },
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime {
+      database,
+      ..Default::default()
+    };
+
+    runtime.progress_story().unwrap();
+
+    let initial_runtime = runtime.clone();
+
+    runtime.pick_choice(0).unwrap();
+    runtime.progress_story().unwrap();
+
+    assert_ne!(runtime, initial_runtime);
+
+    runtime.rewind_to_choice().unwrap();
+
+    assert_eq!(runtime, initial_runtime);
+  }
+
+  #[test]
+  fn rewind_to() {
+    let text_1 = Block::Text {
+      id: "text_1".to_string(),
+      settings: BlockSettings {
+        children: vec![1],
+        ..Default::default()
+      },
+    };
+
+    let text_2 = Block::Text {
+      id: "text_2".to_string(),
+      settings: BlockSettings::default(),
+    };
+
+    let text_3 = Block::Text {
+      id: "text_3".to_string(),
+      settings: BlockSettings::default(),
+    };
+
+    let database = Database {
+      blocks: vec![text_1.clone(), text_2.clone(), text_3.clone()],
+      config: Config {
+        keep_history: true,
+        ..Default::default()
+      },
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime {
+      database,
+      ..Default::default()
+    };
+
+    runtime.progress_story().unwrap();
+    let initial_runtime = runtime.clone();
+    runtime.progress_story().unwrap();
+    runtime.progress_story().unwrap();
+
+    assert_ne!(runtime, initial_runtime);
+
+    runtime.rewind_to(0).unwrap();
+
+    assert_eq!(runtime, initial_runtime);
+
+    runtime.progress_story().unwrap();
+    let initial_runtime = runtime.clone();
+    runtime.progress_story().unwrap();
+    runtime.progress_story().unwrap();
+    runtime.rewind_to(1).unwrap();
+    assert_eq!(runtime, initial_runtime);
+  }
+
+  #[test]
+  fn missing_locale_throws_error() {
+    let mut strings: HashMap<LanguageId, LanguageDb> = HashMap::default();
+    strings.insert("en".to_string(), HashMap::default());
+
+    let i18n = I18n {
+      locales: vec!["en".to_string()],
+      default_locale: "en".to_string(),
+      strings,
+    };
+
+    let database = Database {
+      i18n,
+      config: Config {
+        story_progress_style: cuentitos_common::StoryProgressStyle::Skip,
+        ..Default::default()
+      },
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime {
+      database,
+      ..Default::default()
+    };
+
+    let runtime_error = runtime.set_locale("es").unwrap_err();
+    assert_eq!(runtime_error, RuntimeError::MissingLocale("es".to_string()));
+  }
+
+  #[test]
+  fn rewind_to_invalid_index_throws_error() {
+    let text_1 = Block::Text {
+      id: "text_1".to_string(),
+      settings: BlockSettings {
+        children: vec![1],
+        ..Default::default()
+      },
+    };
+
+    let text_2 = Block::Text {
+      id: "text_2".to_string(),
+      settings: BlockSettings::default(),
+    };
+
+    let text_3 = Block::Text {
+      id: "text_3".to_string(),
+      settings: BlockSettings::default(),
+    };
+
+    let database = Database {
+      blocks: vec![text_1.clone(), text_2.clone(), text_3.clone()],
+      config: Config {
+        keep_history: true,
+        ..Default::default()
+      },
+      ..Default::default()
+    };
+
+    let mut runtime = Runtime {
+      database,
+      ..Default::default()
+    };
+
+    let err = runtime.rewind_to(1).unwrap_err();
+
+    assert_eq!(
+      RuntimeError::RewindWithToInvalidIndex {
+        index: 1,
+        current_index: 0
+      },
+      err
+    );
+  }
+
   #[derive(Debug, Default, PartialEq, Eq)]
   enum TimeOfDay {
     #[default]

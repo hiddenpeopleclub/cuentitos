@@ -10,6 +10,12 @@ type VariableName = String;
 
 #[derive(PartialEq, Eq)]
 pub enum RuntimeError {
+  MissingLocale(String),
+  RewindWithNoHistory(),
+  RewindWithToInvalidIndex {
+    index: usize,
+    current_index: usize,
+  },
   InvalidBlockId(BlockId),
   WaitingForChoice(Vec<String>),
   StoryFinished,
@@ -130,6 +136,22 @@ impl Display for RuntimeError {
       }
       RuntimeError::FrequencyOutOfBucket => {
         write!(f, "Frequencies are only allowed inside of buckets.")
+      }
+      RuntimeError::RewindWithNoHistory() => {
+        write!(f, "Can't rewind when the history is empty.")
+      }
+      RuntimeError::MissingLocale(s) => {
+        write!(f, "Missing locale: {}", s)
+      }
+      RuntimeError::RewindWithToInvalidIndex {
+        index,
+        current_index,
+      } => {
+        write!(
+          f,
+          "Can't rewind to {} because the current index is {}.",
+          index, current_index
+        )
       }
     }
   }

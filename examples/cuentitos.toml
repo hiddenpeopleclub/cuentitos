@@ -1,6 +1,7 @@
 locales = ['en']
 default_locale = 'en'
 story_progress_style = 'next'
+keep_history = true
 
 [variables]
 energy = "integer"
