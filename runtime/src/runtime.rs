@@ -24,7 +24,9 @@ type BucketName = String;
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Output {
   pub text: String,
+  pub text_ids: Vec<String>,
   pub choices: Vec<String>,
+  pub choices_ids: Vec<String>,
   pub blocks: Vec<Block>,
 }
 
@@ -33,11 +35,13 @@ impl Output {
     if let Some(last_block) = blocks.last() {
       match runtime.get_cuentitos_block(last_block.get_settings().id)? {
         cuentitos_common::Block::Text { id, settings: _ } => Ok(Output {
+          text_ids: vec![id.clone()],
           text: runtime
             .database
             .i18n
             .get_translation(&runtime.current_locale, id),
           choices: runtime.get_current_choices_strings()?,
+          choices_ids: runtime.get_current_choices_ids()?,
           blocks,
         }),
         cuentitos_common::Block::Choice { id: _, settings: _ } => {
@@ -301,6 +305,8 @@ impl Runtime {
         },
       };
       output.blocks.append(&mut new_output.blocks);
+      output.text_ids.append(&mut new_output.text_ids);
+      output.choices_ids.append(&mut new_output.choices_ids);
       output.choices = new_output.choices;
       output.text += "\n";
       output.text += &new_output.text;
@@ -325,6 +331,10 @@ impl Runtime {
         },
       };
       output.blocks.append(&mut new_output.blocks);
+      output.choices_ids.append(&mut new_output.choices_ids);
+      if let Some(text_id) = new_output.text_ids.last() {
+        output.text_ids = vec![text_id.clone()];
+      }
       output.choices = new_output.choices;
       output.text = new_output.text;
     }
@@ -583,6 +593,19 @@ impl Runtime {
     }
 
     Ok(choices_strings)
+  }
+
+  pub fn get_current_choices_ids(&self) -> Result<Vec<String>, RuntimeError> {
+    let mut choices_id = Vec::default();
+    for choice in &self.choices {
+      if let cuentitos_common::Block::Choice { id, settings: _ } =
+        self.get_cuentitos_block(*choice)?
+      {
+        choices_id.push(id.clone());
+      }
+    }
+
+    Ok(choices_id)
   }
 
   fn get_history_entry(&self) -> Option<Runtime> {
@@ -1289,8 +1312,10 @@ mod test {
 
     let output = runtime.skip().unwrap();
     let expected_output = Output {
+      text_ids: vec!["a".to_string(), "b".to_string()],
       text: "Text 1\nText 2".to_string(),
       choices: vec!["Choice".to_string()],
+      choices_ids: vec!["c".to_string()],
       blocks: vec![output_text_1, output_text_2],
     };
 
@@ -1353,9 +1378,10 @@ mod test {
 
     let output = runtime.skip().unwrap();
     let expected_output = Output {
+      text_ids: vec!["a".to_string(), "b".to_string()],
       text: "Text 1\nText 2".to_string(),
-      choices: Vec::default(),
       blocks: vec![output_text_1, output_text_2],
+      ..Default::default()
     };
 
     assert_eq!(output, expected_output);
@@ -1421,8 +1447,10 @@ mod test {
 
     let output = runtime.skip_all().unwrap();
     let expected_output = Output {
+      text_ids: vec!["b".to_string()],
       text: "Text 2".to_string(),
       choices: vec!["Choice".to_string()],
+      choices_ids: vec!["c".to_string()],
       blocks: vec![output_text_1, output_text_2],
     };
 
@@ -1485,9 +1513,10 @@ mod test {
 
     let output = runtime.skip_all().unwrap();
     let expected_output = Output {
+      text_ids: vec!["b".to_string()],
       text: "Text 2".to_string(),
-      choices: Vec::default(),
       blocks: vec![output_text_1, output_text_2],
+      ..Default::default()
     };
 
     assert_eq!(output, expected_output);
@@ -2040,8 +2069,10 @@ mod test {
       })
       .unwrap();
     let expected_output = crate::Output {
+      text_ids: vec!["parent".to_string()],
       text: "parent".to_string(),
       choices: vec!["1".to_string(), "2".to_string()],
+      choices_ids: vec!["1".to_string(), "2".to_string()],
       blocks: vec![block],
       ..Default::default()
     };
@@ -2107,6 +2138,8 @@ mod test {
     let expected_output = crate::Output {
       text: "parent".to_string(),
       choices: vec!["1".to_string(), "2".to_string()],
+      text_ids: vec!["parent".to_string()],
+      choices_ids: vec!["1".to_string(), "2".to_string()],
       blocks: vec![block],
       ..Default::default()
     };
@@ -2203,8 +2236,6 @@ mod test {
     };
 
     let database = Database {
-      blocks: Vec::default(),
-      sections: HashMap::default(),
       config,
       ..Default::default()
     };
@@ -2493,7 +2524,6 @@ mod test {
     };
 
     let database = Database {
-      blocks: Vec::default(),
       config,
       ..Default::default()
     };
@@ -2521,7 +2551,6 @@ mod test {
     };
 
     let database = Database {
-      blocks: Vec::default(),
       config,
       ..Default::default()
     };
@@ -2549,7 +2578,6 @@ mod test {
     };
 
     let database = Database {
-      blocks: Vec::default(),
       config,
       ..Default::default()
     };
@@ -2579,7 +2607,6 @@ mod test {
     };
 
     let database = Database {
-      blocks: Vec::default(),
       config,
       ..Default::default()
     };
@@ -4158,7 +4185,7 @@ mod test {
 
     let expected_output = crate::Output {
       text: "text_1".to_string(),
-      choices: Vec::default(),
+      text_ids: vec!["text_1".to_string()],
       blocks: vec![block],
       ..Default::default()
     };
@@ -4254,6 +4281,8 @@ mod test {
       text: "text_1\ntext_2".to_string(),
       choices: vec!["1".to_string(), "2".to_string()],
       blocks: vec![block_1, block_2],
+      text_ids: vec!["text_1".to_string(), "text_2".to_string()],
+      choices_ids: vec!["1".to_string(), "2".to_string()],
       ..Default::default()
     };
 
