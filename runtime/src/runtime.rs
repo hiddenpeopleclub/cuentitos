@@ -155,13 +155,11 @@ impl Block {
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Runtime {
   pub database: Database,
-  #[serde(skip)]
   pub game_state: GameState,
   #[serde(skip)]
   rng: Option<Pcg32>,
   seed: u64,
   pub current_locale: LanguageId,
-  #[serde(skip)]
   pub history: Vec<GameState>,
 }
 
