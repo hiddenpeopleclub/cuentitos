@@ -36,7 +36,7 @@ impl Console {
     rl.load_history("history.txt").unwrap_or_default();
 
     loop {
-      let read_line = Self::prompt(&mut rl, &runtime.section);
+      let read_line = Self::prompt(&mut rl, runtime.get_current_section());
       match Self::process_line(read_line, &mut rl, &mut runtime) {
         Some(message) => println!("{}", message),
         None => break,
@@ -386,7 +386,7 @@ fn reset_command(parameters: Vec<&str>, runtime: &mut Runtime) -> String {
 
 fn state_command(parameters: Vec<&str>, runtime: &mut Runtime) -> String {
   let mut string = String::default();
-  if !runtime.block_stack.is_empty() {
+  if !runtime.get_current_block_stack().is_empty() {
     match runtime.current() {
       Ok(result) => {
         string.push_str("Current Block:\n");
@@ -550,45 +550,45 @@ mod test {
     assert_eq!(str_found, "State reset".to_string());
     assert_eq!(runtime.game_state, GameState::default());
 
-    runtime.block_stack.push(BlockStackData {
+    runtime.game_state.block_stack.push(BlockStackData {
       id: 0,
       chance: Chance::None,
     });
-    runtime.choices.push(1);
-    runtime.section = Some(Section::default());
+    runtime.game_state.choices.push(1);
+    runtime.game_state.section = Some(Section::default());
 
-    assert!(!runtime.block_stack.is_empty());
-    assert!(!runtime.choices.is_empty());
-    assert!(runtime.section.is_some());
+    assert!(!runtime.get_current_block_stack().is_empty());
+    assert!(!runtime.get_current_choices().is_empty());
+    assert!(runtime.get_current_section().is_some());
     let str_found =
       Console::process_line(Ok("reset story".to_string()), &mut rl, &mut runtime).unwrap();
     assert_eq!(str_found, "Story reset".to_string());
-    assert!(runtime.block_stack.is_empty());
-    assert!(runtime.choices.is_empty());
-    assert!(runtime.section.is_none());
+    assert!(runtime.get_current_block_stack().is_empty());
+    assert!(runtime.get_current_choices().is_empty());
+    assert!(runtime.get_current_section().is_none());
     runtime.game_state.uniques_played.push(0);
     runtime
       .game_state
       .variables
       .insert("variable".to_string(), "true".to_string());
-    runtime.block_stack.push(BlockStackData {
+    runtime.game_state.block_stack.push(BlockStackData {
       id: 0,
       chance: Chance::None,
     });
-    runtime.choices.push(1);
-    runtime.section = Some(Section::default());
+    runtime.game_state.choices.push(1);
+    runtime.game_state.section = Some(Section::default());
 
     assert_ne!(runtime.game_state, GameState::default());
-    assert!(!runtime.block_stack.is_empty());
-    assert!(!runtime.choices.is_empty());
-    assert!(runtime.section.is_some());
+    assert!(!runtime.get_current_block_stack().is_empty());
+    assert!(!runtime.get_current_choices().is_empty());
+    assert!(runtime.get_current_section().is_some());
 
     let str_found = Console::process_line(Ok("reset".to_string()), &mut rl, &mut runtime).unwrap();
     assert_eq!(str_found, "State and story reset".to_string());
     assert_eq!(runtime.game_state, GameState::default());
-    assert!(runtime.block_stack.is_empty());
-    assert!(runtime.choices.is_empty());
-    assert!(runtime.section.is_none());
+    assert!(runtime.get_current_block_stack().is_empty());
+    assert!(runtime.get_current_choices().is_empty());
+    assert!(runtime.get_current_section().is_none());
   }
 
   #[test]
@@ -679,7 +679,7 @@ mod test {
       Console::process_line(Ok("-> second_day".to_string()), &mut rl, &mut runtime).unwrap();
     assert_eq!(expected_str, &str_found);
 
-    let section_found = runtime.section.clone().unwrap();
+    let section_found = runtime.get_current_section().clone().unwrap();
     let expected_section = Section {
       name: "second_day".to_string(),
       parent: None,
@@ -696,7 +696,7 @@ mod test {
         chance: Chance::None,
       },
     ];
-    let stack_found = runtime.block_stack.clone();
+    let stack_found = runtime.get_current_block_stack().clone();
     assert_eq!(expected_stack, stack_found);
 
     let expected_str = "Entered section 'second_day/museum'\n\nYou get to the museum door. You watch through the window. It seems crowded.";
@@ -704,7 +704,7 @@ mod test {
       Console::process_line(Ok("->second_day/museum".to_string()), &mut rl, &mut runtime).unwrap();
     assert_eq!(expected_str, &str_found);
 
-    let section_found = runtime.section.unwrap();
+    let section_found = runtime.get_current_section().clone().unwrap();
     let expected_section = Section {
       name: "museum".to_string(),
       parent: Some(Box::new(expected_section)),
@@ -721,7 +721,7 @@ mod test {
         chance: Chance::None,
       },
     ];
-    let stack_found = runtime.block_stack.clone();
+    let stack_found = runtime.get_current_block_stack().clone();
     assert_eq!(expected_stack, stack_found);
   }
 
@@ -735,7 +735,7 @@ mod test {
       Console::process_line(Ok("<-> second_day".to_string()), &mut rl, &mut runtime).unwrap();
     assert_eq!(expected_str, &str_found);
 
-    let section_found = runtime.section.clone().unwrap();
+    let section_found = runtime.get_current_section().clone().unwrap();
     let expected_section = Section {
       name: "second_day".to_string(),
       parent: None,
@@ -752,7 +752,7 @@ mod test {
         chance: Chance::None,
       },
     ];
-    let stack_found = runtime.block_stack.clone();
+    let stack_found = runtime.get_current_block_stack().clone();
     assert_eq!(expected_stack, stack_found);
 
     let expected_str = "Entered section 'second_day/museum'\n\nYou get to the museum door. You watch through the window. It seems crowded.";
@@ -764,7 +764,7 @@ mod test {
     .unwrap();
     assert_eq!(expected_str, &str_found);
 
-    let section_found = runtime.section.unwrap();
+    let section_found = runtime.get_current_section().clone().unwrap();
     let expected_section = Section {
       name: "museum".to_string(),
       parent: Some(Box::new(expected_section)),
@@ -789,7 +789,7 @@ mod test {
         chance: Chance::None,
       },
     ];
-    let stack_found = runtime.block_stack.clone();
+    let stack_found = runtime.get_current_block_stack().clone();
     assert_eq!(expected_stack, stack_found);
   }
 
@@ -883,7 +883,7 @@ mod test {
       "The skyline reaches for the clouds, and the sounds of traffic and people surround you.";
 
     let str_found =
-      Console::process_line(Ok("rewind_to 1".to_string()), &mut rl, &mut runtime).unwrap();
+      Console::process_line(Ok("rewind_to 2".to_string()), &mut rl, &mut runtime).unwrap();
     assert_eq!(expected_str, &str_found);
   }
 }

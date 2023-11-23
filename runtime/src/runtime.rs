@@ -22,6 +22,12 @@ use serde::{Deserialize, Serialize};
 type BucketName = String;
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
+pub struct BlockStackData {
+  pub id: BlockId,
+  pub chance: Chance,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Output {
   pub text: String,
   pub text_ids: Vec<String>,
@@ -111,6 +117,17 @@ pub enum Block {
   },
 }
 
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
+pub enum Chance {
+  #[default]
+  None,
+  Probability(f32),
+  Frequency {
+    value: u32,
+    total_frequency: u32,
+  },
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Default)]
 pub struct BlockSettings {
   pub id: BlockId,
@@ -136,36 +153,16 @@ impl Block {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
-pub enum Chance {
-  #[default]
-  None,
-  Probability(f32),
-  Frequency {
-    value: u32,
-    total_frequency: u32,
-  },
-}
-
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
-pub struct BlockStackData {
-  pub id: BlockId,
-  pub chance: Chance,
-}
-
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Runtime {
   pub database: Database,
-  pub block_stack: Vec<BlockStackData>,
-  pub choices: Vec<BlockId>,
   #[serde(skip)]
   pub game_state: GameState,
   #[serde(skip)]
   rng: Option<Pcg32>,
   seed: u64,
   pub current_locale: LanguageId,
-  pub section: Option<Section>,
-  pub previous: Option<Box<Runtime>>,
-  pub rewind_index: usize,
+  #[serde(skip)]
+  pub history: Vec<GameState>,
 }
 
 impl Runtime {
@@ -182,11 +179,10 @@ impl Runtime {
 
   pub fn reset_story(&mut self) {
     self.set_seed(self.seed);
-    self.block_stack.clear();
-    self.section = None;
-    self.previous = None;
-    self.rewind_index = 0;
-    self.choices.clear();
+    self.game_state.block_stack.clear();
+    self.game_state.section = None;
+    self.history.clear();
+    self.game_state.choices.clear();
   }
   pub fn reset_state(&mut self) {
     self.game_state = GameState::from_config(&self.database.config);
@@ -209,25 +205,38 @@ impl Runtime {
     }
   }
 
+  pub fn get_current_section(&self) -> &Option<Section> {
+    &self.game_state.section
+  }
+
+  pub fn get_current_block_stack(&self) -> &Vec<BlockStackData> {
+    &self.game_state.block_stack
+  }
+
+  pub fn get_current_choices(&self) -> &Vec<usize> {
+    &self.game_state.choices
+  }
+
   pub fn set_seed(&mut self, seed: u64) {
     self.seed = seed;
     self.rng = Some(Pcg32::seed_from_u64(seed));
   }
 
   pub fn divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError> {
-    let history_entry = self.get_history_entry();
+    let history_entry = self.game_state.clone();
 
     let new_stack: Vec<usize> = self.get_section_block_ids(section)?;
 
-    self.block_stack.clear();
+    self.game_state.block_stack.clear();
     let mut blocks_added = Vec::default();
     for block in new_stack {
       if !self.meets_requirements(block)? {
-        self.block_stack.push(BlockStackData {
+        self.game_state.block_stack.push(BlockStackData {
           id: block,
           chance: Chance::None,
         });
         blocks_added.append(&mut self.pop_stack_and_push_next()?);
+        self.add_to_history(history_entry);
         return Ok(blocks_added);
       }
       blocks_added.push(Self::push_stack(self, block)?);
@@ -238,18 +247,19 @@ impl Runtime {
   }
 
   pub fn boomerang_divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError> {
-    let history_entry = self.get_history_entry();
+    let history_entry = self.game_state.clone();
     let new_stack: Vec<usize> = self.get_section_block_ids(section)?;
 
     let mut blocks_added = Vec::default();
     for block in new_stack {
       if !self.meets_requirements(block)? {
-        self.block_stack.push(BlockStackData {
+        self.game_state.block_stack.push(BlockStackData {
           id: block,
           chance: Chance::None,
         });
 
         blocks_added.append(&mut self.pop_stack_and_push_next()?);
+        self.add_to_history(history_entry);
         return Ok(blocks_added);
       }
       blocks_added.push(Self::push_stack(self, block)?);
@@ -269,7 +279,7 @@ impl Runtime {
   }
 
   pub fn next_block(&mut self) -> Result<Output, RuntimeError> {
-    let history_entry = self.get_history_entry();
+    let history_entry = self.game_state.clone();
 
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
@@ -391,7 +401,7 @@ impl Runtime {
   }
 
   pub fn current(&self) -> Result<Output, RuntimeError> {
-    let stack_data = match self.block_stack.last() {
+    let stack_data = match self.game_state.block_stack.last() {
       Some(id) => id,
       None => return Err(RuntimeError::EmptyStack),
     };
@@ -400,41 +410,42 @@ impl Runtime {
   }
 
   pub fn pick_choice(&mut self, choice: usize) -> Result<Output, RuntimeError> {
-    let history_entry = self.get_history_entry();
+    let history_entry = self.game_state.clone();
 
     if self.database.blocks.is_empty() {
       return Err(RuntimeError::EmptyDatabase);
     }
 
-    let choices = &self.choices;
-
-    if choices.is_empty() {
+    if self.game_state.choices.is_empty() {
       return Err(RuntimeError::NoChoices);
     }
 
-    if choice >= choices.len() {
+    if choice >= self.game_state.choices.len() {
       return Err(RuntimeError::InvalidChoice {
-        total_choices: choices.len(),
+        total_choices: self.game_state.choices.len(),
         choice_picked: choice,
       });
     }
 
-    if choices[choice] >= self.database.blocks.len() {
-      return Err(RuntimeError::InvalidBlockId(choices[choice]));
+    if self.game_state.choices[choice] >= self.database.blocks.len() {
+      return Err(RuntimeError::InvalidBlockId(
+        self.game_state.choices[choice],
+      ));
     }
 
-    let mut blocks = Self::push_stack_until_text_or_choice(self, choices[choice])?;
+    self.add_to_history(history_entry);
+
+    let mut blocks = self.push_stack_until_text_or_choice(self.game_state.choices[choice])?;
     let mut output = self.progress_story()?;
     blocks.append(&mut output.blocks);
     output.blocks = blocks;
 
-    self.add_to_history(history_entry);
     Ok(output)
   }
 
   pub fn rewind(&mut self) -> Result<(), RuntimeError> {
-    if let Some(previous_state) = self.previous.clone() {
-      *self = *previous_state;
+    if let Some(previous_state) = self.history.pop() {
+      self.game_state = previous_state;
       Ok(())
     } else {
       Err(RuntimeError::RewindWithNoHistory())
@@ -442,13 +453,13 @@ impl Runtime {
   }
 
   pub fn rewind_to_choice(&mut self) -> Result<(), RuntimeError> {
-    if self.block_stack.is_empty() {
+    if self.game_state.block_stack.is_empty() {
       return Ok(());
     }
 
-    if let Some(previous_state) = self.previous.clone() {
-      *self = *previous_state;
-      if self.choices.is_empty() {
+    if let Some(previous_state) = self.history.pop() {
+      self.game_state = previous_state;
+      if self.game_state.choices.is_empty() {
         self.rewind_to_choice()
       } else {
         Ok(())
@@ -463,14 +474,14 @@ impl Runtime {
       return Err(RuntimeError::RewindWithNoHistory());
     }
 
-    if index >= self.rewind_index {
+    if index >= self.history.len() {
       return Err(RuntimeError::RewindWithToInvalidIndex {
         index,
-        current_index: self.rewind_index,
+        current_index: self.history.len(),
       });
     }
 
-    while self.rewind_index > index {
+    while self.history.len() > index {
       self.rewind()?;
     }
 
@@ -584,7 +595,7 @@ impl Runtime {
 
   pub fn get_current_choices_strings(&self) -> Result<Vec<String>, RuntimeError> {
     let mut choices_strings = Vec::default();
-    for choice in &self.choices {
+    for choice in &self.game_state.choices {
       if let cuentitos_common::Block::Choice { id, settings: _ } =
         self.get_cuentitos_block(*choice)?
       {
@@ -597,7 +608,7 @@ impl Runtime {
 
   pub fn get_current_choices_ids(&self) -> Result<Vec<String>, RuntimeError> {
     let mut choices_id = Vec::default();
-    for choice in &self.choices {
+    for choice in &self.game_state.choices {
       if let cuentitos_common::Block::Choice { id, settings: _ } =
         self.get_cuentitos_block(*choice)?
       {
@@ -608,20 +619,9 @@ impl Runtime {
     Ok(choices_id)
   }
 
-  fn get_history_entry(&self) -> Option<Runtime> {
-    if self.current().is_ok() && self.database.config.keep_history {
-      Some(self.clone())
-    } else {
-      None
-    }
-  }
-
-  fn add_to_history(&mut self, history_entry: Option<Runtime>) {
-    if let Some(history_entry) = history_entry {
-      if self.database.config.keep_history {
-        self.previous = Some(Box::new(history_entry));
-        self.rewind_index += 1;
-      }
+  fn add_to_history(&mut self, game_state: GameState) {
+    if self.database.config.keep_history {
+      self.history.push(game_state);
     }
   }
 
@@ -655,7 +655,7 @@ impl Runtime {
   ) -> Result<(), RuntimeError> {
     match self.database.sections.get(target_section) {
       Some(id) => {
-        if let Some(current_section) = &self.section {
+        if let Some(current_section) = &self.game_state.section {
           if current_section.is_child_of(target_section) {
             return Ok(());
           }
@@ -684,7 +684,7 @@ impl Runtime {
 
     let section_exists = match self.database.sections.contains_key(&section_mut) {
       true => true,
-      false => match &self.section {
+      false => match &self.game_state.section {
         Some(current_section) => {
           append_to_parent(current_section.clone(), &mut section_mut);
           match self.database.sections.contains_key(&section_mut) {
@@ -709,7 +709,7 @@ impl Runtime {
     target_section: &Section,
   ) -> Result<Vec<BlockId>, RuntimeError> {
     let target_section = self.get_actual_section(target_section)?;
-    if let Some(current_section) = &self.section {
+    if let Some(current_section) = &self.game_state.section {
       if current_section.is_child_of(&target_section) {
         if let Some(id) = self.database.sections.get(&target_section) {
           return Ok(vec![*id]);
@@ -973,7 +973,7 @@ impl Runtime {
       cuentitos_common::Block::Divert { next, settings: _ } => {
         match next {
           NextBlock::BlockId(id) => {
-            self.block_stack.clear();
+            self.game_state.block_stack.clear();
             blocks.append(&mut self.push_stack_until_text_or_choice(id)?)
           }
           NextBlock::EndOfFile => {
@@ -1023,7 +1023,11 @@ impl Runtime {
   }
 
   fn push_stack(&mut self, id: BlockId) -> Result<Block, RuntimeError> {
-    let parent_id = self.block_stack.last().map(|stack_data| stack_data.id);
+    let parent_id = self
+      .game_state
+      .block_stack
+      .last()
+      .map(|stack_data| stack_data.id);
     let chance = self.get_chance(id, parent_id)?;
     let block_stack_data = BlockStackData { id, chance };
 
@@ -1032,7 +1036,7 @@ impl Runtime {
       self.game_state.uniques_played.push(id);
     }
 
-    self.section = cuentitos_block.get_settings().section.clone();
+    self.game_state.section = cuentitos_block.get_settings().section.clone();
     let modifiers = self
       .get_cuentitos_block(block_stack_data.id)?
       .get_settings()
@@ -1041,7 +1045,7 @@ impl Runtime {
     self.apply_modifiers(&modifiers)?;
 
     let block = self.get_block(&block_stack_data)?;
-    self.block_stack.push(block_stack_data);
+    self.game_state.block_stack.push(block_stack_data);
 
     Ok(block)
   }
@@ -1051,11 +1055,11 @@ impl Runtime {
       return Err(RuntimeError::EmptyDatabase);
     }
 
-    if self.block_stack.is_empty() {
+    if self.game_state.block_stack.is_empty() {
       return self.push_stack_until_text_or_choice(0);
     }
 
-    let last_block_id = match self.block_stack.last() {
+    let last_block_id = match self.game_state.block_stack.last() {
       Some(block_stack_data) => block_stack_data.id,
       None => return Err(RuntimeError::EmptyStack),
     };
@@ -1090,7 +1094,7 @@ impl Runtime {
     let id = settings.children[next_child];
     match self.get_cuentitos_block(id)? {
       cuentitos_common::Block::Choice { id: _, settings: _ } => {
-        if self.choices.contains(&id) {
+        if self.game_state.choices.contains(&id) {
           Err(RuntimeError::WaitingForChoice(
             self.get_current_choices_strings()?,
           ))
@@ -1103,11 +1107,11 @@ impl Runtime {
   }
 
   fn push_next(&mut self, previous_id: BlockId) -> Result<Vec<Block>, RuntimeError> {
-    if self.block_stack.is_empty() {
+    if self.game_state.block_stack.is_empty() {
       return self.push_stack_until_text_or_choice(previous_id + 1);
     }
 
-    let new_block_id: usize = match self.block_stack.last() {
+    let new_block_id: usize = match self.game_state.block_stack.last() {
       Some(block_stack_data) => block_stack_data.id,
       None => return Err(RuntimeError::EmptyStack),
     };
@@ -1145,12 +1149,12 @@ impl Runtime {
   }
 
   fn pop_stack_and_push_next(&mut self) -> Result<Vec<Block>, RuntimeError> {
-    let last_block_id: usize = match self.block_stack.last() {
+    let last_block_id: usize = match self.game_state.block_stack.last() {
       Some(block_stack_data) => block_stack_data.id,
       None => return Err(RuntimeError::EmptyStack),
     };
 
-    self.block_stack.pop();
+    self.game_state.block_stack.pop();
     self.push_next(last_block_id)
   }
 
@@ -1195,13 +1199,13 @@ impl Runtime {
   }
 
   fn update_choices(&mut self) -> Result<(), RuntimeError> {
-    self.choices = Vec::default();
+    self.game_state.choices = Vec::default();
 
-    if self.block_stack.is_empty() {
+    if self.game_state.block_stack.is_empty() {
       return Err(RuntimeError::EmptyStack);
     }
 
-    let last_block_id: usize = match self.block_stack.last() {
+    let last_block_id: usize = match self.game_state.block_stack.last() {
       Some(block_stack_data) => block_stack_data.id,
       None => return Err(RuntimeError::EmptyStack),
     };
@@ -1215,7 +1219,7 @@ impl Runtime {
         match self.get_cuentitos_block(*child)? {
           cuentitos_common::Block::Choice { id: _, settings: _ } => {
             if self.meets_requirements_and_chance(*child)? {
-              self.choices.push(*child)
+              self.game_state.choices.push(*child)
             }
           }
           cuentitos_common::Block::Bucket { name: _, settings } => {
@@ -1223,7 +1227,7 @@ impl Runtime {
               if let cuentitos_common::Block::Choice { id: _, settings: _ } =
                 self.get_cuentitos_block(picked_block)?
               {
-                self.choices.push(picked_block);
+                self.game_state.choices.push(picked_block);
               }
             }
           }
@@ -1561,7 +1565,7 @@ mod test {
     };
     runtime.divert(&section).unwrap();
     assert_eq!(
-      runtime.block_stack,
+      runtime.game_state.block_stack,
       vec![BlockStackData {
         id: 0,
         chance: Chance::None
@@ -1570,7 +1574,7 @@ mod test {
 
     runtime.divert(&section).unwrap();
     assert_eq!(
-      runtime.block_stack,
+      runtime.game_state.block_stack,
       vec![BlockStackData {
         id: 1,
         chance: Chance::None
@@ -1649,7 +1653,7 @@ mod test {
     };
     runtime.divert(&subsection).unwrap();
     assert_eq!(
-      runtime.block_stack,
+      runtime.game_state.block_stack,
       vec![
         BlockStackData {
           id: 1,
@@ -1664,7 +1668,7 @@ mod test {
 
     runtime.divert(&section_1).unwrap();
     assert_eq!(
-      runtime.block_stack,
+      runtime.game_state.block_stack,
       vec![BlockStackData {
         id: 0,
         chance: Chance::None
@@ -1743,7 +1747,7 @@ mod test {
     };
     runtime.boomerang_divert(&subsection).unwrap();
     assert_eq!(
-      runtime.block_stack,
+      runtime.game_state.block_stack,
       vec![
         BlockStackData {
           id: 1,
@@ -1758,7 +1762,7 @@ mod test {
 
     runtime.boomerang_divert(&section_1).unwrap();
     assert_eq!(
-      runtime.block_stack,
+      runtime.game_state.block_stack,
       vec![
         BlockStackData {
           id: 1,
@@ -1810,16 +1814,19 @@ mod test {
 
     let mut runtime = Runtime {
       database,
-      block_stack: vec![BlockStackData {
-        id: 0,
-        chance: Chance::None,
-      }],
+      game_state: GameState {
+        block_stack: vec![BlockStackData {
+          id: 0,
+          chance: Chance::None,
+        }],
+        ..Default::default()
+      },
       ..Default::default()
     };
 
     runtime.update_choices().unwrap();
     let expected_result = vec![1, 2];
-    assert_eq!(runtime.choices, expected_result);
+    assert_eq!(runtime.game_state.choices, expected_result);
   }
   #[test]
   fn get_choices_strings_works_correctly() {
@@ -1869,10 +1876,13 @@ mod test {
 
     let mut runtime = Runtime {
       database,
-      block_stack: vec![BlockStackData {
-        id: 0,
-        chance: Chance::None,
-      }],
+      game_state: GameState {
+        block_stack: vec![BlockStackData {
+          id: 0,
+          chance: Chance::None,
+        }],
+        ..Default::default()
+      },
       current_locale: "en".to_string(),
       ..Default::default()
     };
@@ -1910,15 +1920,18 @@ mod test {
 
     let mut runtime = Runtime {
       database,
-      block_stack: vec![BlockStackData {
-        id: 0,
-        chance: Chance::None,
-      }],
+      game_state: GameState {
+        block_stack: vec![BlockStackData {
+          id: 0,
+          chance: Chance::None,
+        }],
+        ..Default::default()
+      },
       ..Default::default()
     };
     Runtime::update_stack(&mut runtime).unwrap();
     assert_eq!(
-      *runtime.block_stack.last().unwrap(),
+      *runtime.game_state.block_stack.last().unwrap(),
       BlockStackData {
         id: 1,
         chance: Chance::None
@@ -1971,22 +1984,25 @@ mod test {
 
     let mut runtime = Runtime {
       database,
-      block_stack: vec![
-        BlockStackData {
-          id: 0,
-          chance: Chance::None,
-        },
-        BlockStackData {
-          id: 2,
-          chance: Chance::None,
-        },
-      ],
+      game_state: GameState {
+        block_stack: vec![
+          BlockStackData {
+            id: 0,
+            chance: Chance::None,
+          },
+          BlockStackData {
+            id: 2,
+            chance: Chance::None,
+          },
+        ],
+        ..Default::default()
+      },
       ..Default::default()
     };
 
     Runtime::update_stack(&mut runtime).unwrap();
     assert_eq!(
-      *runtime.block_stack.last().unwrap(),
+      *runtime.game_state.block_stack.last().unwrap(),
       BlockStackData {
         id: 3,
         chance: Chance::None
@@ -1994,7 +2010,7 @@ mod test {
     );
     Runtime::update_stack(&mut runtime).unwrap();
     assert_eq!(
-      *runtime.block_stack.last().unwrap(),
+      *runtime.game_state.block_stack.last().unwrap(),
       BlockStackData {
         id: 4,
         chance: Chance::None
@@ -2002,7 +2018,7 @@ mod test {
     );
     Runtime::update_stack(&mut runtime).unwrap();
     assert_eq!(
-      *runtime.block_stack.last().unwrap(),
+      *runtime.game_state.block_stack.last().unwrap(),
       BlockStackData {
         id: 1,
         chance: Chance::None
@@ -2052,10 +2068,13 @@ mod test {
 
     let mut runtime = Runtime {
       database,
-      block_stack: vec![BlockStackData {
-        id: 0,
-        chance: Chance::None,
-      }],
+      game_state: GameState {
+        block_stack: vec![BlockStackData {
+          id: 0,
+          chance: Chance::None,
+        }],
+        ..Default::default()
+      },
       current_locale: "en".to_string(),
       ..Default::default()
     };
@@ -2146,7 +2165,7 @@ mod test {
 
     assert_eq!(output, expected_output);
     assert_eq!(
-      runtime.block_stack,
+      runtime.game_state.block_stack,
       vec![BlockStackData {
         id: 0,
         chance: Chance::None
@@ -2192,10 +2211,13 @@ mod test {
     };
     let mut runtime = Runtime {
       database,
-      block_stack: vec![BlockStackData {
-        id: 0,
-        chance: Chance::None,
-      }],
+      game_state: GameState {
+        block_stack: vec![BlockStackData {
+          id: 0,
+          chance: Chance::None,
+        }],
+        ..Default::default()
+      },
       ..Default::default()
     };
 
@@ -2302,7 +2324,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -2365,7 +2387,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -2409,7 +2431,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -2453,7 +2475,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -2498,7 +2520,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -2658,7 +2680,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -2706,7 +2728,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -2754,7 +2776,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -2802,7 +2824,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -2849,7 +2871,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -2896,7 +2918,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -2943,7 +2965,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -2991,7 +3013,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -3039,7 +3061,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -3087,7 +3109,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -3134,7 +3156,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -3181,7 +3203,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -3229,7 +3251,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -3274,7 +3296,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -3319,7 +3341,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -3366,7 +3388,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -3413,7 +3435,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -3460,7 +3482,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -3509,7 +3531,7 @@ mod test {
     };
 
     let mut runtime = Runtime::new(database);
-    runtime.block_stack = vec![BlockStackData {
+    runtime.game_state.block_stack = vec![BlockStackData {
       id: 0,
       chance: Chance::None,
     }];
@@ -3568,11 +3590,11 @@ mod test {
 
     let mut runtime = Runtime::new(database);
     Runtime::update_stack(&mut runtime).unwrap();
-    assert_eq!(1, runtime.block_stack.last().unwrap().id);
+    assert_eq!(1, runtime.game_state.block_stack.last().unwrap().id);
     Runtime::update_stack(&mut runtime).unwrap();
-    assert_eq!(2, runtime.block_stack.last().unwrap().id);
+    assert_eq!(2, runtime.game_state.block_stack.last().unwrap().id);
     Runtime::update_stack(&mut runtime).unwrap();
-    assert_eq!(2, runtime.block_stack.last().unwrap().id);
+    assert_eq!(2, runtime.game_state.block_stack.last().unwrap().id);
   }
 
   #[test]
@@ -3648,7 +3670,7 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(database);
-    runtime.block_stack.push(BlockStackData {
+    runtime.game_state.block_stack.push(BlockStackData {
       id: 1,
       chance: Chance::None,
     });
@@ -3668,7 +3690,7 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(database);
-    runtime.choices.push(1);
+    runtime.game_state.choices.push(1);
     let err = runtime.pick_choice(0).unwrap_err();
     assert_eq!(err, RuntimeError::InvalidBlockId(1));
   }
@@ -3753,7 +3775,7 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(database);
-    runtime.block_stack.push(BlockStackData {
+    runtime.game_state.block_stack.push(BlockStackData {
       id: 0,
       chance: Chance::None,
     });
@@ -3827,7 +3849,7 @@ mod test {
       ..Default::default()
     };
     let mut runtime = Runtime::new(database);
-    runtime.choices.push(0);
+    runtime.game_state.choices.push(0);
     let err = runtime.pick_choice(1).unwrap_err();
     assert_eq!(
       err,
@@ -4063,23 +4085,23 @@ mod test {
   fn reset_story() {
     let mut runtime = Runtime::default();
     runtime.random_float();
-    runtime.block_stack.push(BlockStackData {
+    runtime.game_state.block_stack.push(BlockStackData {
       id: 0,
       chance: Chance::None,
     });
-    runtime.choices.push(1);
-    runtime.section = Some(Section::default());
+    runtime.game_state.choices.push(1);
+    runtime.game_state.section = Some(Section::default());
 
     assert_ne!(runtime.rng, Some(Pcg32::seed_from_u64(runtime.seed)));
-    assert!(!runtime.block_stack.is_empty());
-    assert!(!runtime.choices.is_empty());
-    assert!(runtime.section.is_some());
+    assert!(!runtime.game_state.block_stack.is_empty());
+    assert!(!runtime.game_state.choices.is_empty());
+    assert!(runtime.game_state.section.is_some());
     runtime.reset_story();
 
     assert_eq!(runtime.rng, Some(Pcg32::seed_from_u64(runtime.seed)));
-    assert!(runtime.block_stack.is_empty());
-    assert!(runtime.choices.is_empty());
-    assert!(runtime.section.is_none());
+    assert!(runtime.game_state.block_stack.is_empty());
+    assert!(runtime.game_state.choices.is_empty());
+    assert!(runtime.game_state.section.is_none());
   }
 
   #[test]
@@ -4091,26 +4113,26 @@ mod test {
       .variables
       .insert("variable".to_string(), "true".to_string());
     runtime.random_float();
-    runtime.block_stack.push(BlockStackData {
+    runtime.game_state.block_stack.push(BlockStackData {
       id: 0,
       chance: Chance::None,
     });
-    runtime.choices.push(1);
-    runtime.section = Some(Section::default());
+    runtime.game_state.choices.push(1);
+    runtime.game_state.section = Some(Section::default());
 
     assert_ne!(runtime.game_state, GameState::default());
     assert_ne!(runtime.rng, Some(Pcg32::seed_from_u64(runtime.seed)));
-    assert!(!runtime.block_stack.is_empty());
-    assert!(!runtime.choices.is_empty());
-    assert!(runtime.section.is_some());
+    assert!(!runtime.game_state.block_stack.is_empty());
+    assert!(!runtime.game_state.choices.is_empty());
+    assert!(runtime.game_state.section.is_some());
 
     runtime.reset_all();
 
     assert_eq!(runtime.game_state, GameState::default());
     assert_eq!(runtime.rng, Some(Pcg32::seed_from_u64(runtime.seed)));
-    assert!(runtime.block_stack.is_empty());
-    assert!(runtime.choices.is_empty());
-    assert!(runtime.section.is_none());
+    assert!(runtime.game_state.block_stack.is_empty());
+    assert!(runtime.game_state.choices.is_empty());
+    assert!(runtime.game_state.section.is_none());
   }
 
   #[test]
@@ -4192,7 +4214,7 @@ mod test {
 
     assert_eq!(output, expected_output);
     assert_eq!(
-      runtime.block_stack,
+      runtime.game_state.block_stack,
       vec![BlockStackData {
         id: 0,
         chance: Chance::None
@@ -4288,7 +4310,7 @@ mod test {
 
     assert_eq!(output, expected_output);
     assert_eq!(
-      runtime.block_stack,
+      runtime.game_state.block_stack,
       vec![BlockStackData {
         id: 1,
         chance: Chance::None
@@ -4440,7 +4462,7 @@ mod test {
 
     assert_ne!(runtime, initial_runtime);
 
-    runtime.rewind_to(0).unwrap();
+    runtime.rewind_to(1).unwrap();
 
     assert_eq!(runtime, initial_runtime);
 
@@ -4448,7 +4470,7 @@ mod test {
     let initial_runtime = runtime.clone();
     runtime.progress_story().unwrap();
     runtime.progress_story().unwrap();
-    runtime.rewind_to(1).unwrap();
+    runtime.rewind_to(2).unwrap();
     assert_eq!(runtime, initial_runtime);
   }
 
