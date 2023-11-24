@@ -1,11 +1,16 @@
-use cuentitos_common::{BlockId, Config, VariableId};
+use cuentitos_common::{BlockId, Config, Section, VariableId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone, Eq)]
+use crate::BlockStackData;
+
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub struct GameState {
   pub variables: HashMap<VariableId, String>,
   pub uniques_played: Vec<BlockId>,
+  pub block_stack: Vec<BlockStackData>,
+  pub section: Option<Section>,
+  pub choices: Vec<BlockId>,
 }
 
 impl GameState {
