@@ -181,7 +181,11 @@ fn get_block_string(block: Block, runtime: &Runtime) -> String {
   }
 
   match &block {
-    Block::Text { text, settings } => {
+    Block::Text {
+      text,
+      i18n_id: _,
+      settings,
+    } => {
       let chance = get_change_string(&settings.chance);
       format!("{}{}{}", block_string, chance, text)
     }

@@ -30,9 +30,9 @@ pub struct BlockStackData {
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Output {
   pub text: String,
-  pub text_ids: Vec<String>,
+  pub text_i18n_ids: Vec<String>,
   pub choices: Vec<String>,
-  pub choices_ids: Vec<String>,
+  pub choices_i18n_ids: Vec<String>,
   pub blocks: Vec<Block>,
 }
 
@@ -41,13 +41,13 @@ impl Output {
     if let Some(last_block) = blocks.last() {
       match runtime.get_cuentitos_block(last_block.get_settings().id)? {
         cuentitos_common::Block::Text { id, settings: _ } => Ok(Output {
-          text_ids: vec![id.clone()],
+          text_i18n_ids: vec![id.clone()],
           text: runtime
             .database
             .i18n
             .get_translation(&runtime.current_locale, id),
           choices: runtime.get_current_choices_strings()?,
-          choices_ids: runtime.get_current_choices_ids()?,
+          choices_i18n_ids: runtime.get_current_choices_ids()?,
           blocks,
         }),
         cuentitos_common::Block::Choice { id: _, settings: _ } => {
@@ -94,10 +94,12 @@ impl Output {
 pub enum Block {
   Text {
     text: String,
+    i18n_id: String,
     settings: BlockSettings,
   },
   Choice {
     text: String,
+    i18n_id: String,
     settings: BlockSettings,
   },
   Bucket {
@@ -142,8 +144,16 @@ pub struct BlockSettings {
 impl Block {
   pub fn get_settings(&self) -> &BlockSettings {
     match self {
-      Block::Text { text: _, settings } => settings,
-      Block::Choice { text: _, settings } => settings,
+      Block::Text {
+        text: _,
+        i18n_id: _,
+        settings,
+      } => settings,
+      Block::Choice {
+        text: _,
+        i18n_id: _,
+        settings,
+      } => settings,
       Block::Bucket { name: _, settings } => settings,
       Block::Section { settings } => settings,
       Block::Divert { next: _, settings } => settings,
@@ -313,8 +323,10 @@ impl Runtime {
         },
       };
       output.blocks.append(&mut new_output.blocks);
-      output.text_ids.append(&mut new_output.text_ids);
-      output.choices_ids.append(&mut new_output.choices_ids);
+      output.text_i18n_ids.append(&mut new_output.text_i18n_ids);
+      output
+        .choices_i18n_ids
+        .append(&mut new_output.choices_i18n_ids);
       output.choices = new_output.choices;
       output.text += "\n";
       output.text += &new_output.text;
@@ -339,9 +351,11 @@ impl Runtime {
         },
       };
       output.blocks.append(&mut new_output.blocks);
-      output.choices_ids.append(&mut new_output.choices_ids);
-      if let Some(text_id) = new_output.text_ids.last() {
-        output.text_ids = vec![text_id.clone()];
+      output
+        .choices_i18n_ids
+        .append(&mut new_output.choices_i18n_ids);
+      if let Some(text_id) = new_output.text_i18n_ids.last() {
+        output.text_i18n_ids = vec![text_id.clone()];
       }
       output.choices = new_output.choices;
       output.text = new_output.text;
@@ -373,10 +387,12 @@ impl Runtime {
 
     let block = match cuentitos_block {
       cuentitos_common::Block::Text { id, settings: _ } => Block::Text {
+        i18n_id: id.clone(),
         text: self.database.i18n.get_translation(&self.current_locale, id),
         settings,
       },
       cuentitos_common::Block::Choice { id, settings: _ } => Block::Choice {
+        i18n_id: id.clone(),
         text: self.database.i18n.get_translation(&self.current_locale, id),
         settings,
       },
@@ -1298,6 +1314,7 @@ mod test {
     };
 
     let output_text_1 = runtime::Block::Text {
+      i18n_id: "a".to_string(),
       text: "Text 1".to_string(),
       settings: runtime::BlockSettings {
         id: 0,
@@ -1305,6 +1322,7 @@ mod test {
       },
     };
     let output_text_2 = runtime::Block::Text {
+      i18n_id: "b".to_string(),
       text: "Text 2".to_string(),
       settings: runtime::BlockSettings {
         id: 1,
@@ -1314,10 +1332,10 @@ mod test {
 
     let output = runtime.skip().unwrap();
     let expected_output = Output {
-      text_ids: vec!["a".to_string(), "b".to_string()],
+      text_i18n_ids: vec!["a".to_string(), "b".to_string()],
       text: "Text 1\nText 2".to_string(),
       choices: vec!["Choice".to_string()],
-      choices_ids: vec!["c".to_string()],
+      choices_i18n_ids: vec!["c".to_string()],
       blocks: vec![output_text_1, output_text_2],
     };
 
@@ -1364,6 +1382,7 @@ mod test {
     };
 
     let output_text_1 = runtime::Block::Text {
+      i18n_id: "a".to_string(),
       text: "Text 1".to_string(),
       settings: runtime::BlockSettings {
         id: 0,
@@ -1371,6 +1390,7 @@ mod test {
       },
     };
     let output_text_2 = runtime::Block::Text {
+      i18n_id: "b".to_string(),
       text: "Text 2".to_string(),
       settings: runtime::BlockSettings {
         id: 1,
@@ -1380,7 +1400,7 @@ mod test {
 
     let output = runtime.skip().unwrap();
     let expected_output = Output {
-      text_ids: vec!["a".to_string(), "b".to_string()],
+      text_i18n_ids: vec!["a".to_string(), "b".to_string()],
       text: "Text 1\nText 2".to_string(),
       blocks: vec![output_text_1, output_text_2],
       ..Default::default()
@@ -1433,6 +1453,7 @@ mod test {
     };
 
     let output_text_1 = runtime::Block::Text {
+      i18n_id: "a".to_string(),
       text: "Text 1".to_string(),
       settings: runtime::BlockSettings {
         id: 0,
@@ -1440,6 +1461,7 @@ mod test {
       },
     };
     let output_text_2 = runtime::Block::Text {
+      i18n_id: "b".to_string(),
       text: "Text 2".to_string(),
       settings: runtime::BlockSettings {
         id: 1,
@@ -1449,10 +1471,10 @@ mod test {
 
     let output = runtime.skip_all().unwrap();
     let expected_output = Output {
-      text_ids: vec!["b".to_string()],
+      text_i18n_ids: vec!["b".to_string()],
       text: "Text 2".to_string(),
       choices: vec!["Choice".to_string()],
-      choices_ids: vec!["c".to_string()],
+      choices_i18n_ids: vec!["c".to_string()],
       blocks: vec![output_text_1, output_text_2],
     };
 
@@ -1499,6 +1521,7 @@ mod test {
     };
 
     let output_text_1 = runtime::Block::Text {
+      i18n_id: "a".to_string(),
       text: "Text 1".to_string(),
       settings: runtime::BlockSettings {
         id: 0,
@@ -1506,6 +1529,7 @@ mod test {
       },
     };
     let output_text_2 = runtime::Block::Text {
+      i18n_id: "b".to_string(),
       text: "Text 2".to_string(),
       settings: runtime::BlockSettings {
         id: 1,
@@ -1515,7 +1539,7 @@ mod test {
 
     let output = runtime.skip_all().unwrap();
     let expected_output = Output {
-      text_ids: vec!["b".to_string()],
+      text_i18n_ids: vec!["b".to_string()],
       text: "Text 2".to_string(),
       blocks: vec![output_text_1, output_text_2],
       ..Default::default()
@@ -2086,10 +2110,10 @@ mod test {
       })
       .unwrap();
     let expected_output = crate::Output {
-      text_ids: vec!["parent".to_string()],
+      text_i18n_ids: vec!["parent".to_string()],
       text: "parent".to_string(),
       choices: vec!["1".to_string(), "2".to_string()],
-      choices_ids: vec!["1".to_string(), "2".to_string()],
+      choices_i18n_ids: vec!["1".to_string(), "2".to_string()],
       blocks: vec![block],
       ..Default::default()
     };
@@ -2155,8 +2179,8 @@ mod test {
     let expected_output = crate::Output {
       text: "parent".to_string(),
       choices: vec!["1".to_string(), "2".to_string()],
-      text_ids: vec!["parent".to_string()],
-      choices_ids: vec!["1".to_string(), "2".to_string()],
+      text_i18n_ids: vec!["parent".to_string()],
+      choices_i18n_ids: vec!["1".to_string(), "2".to_string()],
       blocks: vec![block],
       ..Default::default()
     };
@@ -4205,7 +4229,7 @@ mod test {
 
     let expected_output = crate::Output {
       text: "text_1".to_string(),
-      text_ids: vec!["text_1".to_string()],
+      text_i18n_ids: vec!["text_1".to_string()],
       blocks: vec![block],
       ..Default::default()
     };
@@ -4301,8 +4325,8 @@ mod test {
       text: "text_1\ntext_2".to_string(),
       choices: vec!["1".to_string(), "2".to_string()],
       blocks: vec![block_1, block_2],
-      text_ids: vec!["text_1".to_string(), "text_2".to_string()],
-      choices_ids: vec!["1".to_string(), "2".to_string()],
+      text_i18n_ids: vec!["text_1".to_string(), "text_2".to_string()],
+      choices_i18n_ids: vec!["1".to_string(), "2".to_string()],
       ..Default::default()
     };
 
