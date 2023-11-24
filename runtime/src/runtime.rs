@@ -230,6 +230,10 @@ impl Runtime {
     self.rng = Some(Pcg32::seed_from_u64(seed));
   }
 
+  pub fn get_seed(&self) -> u64{
+    self.seed
+  }
+
   pub fn divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError> {
     let history_entry = self.game_state.clone();
 
