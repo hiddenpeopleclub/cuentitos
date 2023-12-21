@@ -19,7 +19,7 @@ Please, refer to each project's README.md for specific information.
 
 ## Components
 
-- [ADRs](architecture): Every time I make a design decision, I write an ADR. This is the place to look for the rationale behind the design.
+- [ADRs](docs/architecture): Every time I make a design decision, I write an ADR. This is the place to look for the rationale behind the design.
 - [Compatibility Test Suite](tests): This repository contains all the tests that are run against the different runtimes to ensure compatibility.
 - [Language](language): 
 - [Compiler](compiler):

@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-This directory contains Architecture Decision Records (ADRs) for the `cuentitos`.
+This directory contains Architecture Decision Records (ADRs) for the `cuentitos` environment.
 
 Every time I make a design decision, I write an ADR. This is the place to look for the rationale behind the design.
 
