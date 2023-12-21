@@ -27,6 +27,7 @@ This ADR proposes:
 1. A Test Case Format
 2. A Test Runner 
 3. CLI Requirements
+4. Documentation
 
 I think that with these three elements, we'll be able to create a set of tests that can be run against any runtime.
 
@@ -86,3 +87,9 @@ The Runtime CLI should have the following parameters:
 It should return 0 if the script was executed successfully, and 1 if it failed.
 
 It should also print all the output to the standard output to be captured by the test runner.
+
+### Documentation
+
+I will create a document that explains how to create a new test, with details on how to define the input and expected output.
+
+
