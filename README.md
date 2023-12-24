@@ -15,9 +15,11 @@ Please, refer to each project's README.md for specific information.
 
 <details>
 <summary>Table of Contents</summary>
+
 - [Components](#components)
 - [Philosophy](#philosophy)
 - [License](#license)
+
 </details>
 
 
@@ -29,11 +31,14 @@ Please, refer to each project's README.md for specific information.
 - [Compiler](compiler):
 - [Reference Runtime](runtime): A reference runtime written in Rust.
 - [Developer Portal](website): The SSR for [https://dev.cuentitos.studio](https://dev.cuentitos.studio)
+
 ## Philosophy
 
 `cuentitos` is expected to be a **powerful** and **extremely productive** environment.
 
 This goal enforces a very opinionated design that is the consequence of hitting my head to the wall for years.
+
+TODO(fran): Write a proper Philosophy doc.
 
 ## Build
 
