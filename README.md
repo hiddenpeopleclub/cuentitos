@@ -1,9 +1,5 @@
 --- 
-NOTICE: I'm in the process of reimplementing the whole project. 
-
-This will be extremely unstable from now on until I remove this notice.
-
-Download the latest release, or check the version-0.2 for the latest stable version.
+NOTICE: I'm in the process of reimplementing the whole project. This will be extremely unstable from now on until I remove this notice. Download the latest release, or check the version-0.2 for the latest stable version.
 ---
 
 # `cuentitos`
