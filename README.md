@@ -31,6 +31,18 @@ Please, refer to each project's README.md for specific information.
 
 This goal enforces a very opinionated design that is the consequence of hitting my head to the wall for years.
 
+## Build
+
+`cuentitos` is developed using Rust. You need a [working rust installation](https://www.rust-lang.org/tools/install).
+
+Once you have `cargo` running, you just run
+
+```bash
+$ cargo build
+```
+
+Refer to each project for more information.
+
 ## License
 
 `cuentitos` is distributed under the terms of both the MIT license and the
