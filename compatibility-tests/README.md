@@ -16,4 +16,4 @@ Then you can run the tests with the following command:
 $ ./cuentitos-compat [runtime] tests
 ```
 
-This will automatically run all the tests and generate an HTML report in compat-results
+This will automatically run all the tests and generate an HTML report in the `compat-results` folder.
