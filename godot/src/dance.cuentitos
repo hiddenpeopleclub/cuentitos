@@ -1,0 +1,1670 @@
+# config
+  set pocion ninguna
+  set !arca_pociones
+  [fede]
+    [(100) fede_honesto]
+      set fede honesto
+    [(100) fede_groomer]
+      set fede groomer
+
+# intro
+  Sentís escalofríos al pensar en salir por la ventana esta noche
+  La luna llena está hermosa, pero da un poco de miedo
+  No podés dejar de pensar en ir a la fiesta del bosque. Como si algo te obligase.
+  Te intriga saber más de Jaime, el chico que te invitó
+  No lo habías visto nunca, hasta hoy a la tarde...
+    * Recuerdo lo que pasó con Jaime
+      -> intro_jaime
+    * Me voy a la cama
+      Por más que sentís un impulso feroz de ir al baile, hacés fuerza para quedarte.
+      Leíste demasiados libros, viste demasiadas películas. 
+      Sabés que ir te transforma en la protagonista de una historia de terror.
+      Y preferís una historia más cozy. Calentita. Chill-Hop. Y...
+      [escape]
+        (1) Te metés en la cama y abrís "El océano al final del camino" de Neil Gaiman
+        (1) Te metés en la cama y leés "Anabelle Lee" de Edgar Allan Poe
+        (1) Te metés en la cama y leés "El cuervo" de Edgar Allan Poe
+        (1) Te metés en la cama y leés "El pozo y el péndulo" de Edgar Allan Poe
+        (1) Te metés en la cama y leés "Corazón delator" de Edgar Allan Poe
+        (1) Te metés en la cama y leés "La máscara de la muerte roja" de Edgar Allan Poe
+        (1) Te metés en la cama y leés "El gato negro" de Edgar Allan Poe
+        (1) Te metés en la cama y leés "La caída de la casa Usher" de Edgar Allan Poe
+        (1) Te metés en la cama y leés "El manustrito hallado en una botella" de Edgar Allan Poe
+        (1) Te metés en la cama y leés "El barril de amontillado" de Edgar Allan Poe
+        (1) Te metés en la cama y leés "El que acecha en la oscuridad" de H. P. Lovecraft
+        (1) Te metés en la cama y leés "Hechos tocantes al difunto Arthur Jermyn y su familia" de H. P. Lovecraft
+        (1) Te metés en la cama y leés "El que susurra en la oscuridad" de H. P. Lovecraft
+        (1) Te metés en la cama y leés "Dagon" de H. P. Lovecraft
+        (1) Te metés en la cama y leés "El color que cayó del cielo" de H. P. Lovecraft
+        (1) Te metés en la cama y leés "La llamada de Cthulhu" de H. P. Lovecraft
+        (1) Te metés en la cama y leés "El caso de Charles Dexter Ward" de H. P. Lovecraft
+        (1) Te metés en la cama y abrís "Bloody Service" de CASE en tu Steam Deck
+        (1) Te metés en la cama y abrís "Mothmen 1966" de LCB en tu Steam Deck
+        (1) Te metés en la cama y abrís "Varney Lake" de LCB en tu Steam Deck
+        (1) Te metés en la cama y abrís "Scratches" de Senscape en tu Steam Deck
+        (1) Te metés en la cama y abrís "Serena" de Senscape en tu Steam Deck
+        (1) Te metés en la cama y abrís "Asylum" de Senscape en tu Steam Deck
+      Es Halloween después de todo.
+      Esta va a ser una buena noche...
+      `game_over`
+      -> END
+  `separation`
+
+# intro_jaime
+  unique
+  Desde que te regalaron la bici para tu cumpleaños que la vida se volvió más interesante.
+  Volver de la escuela por la bicisenda que bordea el mar es la vida que no tenías antes de mudarse a San Eduardo.
+  Tenés que aprovechar ahora que está fresquito, después de Septiembre las cosas se empiezan a poner más y más calurosas.
+  El mar está tranquilo hoy, no hay muchas olas ni muchos barcos pesqueros.
+  Frenás la bici de golpe, sin pensar en quién puede venir atrás. Por suerte no hay nadie.
+  Hay algo allá a lo lejos, muy adentro en el agua.
+  Ves cómo entre kilómetros de agua tranquila, un punto negro empieza a crecer.
+  De la nada y sin aviso, un chorro de agua sale disparado hacia arriba, se deshace en gotas y el viento las lleva hacia el sur.
+  Jaime: Es una Ballena Franca Austral.
+  Abril: AAAAAH!
+  Saltás del susto. Tu corazón late a mil por hora.
+  Jaime: Uh, perdón no quise asustarte.
+  Abril: Tarde pibe, no podés salir así de la nada...
+  Jaime: Te vengo llamando desde la ruta. Pero no me escuchabas.
+  La ballena volvió a salir a la superficie.
+  Esta vez la ves casi entera, hasta muestra su cola.
+  Verla te llena de alegría. Tenés muchas ganas de saltar y agitar los brazos.
+    * Salto y bailo para festejar que vi una ballena
+      set masking false
+      Jaime: ...
+      Jaime: Qué te pasa? Estás bien? Te dió un ACV?
+      Vos seguís bailando mientras la ballena saca sus aletas laterales a la superficie.
+      Nunca habías visto algo así desde la playa.
+      De repente te acordás del chico que te estaba hablando y lo mirás. Tiene cara de no entender nada.
+    * Me quedo quieta para que Jaime no se ría
+      set masking true
+      Jaime: ...
+      Jaime: Estás bien?
+      Mirás a Jaime y mirás a la ballena mientras contenes tus deseos de bailar.
+      Aunque también se contienen tus deseos de hablar.
+  
+  La ballena dejó de salir a la superficie, al menos por ahora.
+  Jaime: Bueno, intentemos algo... Nunca te había visto por acá, estás de vacaciones? No es normal ver una chica sola en bici.
+  Abril: No soy una chica.
+  Jaime: Como?
+  Abril: Bueno... a veces sí. Pero hoy no.
+  Jaime: No entiendo.
+  Abril: A veces soy una chica, y me gusta ser una chica, pero hoy no, no me siento una chica.
+  Jaime: ...
+  Jaime: Sos rara. O raro? Bueno no importa...
+  Jaime: Yo soy Jaime
+  Jaime estira su mano para saludarte
+  Jaime: Ya que no sos una chica, te doy la mano y no un beso. 
+  Jaime: Mi papá siempre me dijo: "los besos se guardan para las mujeres".
+    * Le tomo la mano
+      set sensibilidad_tactil false
+      Le das la mano y te sonríe.
+    * Le miro la mano
+      set sensibilidad_tactil true
+      Te colgás mirándole la mano.
+      El te mira y guarda su mano en el bolsillo.
+  Abril: Qué moderno.
+  Jaime te sonríe
+  Jaime: Siempre fue un ejemplo de cómo ser un gran hombre.
+  Abril: Nunca te ví por acá, a qué colegio vas?
+  Jaime: Por ahora a ninguno
+  Abril: Tu papá no es muy buen ejemplo entonces si no te manda al colegio
+  Jaime: Mi papá se murió
+  Tenés ganas de saltar por el acantilado.
+  Abril: Ay... perdón.
+  Jaime: No hay problema, ya fue hace muchos años. Apenas lo conocí.
+  Jaime: Me acerqué a hablarte porque te vi sola y no había nadie más.
+  Jaime: Se que va a sonar raro, pero no estoy muy seguro de dónde estoy.
+  Abril: Uh, te perdiste? Estamos en San Eduardo del Mar. Bueno, casi llegando, esto todavía es Miramar, cuando pasás el arroyo ese estás en San Eduardo.
+  Jaime: Ah! Entonces estoy re cerca! Justo estoy yendo a San Eduardo. Hace un rato encontré esto.
+  Jaime te da una hoja doblada al medio.
+  La abrís y parece ser una invitación a una fiesta.
+  Abril: El Baile de los Espíritus?
+  Jaime: Sí, es una fiesta que se hace todos los años, en primavera, cerca del 30 de Octubre.
+  Abril: Nunca escuché nada de eso.
+  Abril: Igual no soy de acá tampoco, mi mamá y yo nos mudamos hace muy poco.
+  Jaime: Yo nunca fui, pero como me invitaron pensaba ir.
+  Abril: Según dice acá es en el bosque de eucaliptos. Pero eso es propiedad privada.
+  Jaime: Sí, ahora sí, pero ese bosque está ahí hace muchos años. El bosque ese crece "como por arte de magia".
+  Jaime: Bueno, en realidad, crece por la magia, cómo pensás que pueden talarlo y talarlo y siempre estar frondoso.
+  Abril: Vengo preguntándome eso desde que llegamos.
+  Jaime: Magia. No te intriga ir a ver de qué se trata todo eso?
+  Jaime: Yo tengo que ir, me está esperando alguien. Si querés podés venir...
+  Abril: A una fiesta que se llama "El Baile de los Espíritus"? Ni ahí!
+  Jaime: Vos te lo perdés! Yo voy a estar ahí.
+  Mama: Abril!
+  Mirás a la ruta, y ves a tu mamá saltando como loca.
+  Abril: Ahí escucho a mi mamá que me llama, se debe estar preocupando, mejor me voy.
+  No escuchás ninguna respuesta. Sacás los ojos de la ruta para mirar a Jaime.
+  No hay nadie. Qué chico más raro. Se fue y no te dijo ni chau.
+  Mirás al mar. Volvió la ballena.
+  O mejor dicho las ballenas.
+  Ves a una ballena grande y una chica jugando.
+  Tu corazón empieza a acelerarse.
+  Mirás para todos lados y sólo ves a tu mamá. Estás segura.
+    req masking
+  No prestás atención a tu alrededor.
+    req !masking
+  Empezás a saltar y a agitar los brazos de alegría. Y señalás a las ballenas.
+  Tu mamá mira hacia el mar y te sonríe.
+  Mama: Abril! Menos mal, estaba preocupada. Ahora entiendo porqué tardaste.
+  Te abraza y da un beso en la frente. 
+    req sensibilidad_tactil false
+  Te pone tu mantita encima y te la junta en el cuello.
+    req sensibilidad_tactil true
+  Se sienta con vos mirando al mar, y cada tanto se sonrie cuando te ve bailar cada vez que una ballena asoma en el agua.
+  `separation`
+  
+# intro_baile
+  Ya se hizo la hora. La invitación decía a las 10.
+  Te ponés el jean negro y la remera amarilla de Descendents de tu mamá. No es la pinta adecuada para un baile, pero te da igual.
+    req !masking
+  Te ponés el vestido negro. No te gusta como te queda, no te sentís vos, pero sabés que vestida así no te van a decir nada.
+    req masking
+  Tu mamá todavía no se durmió, por eso no tenés que hacer nada de ruido.
+  Dejaste la ventana abierta desde temprano. Nadie te gana en astucia.
+  A esta hora tu mamá está escuchando vinilos en el living, eso te da una ventaja.
+  TODO: Un puzzle acá para no hacer ruido? Early ending?
+  Salís por la ventana haciendo uso de tu destreza gatuna y te vas directo al bosque.
+  La luna llena ilumina todo San Eduardo.
+  No podés creer lo lindo que está. Tenés que decirle a tu mamá de ir más seguido con la luna llena a caminar.
+  Cuando te acercás a la plantación de eucaliptos notás que la entrada es un poco distinta que de costumbre.
+  Hoy, en lugar de la tranquera horrible que suele haber, ves un portón abierto, con luciérnagas rondándolo.
+  El portón tiene un arco arriba lleno de enredaderas verde oscuro.
+  Pasás el portón y ves un camino de luciérnagas que te lleva entre los árboles.
+  Levantás la vista y ves un salón muy luminoso que se alza al final del camino.
+  Vas saltando las baldozas de a 2
+    req !masking
+  Vas caminando mirando a todos lados pero no ves a nadie
+    req masking
+  En la puerta del salón ves Arca, tu vecina que es medio bruja.
+  Te mira con cara confundida.
+  Arca: Hola Abril, Te pasó algo?
+  Abril: No, por? Me dieron ganas de venir al baile.
+  Arca: Pero... te moriste?
+  Abril: No! Porque me voy a morir?
+  Arca: te mira cada vez más confundida.
+  Abril: Me invitó Jaime, un chico que conocí hoy mientras miraba las ballenas en la costa.
+  Arca: Ah. Eso explica todo un poco más. Le dije a ese pibe que no moleste más, pero no hay caso.
+  Abril: Pero no me molestó.
+  Arca: Si, lo hizo.
+  Ves que arca cierra los ojos y empieza a murmurar en un idioma que no conocés.
+  Levanta su mano izquierda, con su palma apuntándote, y la pone encima de su corazón.
+  Ves que un símbolo aparece sobre su palma y comienza a brillar de un color violeta oscuro.
+  Sentis de repente un calor muy fuerte en el pecho.
+  Te mirás y ves otro símbolo brillando, pero es rojo, un rojo intenso.
+  Arca: Como me lo suponía
+  Arca te mira con cara de pena
+  Arca: Abril, Jaime no es un chico común. Murió hace más de cien años. Es un fantasma. 
+  Arca: Pero también un mago.
+  Arca: Eso no sería tan grave, si no fuese porque te puso una maldición el muy tramposo.
+  Abril: Me decís en serio? Lo voy a matar!
+  Arca: No se puede morir dos veces. Al menos no que yo sepa.
+  Abril: Entonces lo voy a encerrar en una prisión eterna!
+  Arca: Medio que ya está en esa... pero no te preocupes.
+  Arca: Vamos a hacer algo, entrá en el baile, debe haber alguna razón por la cual Jaime hizo esto.
+  Arca: Fijate si podés averiguar algo y si necesitás ayuda con algo me decís. Hablá con Jaime y los fantasmas que vayan llegando a la fiesta, por ahí te dicen algo.
+  Arca: Todavía no llegaron, pero Jaime está ahí...
+  Arca: De todas formas ojo, algunos fantasmas pueden ser traicioneros.
+  Arca: La maldición que te puso Jaime es muy antigua, yo puedo detectarla pero no curarla.
+  Arca: No se los detalles, pero parece muy fuerte. Tené cuidado.
+  Abril: Lo voy a matar!
+  Arca te mira. Sabés que piensa que no entendiste nada. 
+  Pero entender no quiere decir que no te de bronca.
+  Arca te invita a pasar y entran al salón.
+  Parece una estancia colonial, con ventanales inmensos y pinturas en las paredes.
+  Un vals medio fantasmagórico suena. Pero no ves parlantes. Ni músicos.
+  Jaime está en el medio del salón, con la mirada perdida en el músico que está tocando.
+  Te acercás y te parás al lado de él.
+  Abril: Se puede saber porqué me tiraste una maldición?
+    (100) Jaime: Perdoname, era la única forma de que vinieras.
+      freq fede honesto 100
+      set jaime maldicion
+      Jaime: Entiendo si estás enojada, pero ahora que estás acá puedo sacártela.
+    (100) Jaime: Yo no te tiré ninguna maldición, Abril.
+      freq fede groomer 100
+      set jaime no_maldicion
+      Jaime: Aunque, ahora que lo pienso, hubiese sido una buena opción...
+      Jaime: A ver, dejame ver qué onda...
+  Ves que Jaime hace algo parecido a lo que hizo arca, pero el símbolo que le aparece en la palma es distinto. Y es verde oscuro.
+  De repente sentís que el calor que tenías en el pecho no está más.
+  Jaime: Listo...
+  Jaime: no se quién fue que te tiró eso, pero claramente quería que vengas. Lo cual es bastante conveniente para mí.
+    req jaime no_maldicion
+  Jaime: Perdón por haberte forzado a venir, estoy desesperado...
+    req jaime maldicion
+  Jaime: Necesito tu ayuda...
+  Jaime: Es que... algo pasó con Fede, mi novio. 
+  Jaime: Nosotros... nosotros ya no estamos en el mundo de los vivos, pero incluso acá nos podemos sentir perdidos.
+  Abril: ¿Cómo que perdidos? ¿Estás diciendo que Fede también es un fantasma, como vos?
+  Jaime mira hacia el suelo, claramente afectado.
+  Jaime: Sí, pero eso no es todo. Cuando murió, algo pasó con su memoria. No se acuerda de mí, de nosotros, de nada que vivimos juntos.
+  Abril: ¡No puede ser! ¿Y ahora no te reconoce o qué?
+  Jaime: Exacto, es como si nunca hubiésemos existido. Y para empeorar las cosas, ahora anda con otro fantasma, un tal Gabriel. No sé cómo manejarlo, me parte el alma verlos.
+  Abril frunce el ceño, pensativa.
+  Abril: ¿Intentaste hablar con Fede? Digo, capaz si le recordás cosas que vivieron juntos, ¿puede que recupere la memoria?
+  Jaime: Lo intenté, pero Fede me mira como si fuera un desconocido. Gabriel siempre está con él, y siento que no tengo espacio para acercarme.
+  Abril se queda en silencio unos segundos, analizando la situación.
+    * Ofrecerle ayuda para recuperar la memoria de Fede 
+      Abril: ¿Y si buscamos la forma de que Fede recupere la memoria? Debe haber algo que le haga clic, ¿no? Vos sos mago.
+      Jaime: No sé, Abril... Intenté un montón de cosas. Pero tal vez vos, estando "viva", puedas ver algo que yo no. Mi magia se limita a lo que aprendí a hacer en vida, y para la memoria sólo hay pociones. Y lamentablemente los muertos no podemos hacer pociones... no podemos.. 
+      Jaime: agarrar los ingredientes.
+      Asentís con determinación.
+      Abril: Dale, lo vamos a intentar juntos. Capaz que entre los dos encontramos la manera de que Fede se acuerde de todo.
+      Jaime: Gracias, de verdad. Tenerte de mi lado me da esperanza.
+      Jaime se seca una lágrima espectral que no puede caer, y te sonríe con un dejo de tristeza.
+      Abril: Lo vamos a solucionar, Jaime. No importa qué, te prometo que vamos a hacer que Fede se acuerde de vos.
+      Jaime: Gracias, Abril. Sos una amiga increíble. Vamos a ver qué podemos hacer, entonces.
+    * Decirle que no querés meterte en el mundo de los muertos
+      Abril: No sé, Jaime... Esto ya parece cosa de muertos y me da un poco de cosa meterme. 
+      Abril: No quiero ofender, pero capaz es algo que deberían resolver entre ustedes.
+      Jaime: Lo entiendo, Abril. Es complicado, y no quiero que te sientas incómoda. Pero realmente no sé qué hacer. Me siento tan impotente...
+      Te sentis un poco culpable.
+      Abril: Lo siento mucho, Jaime. Ojalá pudiera hacer más, pero esto me supera. Espero que encuentres la manera de llegar a Fede.
+      Jaime: Gracias de todos modos, Abril. Valoré mucho que vinieras y me escucharas. Voy a tener que encontrar otra forma, supongo.
+      `game_over`
+
+# nuevo
+  set fantasmas 0
+  De golpe el recinto comienza a temblar...
+  Ves como llegan nuevos fantasmas al baile...
+    req fantasmas_conocidos <4
+  Ves como llega un nuevo fantasma al baile...
+    req fantasmas_conocidos 4
+  <-> random_fantasmas
+  <-> random_fantasmas
+  -> hub
+
+# baja_fede
+  De repente la música deja de sonar.
+  Las luces del escenario se apagan y ves que Fede se aleja del órgano.
+  Se para junto al escenario mirando al piso.
+  -> hub
+
+# random_fantasmas
+  (100) Ves a dos fantasmas vestidos en ropas mojadas
+    req fantasmas <2
+    req !alejav
+    req !alejav_conocidos
+    set alejav
+    set fantasmas +1
+  (100) Ves a un fantasma de pelo corto que está en un rincón
+    req fantasmas <2
+    req !bianca
+    req !bianca_conocidos
+    set bianca
+    set fantasmas +1
+  (100) Ves un fantasma con una cicatriz en la cara
+    req fantasmas <2
+    req !valeria
+    req !valeria_conocidos
+    set valeria
+    set fantasmas +1
+  (100) Ves un fantasma que mira el reloj del salón
+    req fantasmas <2
+    req !cristina
+    req !cristina_conocidos
+    set cristina
+    set fantasmas +1
+  (100) Ves un fantasma con una maceta con suculentas
+    req fantasmas <2
+    req !gabriel
+    req !gabriel_conocidos
+    set gabriel
+    set fantasmas +1
+
+# hub
+  -> nuevo
+    unique
+    req fantasmas_conocidos 2
+  -> nuevo
+    unique
+    req fantasmas_conocidos 4
+  -> baja_fede
+    unique
+    req fantasmas_conocidos 5
+  Con quién querés hablar?
+    * Hablo con Arca
+      -> arca
+    * Hablo con los dos fantasmas con ropas mojadas
+      req alejav
+      req !alejav_conocidos
+      -> alejav
+    * Hablo con Alejandro y Javier
+      req alejav
+      req alejav_conocidos
+      -> alejav
+    * Hablo con la fantasma de pelo corto que está sola en un rincón
+      req bianca
+      req !bianca_conocidos
+      -> bianca
+    * Hablo con Bianca
+      req bianca
+      req bianca_conocidos
+      -> bianca
+    * Hablo con el fantasma con una cicatriz en la cara
+      req valeria
+      req !valeria_conocidos
+      -> valeria
+    * Hablo con Valeria
+      req valeria
+      req valeria_conocidos
+      Valeria te mira con cara muy cansada, ves que ya no tiene ganas de intentar hablar con vos.
+        req valeria_frustracion >5
+      -> valeria
+        req valeria_frustracion <5
+
+    * Hablo con el fantasma que mira el reloj del salón
+      req cristina
+      req !cristina_conocidos
+      -> cristina
+    * Hablo con Cristina
+      req cristina
+      req cristina_conocidos
+      -> cristina
+    * Hablo con el fantasma con una maceta con suculentas
+      req gabriel
+      req !gabriel_conocidos
+      -> gabriel
+    * Hablo con Gabriel
+      req gabriel
+      req gabriel_conocidos
+      -> gabriel
+    * Hablo con Fede
+      req fantasmas_conocidos 5
+      -> finales
+
+## alejav
+  ### preguntas
+    De qué querés hablar?
+      * Pregunto sobre su historia
+        unique
+        req !alejav_conocidos
+        set alejav_conocidos
+        set fantasmas_conocidos +1
+        // ... Diálogo con su background...
+        -> preguntas
+      * Pregunto sobre Arca
+        unique
+        Abril: ¿Qué piensan de Arca?
+        Alejandro: Ay, Arca, espejo refractante de mil colores, sus alas multifacéticas ocultan misterios, un ser de tantas capas, envuelto en enigmas y sombras lúdicas.
+        Javier sonríe mirando a Alejandro
+        Javier: Alejandro siempre con sus metáforas. Quiere decir que Arca es un poquito rara, pero en el buen sentido. Tiene algo especial que no podemos descifrar completamente.
+        Abril: ¿Rara? ¿Cómo? 
+        Alejandro: Rara como la flor solitaria que crece en el inhóspito desértico, hermosa y desafiante frente a la adversidad, su ser transmuta entre realidades diversas, su identidad es un mosaico complejo y lleno de valentía.
+        Javier: Sí, Abril. Creemos que Arca es valiente por ser quien es, especialmente siendo una mujer trans. 
+        Javier: No debe ser fácil, ¿sabes? 
+        Javier: Pero a veces, nosotros... 
+        Javier: Bueno, a veces no entendemos todo lo que ella vive o cómo lo vive.
+        Abril: Pero ustedes son buenos amigos de ella, ¿no?
+        Alejandro: Oh, amistad, esa conexión de almas que se encuentra más allá de los límites terrenales, nosotros apreciamos a la intrépida Arca, aunque nuestras ondas frecuentemente naveguen por mares distintos.
+        Javier: Apreciamos a Arca, sí. Aunque nuestras opiniones no siempre coincidan, y pueda parecernos un poco... inusual a veces, sabemos que ella tiene un gran corazón.
+          * Les pregunto más sobre sus sentimientos hacia Arca
+            Abril: Pero tienen que aprender a entender y amar a Arca por quien es, sin pensar que es rara, ¿o no?
+            Javier: Tienes razón, Abril. Todos tenemos que aprender y crecer. Nadie es perfecto y estamos constantemente aprendiendo.
+            Alejandro: La semilla de la aceptación florece en los campos del alma, y nosotros, seres errantes, debemos permitir que ese brote crezca robusto y fuerte dentro de nosotros.
+            Abril: ¡Exacto! Todos podemos aprender algo nuevo cada día y ser mejores personas.
+            Javier gira los ojos para arriba
+            Javier: A veces, incluso los fantasmas olvidamos lo que es importante. Gracias.
+            Alejandro mira a Javier y se ríe
+            Vos te quedás mirándolos. 
+            Sabés que te están tomando el pelo
+          * Cambio de tema para no incomodarlos.
+            Abril: Ahhh... entiendo...
+            No, no lo entendés pero decidís no decir más nada
+            -> preguntas
+      * Pregunto sobre Fede
+        unique
+        Abril: Quería preguntarles qué piensan de Fede. Jaime está muy triste y yo quiero ayudarlo.
+        Alejandro: Oh, la melodía perdida en el abismo de la olvidanza, un alma que danza en el velo de la desmemoria.
+        Javier: Jajaj.. Alejandro piensa que Fede se hace el otario, que finge no acordarse de nada.
+          * Preguntarles si están hablando en serio
+            Abril: ¿En serio creen que Fede está mintiendo?
+            Javier: Mira, Abril, Fede siempre fue un tipo medio chamuyero, siempre encontraba la forma de zafar de los mambos.
+            Alejandro: Un suspiro en la eternidad, peregrino de escapismos, su corazón tal vez temeroso de enfrentar el doloroso espejo del ayer.
+            Javier: Fede no quiere enfrentar lo que pasó con Jaime, y por eso eligió olvidar, o al menos, pretender que olvidó.
+            Abril: ¡Pero eso es muy feo! Jaime está sufriendo mucho...
+            Alejandro: Las estrellas lloran en el firmamento de su alma, un río de melancolía y deseos inconclusos lo embriaga.
+            Javier: Es verdad, es un bajón para Jaime todo esto.
+            Abril: ¡No voy a dejar que Fede lastime a Jaime! Voy a hablar con él y a decirle que eso no se hace.
+            Alejandro: ¡Oh, pequeña guerrera de las almas perdidas! Tu bravura ilumina los sombríos caminos de los espíritus en pena.
+            Javier: Estamos con vos, Abril. No te preocupes, que de alguna forma, las cosas van a salir bien. 
+            Javier: La verdad siempre encuentra la manera de salir a la luz.
+            Abril: Gracias, chicos. No sé bien qué voy a hacer, pero no voy a permitir que Jaime esté triste por más tiempo.
+              set egoismo
+          * Decirles que no tiene sentido eso que dicen
+            Abril: ¿Pero por qué piensan eso? No tiene sentido que Fede finja, ¡él parece genuinamente confundido!
+            Alejandro: Pero, pequeña musa, ¿acaso la rosa no disfraza sus espinas con su fragancia y belleza? 
+            Alejandro: El corazón herido, a menudo, teje cortinas de olvido para escapar de las sombras del dolor.
+            Javier: Lo que Ale quiere decir, Abril, es que a veces las personas fingen olvidar para no enfrentar el dolor de la verdad. 
+            Javier: Fede podría estar haciéndose el dolobu para no lidiar con haber perdido a Jaime y no herirlo más con su nueva relación.
+            Abril: Pero Fede no tiene por qué hacer eso. Si él realmente quisiera olvidar todo y empezar de nuevo, simplemente podría haberse ido lejos y ya. Jaime ni siquiera puede verlo si Fede no quiere. Algo no cierra en lo que me dicen.
+            Alejandro: Pero, dulce niña, las melodías del corazón no siempre resuenan en armonías lógicas. El alma, en su dolor, podría anhelar la presencia aún en la distancia, un lazo que aún roto, lo mantiene atado al ayer, aunque se envuelva en el manto de la indiferencia.
+            Javier: Además, vos sabes mejor que nadie que los fantasmas no podemos simplemente "irnos lejos" y ya, hay reglas, hay conexiones emocionales que nos mantienen atados a lugares y personas. Fede no se va porque, en el fondo, todavía siente algo por Jaime.
+            Abril: Pero vos mismo lo dijiste, Javi, hay conexiones emocionales que los mantienen atados. Si Fede estuviera fingiendo, se notaría. Entonces, yo no les creo nada, Fede realmente no se acuerda de Jaime.
+            Alejandro: Oh, mensajera de la verdad, tus palabras resuenan con la claridad del cristal en los campos de la certeza. Tal vez nuestros corazones, aún envueltos en la melancolía de lo que fue, nos ciegan, dibujando teatros de conspiración donde solo yace la sincera oscuridad del olvido.
+            Javier: Es cierto, Abril. Tal vez nos dejamos llevar por nuestras propias tristezas y expectativas. Pero de igual manera, es difícil para nosotros aceptar que Fede simplemente olvidó a Jaime, a pesar de todo lo que vivieron.
+            Abril: No se, todo esto me suena a chamuyo. Voy a ayudar a Jaime a seguir adelante, no a quedarse pensando en teorías que sólo le hacen más daño.
+        -> preguntas
+      * Pregunto sobre Jaime
+        unique
+        Abril: Quería preguntarles qué piensan de Jaime. Está muy triste y yo quiero ayudarlo.
+        Alejandro: ¡Oh, querida Abril, la tristeza de Jaime es un río que fluye, impetuoso y sin fin, en un océano de nostalgias y deseos inconclusos!
+        Javier: Alejandro quiere decir que Jaime está muy bajoneado, no puede olvidarse de Fede y eso le hace mal.
+        Abril: Pero Fede era su pareja, es normal que esté triste, ¿no?
+        Alejandro: ¡Claro, noble niña! Pero, mira, el amor que yace en el pasado, no debe oscurecer el jardín del futuro. Cada rosa debe ser regada en su momento y la que ya perdió su esplendor no debe quitarle agua a las nuevas flores.
+        Javier: Lo que Ale quiere decir es que está bien recordar, pero Jaime no se puede pasar toda la eternidad llorando por algo que ya fue. Fede tiene su vida y Jaime tiene que encontrar la suya.
+        Abril: Pero no puedo dejarlo solo. ¿Hay alguna manera de ayudarlo a que entienda eso?
+        Alejandro: La maraña de los sentimientos es un laberinto sin salida aparente, donde los eco de las palabras amables se pueden perder fácilmente. Pero con una guía genuina y amorosa, como tu corazón, Abril, quizás pueda encontrar la salida hacia la luz.
+        Javier: A veces, hablar claro y sin vueltas es lo que más ayuda, Abril. A Jaime le vendría bien que alguien le muestre que hay mucho más por vivir y disfrutar. Vos, con tu energía y tu buena onda, podés ser esa personita que le abra los ojos.
+        Abril: Voy a intentar hablar con él. Pero si le digo que Fede está con Gabriel, que se olvide, se va a poner peor, ¿no?
+        Alejandro: ¡Ah, los cielos oscurecen cuando las tempestades del corazón son provocadas! Pero, ¿acaso la verdad no es acaso siempre más lumínica y purificadora que las sombras de la ignorancia y el autoengaño?
+        Javier: Alejandro tiene razón. La verdad puede doler, pero al final es lo que cura y permite seguir adelante. Quizás Jaime se sienta mal al principio, pero al final es lo que le va a permitir soltar y buscar su propio camino.
+        Abril: Les agradezco mucho, chicos. Voy a hablar con Jaime y decirle la verdad. Espero que pueda encontrar la paz y, con el tiempo, ser feliz nuevamente.
+        Alejandro: La brisa de la esperanza danza en tus palabras, pequeña sabia. Que tus palabras florezcan en los campos de su alma.
+        -> preguntas
+      * Pregunto sobre Gabriel
+        req gabriel_conocidos
+        unique
+        Abril: Qué piensan de Gabriel?
+        Javier: Mirá, Abril, entre nosotros, no somos los mayores fans de Gabriel, la verdad.
+        Alejandro: En el telar de la noche, Gabriel teje sólo sombras, sus intenciones, misterios oscuros que encierran secretos como cofres olvidados en la profundidad del océano.
+        Javier: Lo que Ale quiere decir es que Gabriel nos parece medio misterioso y oscuro, no sabemos bien qué quiere o por qué está con Fede.
+        Abril: ¿Creen que Fede está feliz con él?
+        Alejandro: Fede danza en un campo de ilusiones, su sonrisa pinta un sol en su cielo pero sus ojos guardan tormentas no contadas.
+        Javier: Es decir, parece feliz por fuera, Abril, pero si lo mirás bien, hay algo en sus ojos que muestra que no todo está bien.
+        Abril: Pero ¿por qué estaría con Gabriel si no lo quiere?
+        Alejandro: A veces, las almas errantes buscan refugio en cavernas, aunque estas no guarden el calor del hogar.
+        Javier: Bueno, lo que pasa es que a veces, cuando uno se siente solo, busca compañía donde puede, aunque esa compañía no sea la mejor para uno.
+          * Preguntarles como puedo ayudar a Fede y a Jaime
+            Abril: Y ¿cómo puedo ayudar a Fede y a Jaime?
+            Javier: Es complicado, pero capaz que si hablás con Fede, si intentás que se abra, pueda ver que hay otras opciones, que no está solo.
+            Alejandro: Ser el faro en su tormenta, mostrarle caminos escondidos en su corazón, desvelar los velos que oscurecen su verdad.
+            Javier: Exacto, ser su amiga, estar ahí, tal vez pueda ayudarlo a recordar lo que era estar verdaderamente enamorado, y a ver que Jaime todavía está acá, esperándolo.
+            Abril: Entonces voy a hablar con Fede, voy a ser su amiga y a ayudarlo a recordar lo que es el amor verdadero. Gracias, chicos, son los mejores.
+            Javier: ¡Gracias a vos, pequeña gran alma! Siempre brillando con tu luz y queriendo ayudar a los demás.
+            Alejandro: En tu andar, pequeña flor, que la luz de la esperanza y la bondad ilumine siempre tus días, como una estrella guía en la vastedad del universo.
+          * Preguntarles como podemos deshacernos de Gabriel
+            set ocultar
+            Abril: Como puedo hacer para que Fede deje de pensar en Gabriel y vuelva a ver a Jaime?
+            Javier: Ay, Abril, los caminos del corazón son más enrevesados que callejones sin salida, eh.
+            Alejandro: En la sinfonía del amor, las notas a veces se deslizan en acordes menores, narrando melodías de despedidas y encuentros que en sus ecos, hablan de nostalgias y añoranzas.
+            Javier: Lo que mi poeta intenta decirte, es que a veces, en el amor, las cosas se complican y se mezclan los sentimientos de lo que fue, lo que es y lo que uno desea que sea.
+            Abril: Pero si Fede y Jaime se querían tanto, ¿por qué Fede no puede recordarlo? ¡Es tan triste!
+            Alejandro: La mente, pequeña viajera, es un universo en sí misma, capaz de ocultar estrellas para protegerse de su propio resplandor.
+            Javier: Es que, a veces, la mente olvida cosas a propósito, para protegernos del dolor que esos recuerdos pueden causar, Abril.
+            Abril: ¿Entonces ustedes piensan que Fede está olvidando a propósito? ¿Que se hace el olvidadizo?
+            Javier: No podemos estar seguros, pero sí, hay algo en Fede que nos hace pensar que tal vez él sabe más de lo que dice.
+            Alejandro: Las almas, cuando se ven atrapadas en la tempestad de su propio sentir, a veces eligen el puerto de la negación como refugio, permitiendo que sus velas descansen aunque el viento de la verdad susurre su nombre.
+            Javier: Algunas personas prefieren negar lo que sienten o lo que saben, porque enfrentarlo sería como navegar en una tormenta muy difícil de sortear.
+            Abril: Pero tengo que ayudar a Jaime, él está muy triste y extraña mucho a Fede. ¿No hay algo que pueda hacer para que Fede recuerde?
+            Alejandro: En la vastedad del olvido, una chispa puede iluminar océanos de recuerdos, mas es la voluntad del portador de la mente la que decide si permitir que la llama persista o si apagarla con el viento de la negación.
+            Javier: Es complicado, Abril. A veces, una pequeña cosa puede hacer que alguien recuerde todo, pero sólo si esa persona está dispuesta a aceptar esos recuerdos y enfrentar lo que vienen con ellos.
+            Abril: Entonces, ¿qué hago? Jaime necesita a Fede, y creo que en el fondo, Fede también lo necesita a él.
+            Javier: Creo que tu tarea es más complicada de lo que parece. Tenés que ayudar a Fede a sentirse seguro, a querer recordar, y a Jaime a entender lo que está pasando sin perder la esperanza.
+            Alejandro: Tal vez, pequeña luz, tu presencia pueda ser el faro que guíe a Fede de vuelta a los brazos de su pasado, ofreciendo un espacio donde el amor perdido pueda florecer nuevamente, en medio de la oscuridad del olvido.
+            Javier: Es eso, Abril. Tu amistad, tu comprensión y tu paciencia pueden ser el puente que Fede necesita para cruzar de vuelta hacia Jaime. Pero no te olvides que él también tiene que querer cruzarlo.
+            Abril: Voy a hacer mi mejor esfuerzo. Fede y Jaime merecen volver a estar juntos. Gracias, chicos.        -> preguntas
+        -> preguntas
+      * Pregunto sobre Bianca
+        req bianca_conocidos
+        unique
+        Abril: ¿Qué piensan de Bianca?
+        Alejandro: Ah, la sombra persistente que navega por los confines de nuestro reino incorpóreo, su esencia se entreteje con la frialdad de un invierno perpetuo, donde las sonrisas se marchitan en un intento vano de florecer.
+        Javier: Alejandro quiere decir que Bianca es bastante ortiva y no nos cae bien. 
+        Javier: Es como un invierno constante, nunca está contenta y siempre trata de arrastrar a los demás a su mala onda.
+        Te rascás la cabeza
+        Abril: ¿Pero por qué es tan amarga? ¿No se puede hablar con ella?
+        Alejandro: La dama de la oscuridad encierra sus razones en un cofre de desdén, quizás escondiendo un corazón que un día, en otro tiempo, palpitó con calidez y dulzura.
+        Javier: No sabemos, Abril. Puede que Bianca tenga sus propias razones para ser así, tal vez alguna vez fue dulce y amable, pero algo en su vida la cambió. 
+        Javier: A veces, las personas se amargan por cosas que les pasaron.
+        Abril: Pero no es motivo para tratar mal a los demás. ¿Nunca intentaron decirle algo?
+        Alejandro: En el crepúsculo de nuestra existencia, hemos procurado tender un puente sobre el río de su amargura, pero sus aguas son caudalosas y repelen toda embarcación de consuelo que intentamos enviar.
+        Javier: Lo intentamos, Abril. Pero es difícil. Sus muros son altos y no deja que nadie se acerque demasiado.
+          * Voy a intentar hablar con Bianca y descubrir por qué está tan triste
+            Abril: Creo que voy a intentar hablar con ella. Tal vez, si alguien muestra interés en su dolor, pueda abrir su corazón.
+            Alejandro: La valentía de la juventud ilumina las sombras de nuestro anhelo, ¡oh, pequeña guerrera del consuelo!
+            Javier: Abril, sos muy valiente. Pero tené cuidado. A veces, intentar ayudar a alguien que no quiere ser ayudado puede hacerte daño a vos misma.
+            Abril: Aunque tenga miedo, quiero intentarlo. Creo en las segundas oportunidades y en la bondad que puede haber en cada uno.
+            Javier: Abril, tu corazón es un faro en la oscuridad. Pero por favor, protegelo y no dejes que las tormentas de otros lo apaguen.
+          * Mejor no intervengo, es cosa de ella
+            set que_se_la_aguante
+            Abril: Quizás tengan razón. No debería meterme donde no me llaman. Es una lástima que Bianca sea así. Pero si ella elige eso...
+            Alejandro: Prudente es la flor que se guarda de la tormenta, aunque su deseo sea bañarse en la lluvia.
+            Javier: Es una decisión sabia, Abril. No siempre podemos ayudar a todos, y a veces, la mejor opción es protegernos a nosotros mismos.
+            Abril: Aunque me pone triste no poder hacer nada, sé que es importante cuidarse uno mismo también. Gracias.
+            Alejandro: Oh dulce niña, que tu ser sea siempre un jardín floreciente, cuidando cada pétalo que conforma tu esencia. Siempre estarás en nuestras etéreas memorias, portadora de luz en la obscuridad.
+        -> preguntas
+      * Pregunto sobre Valeria
+        req valeria_conocidos
+        unique
+        Abril: ¿Qué piensan de Valeria?
+        Alejandro: Oh, Valeria, la sombra que danza en la noche de los silencios sin respuesta, el viento que acaricia las almas perdidas con una caricia hiriente...
+          Javier: Valeria es, en resumen, medio salvaje.
+          Abril: ¿Salvaje?
+          Alejandro: Pequeña flor del crepúsculo, la apariencia es un océano de ilusiones, y las aguas superficiales ocultan a menudo las monstruosidades que moran en las profundidades.
+          Javier: Seguro que viste que Valeria estaba de novia con ese lobizón, ¿no? Eso ya dice bastante de su carácter.
+          Abril: No me parece justo juzgar a alguien por con quién está, o estuvo, de novio. 
+          Alejandro: ¿Es la bondad una estrella fugaz, que ilumina pero por un instante en el firmamento de la moral, o es una constante, un sol que nunca se apaga?
+          Javier: Ale quiere decir que, ¿realmente conocemos a las personas, Abril? ¿O solo vemos lo que quieren mostrarnos?
+          Abril: Pero no podemos andar pensando mal de todos todo el tiempo. Si ella me trató bien, yo la voy a tratar bien a ella.
+            * Defiendo a Valeria y preguntar por qué son tan cerrados
+              Abril: ¿Y ustedes no piensan que es un poquito injusto juzgar a alguien sin conocerlo bien?
+              Alejandro: ¿Puede un alma errante realmente discernir la verdad en el brumoso sendero del ser y el parecer?
+              Javier: A veces las personas no son lo que parecen. Pero me parece piola que te lleves bien con Valeria, cada uno vive experiencias diferentes.
+              Abril: Me parece que podríamos ser todos amigos si dejamos de juzgarnos. ¿No les parece?
+              Javier mira hacia el costado
+              Javier: Bueno Abril, tenemos mucho que hacer para andar perdiendo el tiempo con Valeria, si querés podés ir con ella y pasarla bomba.
+            * Elijo no discutir y cambiar de tema
+              Abril: Bueno, cada uno tiene sus experiencias, supongo...
+              -> preguntas
+        -> preguntas
+      * Pregunto sobre Cristina
+        req cristina_conocidos
+        unique
+        Abril: ¿Qué piensan de Cristina?
+        Javier: Ah, la dulce Cristina, siempre parece estar con la mirada perdida, ¿no?
+        Alejandro: En las alas de su dolor, la dulce Cristina navega por mares de melancólica añoranza, su corazón anclado en el puerto de un amor perdido y olvidado.
+        Javier: Ale dice que Cristina está muy triste por un amor que ya no está. Y es cierto, Cristina se ha quedado un tanto estancada en el pasado, pero no sabemos bien cómo ayudarla.
+        Alejandro: Los susurros de las conversaciones han danzado en la brisa, pero las palabras a veces se pierden en el viento cuando el alma está sumida en su propio tormento.
+        Javier: Hemos intentado hablar con ella. Pero hablar de dolores del alma, especialmente cuando se trata de amores pasados, es complicado. Cristina escucha, pero se refugia en sus recuerdos, es como si se sintiera más segura allí.
+        Suspirás, mirando hacia donde está Cristina.
+        Se siente su preocupación. Parece estar perdida en sus pensamientos.
+        Abril: ¿Y si tratamos de juntarla con alguien más? ¿Capaz que si conoce a alguien, se olvida del fantasma que la dejó?
+        Javier: ¿Una especie de cita a ciegas, decís?
+        Alejandro: ¿Una danza nueva, con un compañero desconocido, para que las viejas melodías de su corazón puedan cambiar su tonada?
+        Abril: ¡Claro! Podemos buscar a alguien que la haga feliz, alguien que la saque de esa tristeza.
+        Javier: Es una idea linda, Abril, pero también hay que tener cuidado, ¿sí? No queremos hacerle más daño a Cristina al intentar forzarla a olvidar su dolor antes de que esté lista.
+        Abril: Quizás después de ayudar a Jaime pueda ayudarla a Cristina...
+        Javier: Es una buena idea.
+        -> preguntas
+      * Hablo con otro fantasma
+        -> hub
+    -> hub
+
+## bianca 
+  ### preguntas
+    De qué querés hablar?
+      * Pregunto sobre su historia
+        unique
+        req !bianca_conocidos
+        set bianca_conocidos
+        set fantasmas_conocidos +1
+        // ... Diálogo con su background...
+        -> preguntas
+      * Pregunto sobre Arca
+        unique
+        Bianca: Arca... ella es una tipa genial, ¿entendés? Pero no sé, es complicado.
+        Abril: ¿Por qué complicado? ¿No es lindo que ella pueda ser feliz siendo quien es?
+        Bianca: Sí, sí, está buenísimo, pero...
+        Bianca mira al suelo
+        Bianca: es un mundo distinto al que me tocó a mí, piba. Arca tiene suerte, y me alegra por ella, de verdad.
+        Abril: No entiendo mucho, pero ¿no es lindo que las cosas estén mejorando para las personas trans?
+        Bianca: Es hermoso, pero también es un recordatorio, Abril. Yo no tuve esa chance. Nadie me dio esa oportunidad de ser feliz, de ser yo misma sin miedo.
+        Abril: Pero ahora podés ser vos, Bianca. Aunque sea acá, con nosotros, ¿no?
+        Bianca te mira y se sonríe
+        Bianca: Vos sos un sol, pero ya es tarde para mí. 
+        Bianca: Mi vida pasó, y no puedo olvidar las cosas que viví.
+        Bianca: ¿Entendés lo que es vivir con miedo, Abril? Miedo de mostrarte, de hablar, de respirar... 
+        Bianca: Lo perdí todo por ser quien soy, y ahora, siendo una fantasma, esos recuerdos no se van. 
+        Bianca: Siguen acá, todos los días, todas las noches...
+        Abril: No puedo imaginar lo difícil que fue, y es, para vos. 
+        Abril: Sabés qué? Vos ahora sos como... 
+        Abril: como un superhéroe!
+        Bianca te lanza una mirada confundida
+        Bianca: ¿Un superhéroe?
+        Abril: Sí, porque, mirá, los superhéroes pasan por cosas muy difíciles, muy tristes, pero después usan eso para ayudar a los demás, para asegurarse de que nadie más tenga que pasar por lo mismo. Vos sos superfuerte, Bianca, y... y tu historia puede ayudar a otras personas a ser fuertes también.
+        Te sonríe
+        Bianca: Tu corazón es inmenso, pero la vida no es como las historias de los superhéroes. 
+        Bianca: Las heridas que tengo... no sé si alguna vez sanarán.
+        Abril: Tal vez no del todo, pero siempre hay una forma de que las cosas feas nos hagan un poquito más fuertes, ¿no? Vos estás acá, hablándome a mí de estas cosas, y eso ya es superfuerte y superbravo. 
+        Ves una lágrima espectral corriendo por sus ojos.
+        Bianca: Gracias, Abril. No sé si creo en la amistad... pero vos... vos sos algo especial, chiquita. 
+        Bianca: Gracias por escucharme, gracias por verme, es más de lo que nadie hizo por mí en vida.
+        Bianca suspira y se cuelga mirando al infinito, pero esta vez con su cara más contenta.
+          set sentirse_completo
+        -> preguntas
+      * Pregunto sobre Fede
+        unique
+        Abril: ¿Qué pensás de Fede?
+        Bianca: Ah... Fede. No es muy de mi agrado, chiquita.
+        Abril: ¿Por qué decís eso? Parece re bueno, o no? Toca muy bien al menos.
+        Bianca: Las apariencias engañan, Abril. Lo vi varias veces mirando a Jaime de una manera que... no parece que lo haya olvidado, ¿entendés?
+        Abril: ¿Entonces crees que Fede está mintiendo sobre haber perdido la memoria?
+        Bianca: Eso parece. Mirá, Abril, en la vida y después de ella, las personas hacen cosas por razones que a veces ni ellas entienden.
+        Bianca: Fede... puede que no quiera recordar, puede que no quiera a Jaime en su vida ahora, pero eso no significa que lo haya olvidado por completo.
+        Te quedás pensativa por un momento, mordiendo su labio inferior.
+        Abril: Pero... si eso es verdad, sería re malo para Jaime. Él extraña un montón a Fede.
+        Bianca: Y, si, es complicado. Pero Abril, algunas verdades son demasiado pesadas para cargar, especialmente para alguien que ha muerto.
+        Mirás sus zapatillas y luego a Bianca, sus ojos grandes y marrones llenos de preguntas.
+          * Le digo a Bianca que Fede no tiene derecho a ser malo con Jaime
+            set que_se_la_aguante
+            Abril: Pero Bianca, no es justo para Jaime. Si Fede tiene algo guardado, se lo tiene que aguantar. 
+            Abril: No puede tratar mal a Jaime solo porque él tiene cosas sin resolver.
+            Bianca: Tenés una fortaleza impresionante para tu edad, Abril. Pero la vida y la muerte son terrenos pantanosos. 
+            Bianca: La justicia, la verdad, la moral... todo se torna gris. Si vos pensás que decirle a Jaime es lo correcto, está bien. Pero también está bien que Fede sea el que resuelva sus cosas y se lo diga.
+            Abril: Aunque sea complicado, no quiero que Jaime sufra más por las cosas que Fede decide hacer o no hacer. Si es verdad, es re injusto.
+            Bianca: Abril, tu corazón es inmenso y tu valentía es admirable. Solo espero que esa chispa no se apague con los desafíos que vendrán.
+          * Le digo a Bianca que tiene razón
+            Abril: Creo que tenés razón, Bianca. No quiero que Jaime sufra más de lo que ya está sufriendo. Si lo que decís de Fede es cierto, tal vez es mejor que Jaime no lo sepa
+            Bianca, sorprendida por tu decisión de Abril, suaviza su mirada, encontrando una especie de alivio en tus palabras.
+            Bianca: Abril, la vida, aunque ya no la tengamos, siempre nos pone en situaciones donde no hay respuestas correctas o incorrectas. Proteger a los demás, a veces, significa ocultarles algunas verdades
+            Abril: ¿Vos hiciste eso alguna vez, Bianca? ¿Proteger a alguien no diciéndole algo?
+            Bianca: Sí, Abril, muchas veces. A veces para protegerlos y otras para protegerme a mí misma. 
+            Bianca: La vida es un constante equilibrio entre ser honesto con los demás y serlo contigo mismo. 
+            Bianca: A veces, decir la verdad te libera, y otras, te ata.
+            Abril: Hm... Entiendo...
+        -> preguntas
+      * Pregunto sobre Jaime
+        unique
+        Abril: ¿Qué pensás de Jaime?
+        Bianca: No me importa mucho, piba. Pero para serte franca, me parece un pesado.
+        Abril: ¿Por qué decís eso?
+        Bianca, mirando hacia otro lado, suspira.
+        Bianca: No para de joder a Fede, ¿no ves? Si querés ayudar de verdad, dejás tranquila a la gente.
+        Abril, frunciendo ligeramente el ceño, reflexiona.
+        Abril: Pero si Fede no recuerda nada de su vida pasada, ¿no pensás que tal vez necesite saber quién era? ¿No es parte de quién es ahora?
+        Bianca: Es historia, Abril. A veces es mejor dejar las cosas como están. No todo el mundo necesita desenterrar su pasado para ser feliz.
+        Abril: Pero Jaime sufre mucho, Bianca. Él todavía ama a Fede y no quiere rendirse tan fácil.
+        Bianca: Es el problema de Jaime.
+        No te gustó mucho esa respuesta...
+        Abril: ¿Nunca quisiste buscar respuestas sobre tu vida, Bianca?
+        Bianca: ...
+          * Insisto, quiero entender por qué Bianca piensa así.
+            Abril: Es que no te entiendo, Bianca. No me imagino no querer saber sobre mi vida. Todas nuestras historias son importantes, ¿no?
+            Los ojos de Bianca revelan una chispa de ira y tristeza.
+            Bianca: Mis historias no trajeron nada bueno, Abril. No todos tienen finales felices o respuestas que llenen el alma.
+            Abril: Pero...
+            Bianca, interrumpiendo y con voz temblorosa.
+            Bianca: Basta, Abril. No voy a hablar más de esto.
+            Bianca: No es tu culpa, nena. Vos no sabés... y está bien. No todos estamos hechos para desenterrar pasados. 
+            Bianca: Yo elegí dejar el mío donde está y Jaime debería aprender a hacer lo mismo.
+              set ocultar
+          * Le digo a Bianca que no estoy de acuerdo con ella.
+            Abril: Pero Bianca, no estoy de acuerdo. A veces, saber sobre nuestro pasado nos ayuda a entender quiénes somos. Y quizás si Jaime ayuda a Fede a recordar, ambos puedan encontrar la paz que necesitan.
+            Bianca: Abril, la vida no es un cuento de hadas. No siempre entender quiénes somos nos hace felices. A veces, nos destroza más.
+            Abril: Si nunca lo intentamos, nunca lo sabremos.
+            Bianca: Vos todavía no lo entendés, piba. Y espero que nunca lo entiendas. A veces, las heridas no cierran, solo aprendemos a vivir con ellas.
+            Te están empezando a zumbar los oídos..
+            Abril: Yo solo... Yo solo quiero ayudarlos.
+            Bianca: Y está todo bien. Pero no todos quieren ser ayudados, y menos por un pasado que preferirían olvidar. 
+            Bianca: Sos muy piba para entenderlo todavía.
+            Ahora tus orejas están calientes
+            Abril: Aun así, creo que vale la pena intentarlo. Todos merecen una oportunidad.
+            Bianca: Vos hacé lo que quieras. 
+            Bianca: Pero tené cuidado de no enterrarte vos también en los pasados de los demás.
+        -> preguntas
+      * Pregunto sobre Gabriel
+        req gabriel_conocidos
+        unique
+        Abril: ¿Qué pensás de Gabriel?
+        Bianca: Gabriel es buena gente. No es un pesado.
+        Abril: ¿Y te llevás bien con él?
+        Bianca: Más o menos. No molesta, eso ya es algo.
+        Bianca: No como Jaime. No me sorprende que Fede esté con Gabriel ahora.
+        Abril: Pero Jaime tiene buenos sentimientos. Sólo está confundido y triste.
+        Bianca: Todos estamos confundidos y tristes acá, piba. Eso no da derecho a ser pesado con los demás.
+        Abril: Bueno, yo solo quería ayudarlos a los dos. ¿Vos no extrañás tener alguien que te cuide y te entienda?
+        Bianca: ¿Entender? Pocos me entendieron en vida, menos me van a entender ahora.
+        Abril: Pero todos merecemos amor, ¿no?
+        Bianca: El amor es un cuento, una ilusión.
+        Abril: Mi mamá dice que el amor es lo que nos hace humanos, incluso si ya no lo somos del todo.
+        Bianca mira hacia otro lado, evitando tu mirada.
+        Bianca: Tu mamá suena como una soñadora. La vida me enseñó otra cosa.
+        Abril: ¿Sabés? Creo que incluso los fantasmas como vos tienen esperanza, aunque no lo quieran admitir.
+        Bianca: No sé de qué hablás. Solo quiero estar sola.
+        Abril: ¿Estás segura?
+        Bianca: No necesito hablar con nadie. Gracias.
+        Abril: ¡Nunca se sabe! La esperanza es lo último que se pierde. 
+          * Yo sigo creyendo en la esperanza
+            Abril: Aunque me digas que no, voy a seguir creyendo en la esperanza y el amor. Quizás un día vos también lo hagas.
+            Bianca: Quién sabe. Por ahora, prefiero estar sola.
+          * Prefiero no insistir y dejarla en paz.
+            Abril: Entendido, no voy a insistir. Si alguna vez necesitás hablar, ya sabés dónde encontrarme.
+            Bianca: No gracias.
+        -> preguntas
+      * Pregunto sobre Alejandro y Javier
+        req alejav_conocidos
+        unique
+        Abril: ¿Qué pensas de Alejandro y Javier?
+        Bianca: Nada bueno, Abril, nada bueno.
+        Abril: Uh, ¿tan mal? Pero siempre se ven tan felices juntos.
+        Bianca: Sí, pero es todo chamuyo, petisa. Ellos no saben lo que es sufrir de verdad. Viven en una burbuja, siempre riéndose, siempre con sus poemas y sus juegos.
+        Abril: Pero estar triste todo el tiempo tampoco está bueno, ¿no? Digo, a veces está bueno sonreír un poquito.
+        Bianca: Tal vez. Pero no todos tenemos esa suerte, ¿entendés? Hay algunos que tenemos que cargar con mucho dolor, con mucho recuerdo amargo, y ver a dos energúmenos riendo y jugando todo el día te hace sentir todavía peor.
+        Abril: Pero si vos les hablaras de tu historia, capaz que ellos podrían entender un poquito mejor. Tal vez no todo sería tan malo, ¿no?
+        Bianca mira hacia el costado
+        Bianca: ¿Y para qué? ¿Para que después anden con lástima? Nah, yo paso. Mejor sola que mal acompañada.
+        Abril: Yo creo que la gente puede sorprendernos a veces. Y además, si no les das una oportunidad, nunca vas a saber si podían haber sido tus amigos, ¿no crees?
+        Bianca: Vos porque sos joven y todavía tenés esperanzas, Abril. El mundo ya me mostró su peor cara y ya no estoy para dar segundas oportunidades.
+          * Decirle que hay que dar segundas oportunidades
+            Abril: Pero creo que todos merecemos una oportunidad de mostrar quiénes somos realmente, ¿no? Incluso vos, Bianca, me diste una oportunidad a mí y mírame, estamos hablando acá re tranquilas.
+            Bianca: Es distinto, vos sos una piba tranquila, se te nota. Pero esos dos... siempre con sus risitas, siempre tan contentos, como si el mundo no estuviese hecho pedazos.
+            Abril: Pero cada uno lleva el dolor a su manera, Bianca. A lo mejor ellos también sufrieron y encontraron una manera de ser felices juntos. No lo sabemos porque no les preguntamos, ¿no te parece que podríamos intentarlo?
+            Bianca: No sé, Abril, es complicado. Ellos viven en su mundo y yo en el mío. No sé si los caminos se cruzan tan fácil.
+          * Entiendo tu dolor, pero no podés juzgar sin conocer.
+            Abril: Entiendo que tengas dolor, Bianca, y que tu historia haya sido re difícil. Pero creo que no podemos juzgar a los demás sin conocerlos de verdad, ¿sabés? A lo mejor ellos tienen algo lindo para compartir, o tal vez pueden aprender algo de vos.
+            Bianca: Mirá, no creo en cambiar a las personas, Abril. Ellos son como son y yo soy como soy. Cada quien con su vida y todos contentos.
+            Abril: Pero Bianca, la vida también se trata de aprender y crecer, y a veces las personas pueden sorprendernos si les damos la chance. Pienso que estar cerrada a conocer a los demás también es una forma de estar triste, ¿no?
+            Bianca: No serás un pococ idealista ¿no?
+            Bianca: Ojalá pudiera ver las cosas como vos, de verdad. Pero es que la vida me rompió tanto que ya no tengo ganas de pegar los pedazos, ¿entendés?
+            Abril: Es que yo creo que a veces nos sentimos rotos o incompletos por las cosas que nos pasan, Bianca. Y a veces conocer a otras personas y abrirnos un poquito puede ayudarnos a sentirnos un poquito más enteros, ¿no crees?
+              set sentirse_completo
+            Bianca: No sé, Abril. Es como que hay pedazos de mí que ya no están. No es algo que pueda solucionar charlando con alguien, y mucho menos con esos dos que viven en un mundo de arco iris y unicornios.
+            Abril: ¿Que problema tenés con los arcoiris y unicornios?
+            Bianca se ríe
+            Bianca: Abril, yo viví muchas cosas feas por ser quien soy. Alejandro y Javier nunca van a entender lo que es ser rechazado de esa manera, siempre fueron aceptados por los suyos de una forma u otra.
+            Bianca: Pero ya me estoy bajoneando, ¿Necesitás algo más?
+            -> preguntas
+        -> preguntas
+      * Pregunto sobre Valeria
+        req valeria_conocidos
+        unique
+        Abril: ¿Qué pensás de Valeria?
+        Bianca: No es de mi agrado, ¿para qué querés saber?
+        Abril: Curiosidad nomás.
+        Bianca: No se le entiende nada y... prefiero mantenerme alejada.
+        Abril: ¿Pero por qué? ¿Te hizo algo malo?
+        Bianca: No es eso. Es una lobizona, nada bueno puede salir de eso.
+        Abril: ¿Lobizona? ¡Pero si ya estás muerta! ¿Qué pueden hacerte?
+        Bianca: Los miedos no desaparecen con la muerte, querida. 
+        Abril: Pero ¿por qué le temés a los Lobizones? Es solo una leyenda.
+        Bianca: Para vos puede ser una leyenda, pero para mí es un recuerdo doloroso de mi pasado.
+        Abril: Ah, no sabía. Lo siento, no quería traer malos recuerdos.
+        Bianca: Está bien, no es tu culpa. Simplemente no me gusta recordar.
+        Abril: Pero, ¿por qué te alejas de Valeria solo por hablar de eso?
+        Bianca: Prefiero evitarla y no tener que explicarle. No confío en la gente, menos en los fantasmas.
+          * Pregunto si no debería hablar esto con Valeria
+            Abril: ¿No crees que hablar con Valeria y explicarle cómo te sentís podría ayudar?
+            Bianca: ¿Y para qué? ¿Para que después vaya y lo cuente a todo el mundo que soy una miedosa además de una rara?
+            Abril: Tal vez se sorprenda y te entienda más de lo que pensás.
+            Bianca: Prefiero no arriesgarme, Abril.
+            Bianca: Gracias por la idea, pero no va a pasar.
+          * Pregunto si no debería enfrentar los miedos
+            Abril: ¿Alguna vez pensaste en enfrentar esos miedos?
+            Bianca: Eso es fácil decirlo para alguien que no vivió lo que yo viví.
+            Abril: Es verdad, no sé por lo que pasaste, pero siempre digo que no hay que dejar que los miedos nos ganen.
+            Bianca: Tu optimismo es admirable, Abril, pero no todos somos tan positivos.
+            Abril: No se trata de ser positivo todo el tiempo. Se trata de intentarlo, aunque sea un poquito, cada día.
+            Bianca: Tal vez... pero no hoy.
+            Bianca: Te agradezco, Abril. Pero esto ya me está cansando... ¿necesitás algo más?
+        -> preguntas
+      * Pregunto sobre Cristina
+        req cristina_conocidos
+        unique
+        Abril: ¿Qué pensás de Cristina?
+        Bianca: Cristina... mmm, complicada...
+        Abril: ¿Por qué decís eso?
+        Bianca suspira y mira hacia un punto distante.
+        Bianca: Siempre la misma historia, los que sonríen por fuera a veces son los que más esconden por dentro. 
+        Bianca: Cristina habla de amor, como si supiera lo que es realmente sufrir por él.
+        Abril: Pero, me contó que sufrió mucho cuando se fue su novio...
+        Bianca: Sí, sufrió, no te lo niego. 
+        Bianca: Pero ella tuvo la oportunidad de sentir, de amar. 
+        Bianca: Yo nunca tuve ese lujo.
+        Mirás a Bianca con una mezcla de curiosidad y simpatía.
+        Abril: ¿Vos nunca amaste?
+        Bianca: No es que no amé, es que nunca me dejaron ser quien soy y amar a quien quería amar. 
+        Bianca: Todo era un pecado, todo estaba mal. Cristina tuvo suerte, al menos en eso.
+        Abril: Pero Cristina es re sincera, no creo que sea falsa.
+        Bianca: Y... cada quien con su forma de ver las cosas, Abril. 
+        Bianca: La vida me enseñó que no siempre las apariencias son lo que parecen, y menos en este mundo de los espectros.
+          * Le digo que puede aprovechar este tiempo para cumplir sus deseos
+            Abril: Bianca, pensalo de esta manera: Ahora sos un espectro, ¿no? 
+            Bianca: Une espectre.
+            Abril: Bueno, eso. Tal vez este sea el momento perfecto para ser quien realmente sos sin miedo a lo que digan.
+            Bianca: Eso suena bien, Abril, pero no es tan fácil olvidar. 
+            Bianca: Las cicatrices del pasado no se borran, ni siquiera después de la muerte. Todo lo contrario, se amplifican, te anclan a este mundo.
+            Bianca: Ojalá fuera tan sencillo, piba.
+              set sentirse_completo
+          * La dejo en paz, ya sufrió mucho 
+            Abril: Entiendo que es complicado, Bianca. Perdón por ser tan pesada.
+            Bianca se ríe
+            Bianca: Un poco nomás.
+        -> preguntas
+      * Hablo con otro fantasma
+        -> hub
+    -> hub
+
+## cristina
+  ### preguntas
+    De qué querés hablar?
+      * Pregunto sobre su historia
+        unique
+        req !cristina_conocidos
+        set cristina_conocidos
+        set fantasmas_conocidos +1
+        // ... Diálogo con su background...
+        -> preguntas
+      * Pregunto sobre Arca
+        unique
+        Abril: ¿Qué pensas de Arca?
+        Cristina: Ah, Abril, no quiero hablar mal de nadie delante tuyo la verdad. 
+        Cristina: Pero Arca... ella cambió mi vida, y no para bien precisamente.
+        Abril: ¿Por?
+        Cristina: Ella ayudó a Daniel a recuperar su memoria con una poción, pero no pensó en las consecuencias para los demás. 
+        Cristina: Él era mi todo, y cuando recuperó su memoria, se fue sin más. Y Arca no pensó en cómo me sentiría yo.
+        Abril: ¿Pero no fue justo que él recordara su vida pasada? No creo que Arca haya tenido malas intenciones.
+        Cristina: Las intenciones no siempre justifican las acciones, querida. 
+        Cristina: A veces, querer ayudar no significa que estás haciendo lo correcto. Arca intervino en algo muy delicado y dejó atrás corazones rotos.
+        Abril: Yo entiendo por qué podrías estar enojada. Pero, ¿alguna vez pensaste que tal vez Arca estaba tratando de hacer lo mejor para Daniel?
+        Cristina suspira, perdida en un mar de recuerdos dolorosos.
+          * Insisto un poco más, tratando de entender más sus sentimientos
+            Abril: ¿Crees que Arca también estaba en una posición difícil? Quiero decir, si vos tuvieras la oportunidad de ayudar a alguien a recordar su vida, ¿no lo harías?
+            Cristina: Capaz, sí. Pero Abril, la vida no es blanco y negro. Lo que Arca hizo, llevó a Daniel lejos de mí, y eso es algo que no puedo perdonarle fácilmente.
+              set egoismo 
+            Cristina: Tal vez Arca no lo hizo con mala intención, pero eso no cambia lo que pasó.
+            Abril: Es re difícil todo eso, ¿no? A veces queremos ayudar y terminamos haciendo un enchastre sin querer.
+            Cristina: Sí, Abril. Es muy complicado. Pero, ¿sabes? Te agradezco que estés aquí, charlando conmigo. 
+            Cristina: Aunque no esté de acuerdo con Arca, entiendo que tu corazón está en el buen lugar, queriendo ayudar.
+          * Yo dejo el tema de Arca y pregunto más sobre sus sentimientos hacia Daniel
+            Abril: ¿Cómo estás vos ahora después de todo lo que pasó con Daniel?
+            Cristina: Oh, Abril, es un vacío que no se llena, pero he aprendido a vivir con él. 
+            Cristina: Daniel fue alguien muy especial para mí y siempre lo será. 
+            Cristina: Pero, a veces, la vida nos lleva por caminos que no esperamos.
+            Abril: ¿Y nunca pensaste en buscarlo, en charlar con él ahora que recuerda todo?
+            Cristina: Es que, se encontró con su amor de la vida real, pasó al más allá, y yo me quedé acá estancada.
+            Cristina: Los asuntos de los muertos no deberían usurpar tu tiempo en vida, Abril. Gracias por charlar conmigo y por tratar de entenderme.
+        -> preguntas
+      * Pregunto sobre Fede
+        unique
+        Abril: ¿Qué pensás de Fede?
+        Cristina: Ay, Abril, Fede es un tema delicado para mí. Creo que es un buen chico, siempre amable y dulce, pero hay algo que no me cierra del todo. 
+        Cristina: Siento que en el fondo el recuerda cosas, o eso parece con ciertas actitudes.
+        Abril: ¿Vos decís que está mintiendo sobre no recordar nada?
+        Cristina: No sé si mintiendo es la palabra... pero sí, algo me hace ruido. 
+        Cristina: A veces lo veo y parece que titubea, como si algo en su interior se removiera. Pero, no sé, son solo corazonadas mías, quizás.
+        Mirás al suelo, pensativa.
+        Abril: ¿Y no te gustaría que recuerde todo? Digo, así podría entender todo lo que pasó y capaz arreglar algunas cosas.
+        Cristina: Ay, mi niña, no es tan sencillo. La memoria a veces es un cuchillo de doble filo. Trae recuerdos lindos pero también dolorosos. Fede ahora está con Gabriel y se ven tan bien juntos... Me daría miedo que recordar lo destroce a Gabriel. 
+        Abril: Pero también estaría bueno que sepa la verdad, ¿no? Digo, todos merecemos saber quiénes somos realmente.
+        Cristina: Sí, es cierto, todos merecemos conocer nuestra historia. Pero, ¿a qué precio, Abril?
+          * Le digo que entiendo sus dudas y miedos
+            Abril: Entiendo tus miedos, Cristina. Y creo que tenés razón en cuidar a Gabriel. La verdad siempre es importante, pero también es fundamental no lastimar a los que queremos, ¿no?
+            Cristina: Ay, Abril, tu corazón es tan grande... Gracias por comprenderme y no juzgarme. 
+            Cristina: Muchas veces, las decisiones que tomamos no son blanco o negro, hay mucha escala de grises en el medio.
+            Abril: Sí, Cristina, a veces lo mejor es no elegir un lado, sino tratar de cuidar a todos los que podemos.
+          * Le digo que, a pesar de todo, la verdad siempre es el camino
+            Abril: Cristina, yo sé que tus miedos son válidos y entiendo que querés proteger a Gabriel. 
+            Abril: Pero, también pienso que la verdad siempre encuentra la manera de salir a la luz y, capaz puede ser peor, ¿no creés?
+            Cristina: No se... a veces, proteger a los que queremos significa esconder algunas verdades, aunque eso duela.
+              set ocultar
+            Abril: Pero, también, las mentiras o las cosas escondidas pueden explotar en cualquier momento y hacer más daño, Cristina. Es re complicado todo, ¿verdad?
+            Cristina: Sí, mi niña, es muy complicado. Pero tu perspectiva me da mucho en qué pensar. Gracias por charlar conmigo y compartir tus pensamientos, Abril.
+
+
+        -> preguntas
+      * Pregunto sobre Jaime
+        unique
+        Abril: ¿Qué pensas de Jaime?
+        Cristina: Ah, Jaime. Un alma tan melancólica y llena de amor, demasiado amor tal vez. 
+        Abril: ¿Te parece? Aunque es verdad que está muy triste. 
+        Cristina: Sí, mirá, la historia de amor de Jaime y Fede fue re linda mientras duró. Pero Abril, hay cosas que, cuando se pierden, es mejor dejarlas ir.
+        Abril: Pero no es justo para Jaime... él todavía lo quiere mucho a Fede.
+        Cristina se encoge de hombros, con una mezcla de resignación y tristeza.
+        Cristina: No, no es justo, la vida rara vez lo es. Pero forzar a alguien a recordar, a volver a un pasado que ya no existe, tampoco es justo.
+        Cristina: A veces, el pasado es un lugar doloroso. Y saber la verdad, por más noble que parezca, puede herir más de lo que uno cree.
+          * Decirle que para vos es importante saber la veradera historia de uno
+            Abril: Yo creo que es importante conocer nuestra historia, así podemos entender quiénes somos y por qué estamos acá, aunque haga un poquito de daño.
+              set importancia_del_pasado
+            Cristina: Es un pensamiento muy maduro para una nena de tu edad. Y tenés razón en parte, conocer nuestra historia puede ayudarnos a entender muchas cosas. Pero también puede abrir heridas que estaban cerradas, y eso, a veces, es mucho más difícil de manejar.
+            Abril: Pero también puede sanar otras heridas, ¿no? La de no saber, la de sentir que te falta algo.
+            Cristina: Puede ser, Abril, pero cada persona es un mundo y lo que para algunos es sanador, para otros puede ser destructivo. 
+          * Le digo que es mejor dejar las cosas como están
+            Abril: No sé, quizás tenés razón y es mejor dejar las cosas como están, evitar causar más dolor.
+            Cristina: Algunas veces, la ignorancia nos protege, nos da una especie de paz que la verdad podría destrozar. 
+            Cristina: Siempre va a haber una parte de nosotros que quiera saber, que quiera descubrir cada recoveco de nuestra historia, pero no necesariamente esa parte es la mejor para nosotros.
+            Abril: ¿Entonces cómo sabemos qué es lo correcto?
+            Cristina: A veces no hay una respuesta correcta, a veces, simplemente tenemos que hacer lo que creemos que es mejor y esperar. 
+            Cristina: Es importante entender que una buena decisión se toma independientemente del resultado. Una decisión puede ser buena con la información que tenemos, y terminar con un resultado negativo.
+            Cristina: No porque no venga ningún auto vas a cruzar un semáforo en rojo. Bueno, si estás viva, si sos fantasma no importa tanto.
+            Cristina:  La vida está llena de elecciones, y cada elección trae consigo sus propias consecuencias. Lo que es crucial es estar preparados para enfrentarlas, sea lo que sea que traigan.
+        -> preguntas
+      * Pregunto sobre Gabriel
+        req gabriel_conocidos
+        unique
+        Abril: ¿Qué pensás de Gabriel?
+        Cristina: Gabriel... siempre fue un alma complicada, incluso cuando vivía. Siempre andaba en problemas y discusiones.
+        Abril: Pero, ¿vos pensás que es malo?
+        Cristina: No, m'hija, no creo que sea malo. Creo que está perdido, como muchos de nosotros aquí. 
+        Cristina: Pero también creo que encontró algo de paz con Fede. Vos sabés, la muerte a veces nos da segundas oportunidades.
+        Abril: Segunda oportunidad para Gabriel, pero Jaime está muy triste porque Fede no se acuerda de él. 
+        Abril: Y a mí me pidió que lo ayude a hacer que Fede recupere la memoria. No sé qué hacer.
+        Cristina suspira y mira a lo lejos, como intentando encontrar respuestas en la bruma que rodea este mundo peculiar.
+        Cristina: Abril, lo que pasó entre Fede y Jaime es triste, realmente lo es. 
+        Cristina: Pero vos tenés que pensar también en lo que le puede pasar a Gabriel si Fede recupera sus recuerdos.
+        Abril: ¿Por qué?
+        Cristina: Gabriel ya pasó por mucho, m'hijita. Y no sé si estaría preparado para perder a Fede de la misma manera en la que yo perdí a Daniel. 
+        Cristina: Es un dolor que no le deseo a nadie, ni siquiera a una alma perdida como él.
+        Abril: Pero también es justo para Jaime, ¿no? Él sigue amando a Fede y quiere estar con él de nuevo.
+            * Pregunto si hay alguna manera de que Fede pueda recordar sin lastimar a nadie.
+              Abril: ¿Cristina, creés que haya alguna manera de que Fede pueda recordar sin que Gabriel o Jaime salgan lastimados?
+              Cristina: Es una idea interesante, Abril. No estoy segura si eso es posible, pero podría ser una solución más equitativa.
+              Cristina: Aunque, a veces, la verdad, por más que la filtremos, sigue siendo dolorosa.
+              Cristina: Yo creo que no hay forma de saber cómo va a reaccionar al recordar. A veces pienso que es más suerte que otra cosa.
+              Cristina: Tu corazón es grande, Abril. Si decidís seguir ese camino, sólo asegúrate de hacerlo con mucho cuidado y amor.
+              Cristina: Y estate preparada para las consecuencias.
+                set que_se_la_aguante
+            * Sugiero a Cristina que tal vez Gabriel y Jaime podrían hablar y entenderse.
+              Abril: ¿Y si Gabriel y Jaime hablaran? Tal vez, si entendieran las razones del otro y sus sentimientos, podrían encontrar una solución juntos. 
+              Cristina: Nunca se me había ocurrido, pero podría ser una buena idea. 
+              Cristina: Aunque hay que tener en cuenta que el orgullo y el dolor pueden ser obstáculos difíciles de superar.
+              Abril: Sí, pero si ambos quieren lo mejor para Fede y, en el fondo, lo mejor para sí mismos, tal vez puedan encontrar un punto medio.
+              Cristina: Ojalá tengas razón. Sería una hermosa muestra de madurez y amor si lograran hacerlo.
+                set que_hablen
+        -> preguntas
+      * Pregunto sobre Alejandro y Javier
+        req alejav_conocidos
+        unique
+        Abril: ¿Qué pensas de Alejandro y Javier?
+        Cristina: Mira... Alejandro y Javier son... bueno, son como son por cómo les tocó vivir, ¿entendés? 
+        Cristina: A veces la plata, el poder, te hace actuar de maneras raras, perdiendo de vista lo que realmente importa.
+        Abril: ¿Vos decís que los trataron mal y por eso ellos tratan mal a otros?
+        Cristina: Exactamente, mi amor. La vida y la muerte les dieron ejemplos no muy lindos. Pero eso no quiere decir que sean malas personas, o fantasmas en este caso, en el fondo. 
+        Cristina: Es solo que aprendieron a actuar así, tal vez para protegerse de alguna manera, ¿sabés?
+        Abril: Pero eso está mal, ¿no? Tratar mal a los demás solo porque a vos te trataron mal...
+        Cristina: Sí, Abril, está mal. Pero entender por qué las personas hacen lo que hacen a veces ayuda a ayudarlos, a entenderlos un poco más, ¿no crees?
+        Abril: Sí, entiendo. Pero, Cristina, ¿vos no estás enojada con el fantasma que te dejó? Él también te trató mal, ¿no?
+        Cristina: Mmmm, es complicado, Abril. Claro que me dolió mucho lo que hizo, y a veces sí, me siento enojada. 
+        Cristina: Pero también entiendo que él estaba muy confundido cuando recuperó su memoria. Y aunque eso no justifica su accionar, creo que hay que encontrar en nuestro corazón un lugar para el perdón y la comprensión, aunque cueste.
+        Abril: Y vos, ¿pudiste perdonar y seguir adelante? ¿No te quedaste... estancada en tu dolor?
+        Cristina: Abril, mi corazón, a veces el dolor te ata, te hace sentir que es imposible moverte. 
+        Cristina: Pero hay que encontrar la manera, hay que buscar esa luz que te guíe fuera de la oscuridad. 
+        Cristina: No te voy a mentir, hay días en los que es difícil, pero yo intento, intento por mí, para estar en paz conmigo misma. Pero...
+          * Le digo que está bien sentir dolor
+            Abril: Está bien sentir dolor, ¿sabes? No tenés que ser siempre fuerte. Todos necesitamos un momento para estar tristes, para llorar lo que perdimos. Tu amor fue real y lo que pasó te dolió, no tenés que ocultarlo.
+            Cristina: Gracias, Abrilcita. Tus palabras son un bálsamo para este corazón un tanto roto. La verdad es que a veces nos dicen tanto que tenemos que ser fuertes que olvidamos que está bien no serlo todo el tiempo.
+          * Le pregunto si quiere que la ayude a pasar al más allá
+            Abril: Cristina, ¿vos querés que te ayude a encontrar la paz, a pasar al más allá y dejar atrás este dolor que te tiene atrapada acá?
+            Cristina: Oh, Abril, sos un solcito, queriendo ayudar a las almas perdidas. 
+            Cristina: Pero, mi amor, hay algunas cosas que una tiene que resolver por sí misma para poder encontrar esa paz. Aunque tu oferta es dulce y amable, este es un viaje que debo hacer yo sola.
+            Cristina: Vos tenés que vivir tu vida, disfrutar de tus cosas, no es tu rol en el mundo ocuparte de los demás todo el tiempo.
+            Abril: Bueno... pero siempre podés contar conmigo, ¿si?
+            Cristina: Lo sé, corazón, y no sabes cuánto lo valoro y agradezco. Tus palabras ya me ayudaron mucho hoy.
+        -> preguntas
+      * Pregunto sobre Bianca
+        req bianca_conocidos
+        unique
+        Abril: ¿Qué pensás de Bianca?
+        Cristina: Oh, Bianca... Es una alma tan lastimada, Abril. La comprendo mucho, aunque sus modos no sean los mejores. 
+        Cristina: Cuando uno pierde algo tan valioso, a veces es difícil ver más allá de la propia pena.
+        Cristina: Me ha dicho cosas duras. Pero detrás de sus palabras, siempre veo el dolor que lleva. 
+        Cristina: No puedo culparla por su sufrimiento, aunque desearía que pudiera encontrar un camino hacia la paz.
+          * Le pregunto qué haría diferente si fuera Bianca
+            Abril: Pero vos, Cristina, si estuvieras en su lugar, ¿qué harías diferente?
+            Cristina: Es una pregunta complicada, Abril. Cuando uno está sumergido en la tristeza, a veces no puede ver las otras salidas que existen. 
+            Cristina: Pero creo que trataría de recordar los buenos momentos, los bellos recuerdos, y no solo el final triste.
+            Abril: ¿Como buscar la luz en la oscuridad?
+            Cristina: Exactamente, mi cielo. Aunque estemos en la noche más oscura, siempre hay estrellas, y cada estrella es un recuerdo feliz que puede guiarnos.
+            Abril: A veces yo me pongo triste porque extraño a mi abuelita. Pero mamá dice que tengo que recordar las empanadas que hacíamos juntas y cómo me enseñó a bailar.
+            Cristina: Eso es hermoso, Abril. Tu mamá tiene mucha razón. Esos recuerdos son los que nos mantienen conectados con los que ya no están. 
+            Cristina: Son el amor que nunca se pierde.
+          * Le pregunto porqué Bianca trata mal a otros
+            Abril: ¿Pero por qué crees que Bianca trata mal a los demás? No entiendo por qué alguien haría eso, aunque esté triste.
+            Cristina: A veces, Abril, cuando alguien sufre mucho, intenta mantener a los demás a distancia. Es una forma de protegerse. Si no dejan que nadie se les acerque, creen que no podrán ser lastimados de nuevo.
+            Abril: Pero estar solo también duele, ví películas tristes sobre eso.
+            Cristina: Sí, corazón, la soledad puede ser muy dolorosa. Pero para alguien que ha perdido mucho, la idea de enfrentarse a más pérdidas puede ser abrumadora. Entonces, eligen la soledad porque es un dolor que, de alguna manera, ya conocen y pueden controlar.
+            Abril: ¿Y ella no se da cuenta de que podría ser feliz si se abre a los demás?
+            Cristina: Es posible que en algún lugar en su interior, Bianca lo sepa. Pero el miedo es el sentimiento más poderoso de todos. 
+            Cristina: A veces, nubla nuestra capacidad para ver las posibilidades de felicidad y nos hace aferrarnos a lo que creemos que es seguro, aunque nos haga daño.
+            Abril: Eso suena... 
+            Abril: muy triste.
+            Cristina: Lo es...
+        -> preguntas
+      * Pregunto sobre Valeria
+        req valeria_conocidos
+        unique
+        Abril: ¿Qué pensás de Valeria?
+        Cristina: Ay, Valeria... la verdad que la pobre se metió en cada lío, ¿viste? No sé en qué estaba pensando cuando se juntó con ese hombre lobo. Era sabido que no iba a terminar bien.
+        Abril: Sí, me contó lo que le pasó. ¿Re triste, no?
+        Cristina: Es triste, sí. Todos buscamos a alguien que nos quiera, pero hay decisiones... hay decisiones que te llevan por caminos bien oscuros. 
+        Cristina: Aunque, entre nos, cada vez que la veo, trato de charlar, de hacerla sentir acompañada, aunque muchas veces no le encuentre ni la cabeza a lo que dice.
+        Abril: ¿Y no te cansa no entenderle nada?
+        Cristina: Y, a veces sí, es un poco cansador, pero también es un desafío, ¿sabés? Me hace pensar y tratar de ver las cosas desde otro lugar. 
+        Cristina: Además, creo que lo importante es que ella sienta que hay alguien que quiere escucharla, aunque no entienda todo.
+        Abril: Eso es re lindo de tu parte. A mí me haría feliz que alguien me escuche así.
+        Cristina: Todos necesitamos a alguien que nos escuche. 
+        Cristina: La vida, o lo que sea esto después de la vida, puede ser complicada, y sentir que no estás solo hace una gran diferencia.
+        -> preguntas
+      * Hablo con otro fantasma
+        -> hub
+    -> hub
+
+## gabriel
+  ### preguntas
+    De qué querés hablar?
+      * Pregunto sobre su historia
+        unique
+        req !gabriel_conocidos
+        set gabriel_conocidos
+        set fantasmas_conocidos +1
+        // ... Diálogo con su background...
+        -> preguntas
+      * Pregunto sobre Fede
+        unique
+        // ...
+        -> preguntas
+      * Pregunto sobre Jaime
+        unique
+        // ...
+        -> preguntas
+      * Hablo con otro fantasma
+        -> hub
+    -> hub
+
+## jaime
+  ### preguntas
+    De qué querés hablar?
+      * Pregunto sobre Fede
+        req gabriel_conocidos
+        unique
+        // ...
+        -> preguntas
+      * Pregunto sobre Gabriel
+        req gabriel_conocidos
+        unique
+        // ...
+        -> preguntas
+      * Hablo con otro fantasma
+        -> hub
+    -> hub
+
+## valeria
+  ### preguntas
+    De qué querés hablar?
+      * Pregunto sobre su historia
+        unique
+        req !valeria_conocidos
+        set valeria_conocidos
+        set fantasmas_conocidos +1
+        set valeria_frustracion 0
+        // ... Diálogo con su background...
+        -> preguntas
+      * Pregunto sobre Arca
+        unique
+        Abril: ¿Qué pensás de Arca?
+        Valeria: Arca es... erm... una topada. 
+        Valeria: Sí, topada. Siempre en el... erm... tute con ella.
+          * Pienso en qué quiso decir
+            Hm... ¿Habrá querido decir...?
+              * (100) ¿Copada? ¿Tute significará "té"?
+                set valeria_frustracion -1
+                ¿Quisiste decir que Arca es una "copada" y que te gusta tomar el "té" con ella?
+                Valeria: ¡Eso, eso! ¡Es una copada! Siempre me confundo con las palabras, pero sí, me encanta el... erm... té con ella.
+                Abril: ¡Entendido! Parece que se llevan muy bien. Me alegra que tengan esos momentos juntas.
+                Valeria: Sí, son momentitos... erm... especales. ¡Muy especales!
+              * (500) ¿Topada? ¿Tute?
+                set valeria_frustracion +1
+                ¿Qué querés decir con topada y tute?
+                Valeria: No, no... erm... me enredé. 
+                Valeria: Decir que una es... erm... capota. Y tute... erm... ¡Ah! ¡Té! Me gusta tomar el té con ella.
+                  * Pienso en qué quiso decir
+                    Hm... ¿Habrá querido decir...?
+                      * (100) ¿Copada?
+                        set valeria_frustracion -1
+                        Abril: ¡Ah! Entonces, ¿querías decir que Arca es una "copada"?
+                        Valeria: ¡Sí, eso! Uy, siempre me hago un tío con las palabros.
+                      * (500) ¿Capota?
+                        set valeria_frustracion +1
+                        Abril: ¿Capota? ¿Qué quiere decir Capota?
+                        Abril: Perdón Valeria, no soy buena entendiendo a las personas.
+                        Valeria levanta sus hombros y mira hacia abajo.
+        Abril: ¿Y cómo conociste a Arca?
+        Valeria: Fue en una... erm... noche de lulo. Sí.
+        Valeria: Estábamos bajo la... erm... lombriz plateada.
+        Valeria te sonríe.
+          * Pienso en qué quiso decir
+            Hm... ¿Habrá querido decir...?
+              * (100) ¿Noche de lujo? ¿Luna plateada?
+                set valeria_frustracion -1
+                Valeria: ¡Exacto! ¡Noche de lujo! ¡Y la luna! Uy, siempre mezclo todo. Gracias, Abril, por ayudarme a aclarar.
+                Abril: No hay problema, Valeria.
+                Valeria: Eres una chica muy... erm... especialita.
+              * (500) ¿Noche de lulo? ¿Lombriz plateada?
+                set valeria_frustracion +1
+                Abril: No entiendo que es "Noche de lulo"
+                Abril: Ni se bien qué es la lombriz plateada
+                Valeria: ¡Ay no! Eso suena raro. Erm... me equivoqué de nuevo. 
+                Valeria: Quise decir... erm... note espacial, sí, bajo la... erm... ¿Cómo se dice? ¡Ay! ¡Luna! ¡Luna plateada!
+                  * Pienso en qué quiso decir
+                    Hm... ¿Habrá querido decir...?
+                      * (100) ¿Noche especial?
+                        set valeria_frustracion -1
+                        Abril: ¡Ah, la luna plateada! Es hermosa, ¿verdad?
+                        Abril: ¿Querías decir Noche especial o Noche de lujo?
+                        Valeria: Sí, muy... erm... hermorosa.
+                      * (500) ¿Noche Espacial?
+                        set valeria_frustracion +1
+                        Abril: ¿Qué tiene que ver la noche espacial? No entiendo.
+                        Valeria niega con la cabeza, y vuelve a mirar al piso.
+                        Valeria: Nada mejá
+        Abril: Me imagino que deben tener muchas anécdotas juntas. ¿Tienes alguna historia divertida con Arca que puedas contarme?
+        Valeria: Una vez fuimos a... erm... calzar... sí, calzar patitos en el charquito. Fue muy... erm... desvertido.
+          * Pienso en qué quiso decir
+            Hm... ¿Habrá querido decir...?
+              * (100) ¿Cazar? ¿Divertido?
+                set valeria_frustracion -1
+                Abril: ¿Fueron a "calzar" patitos? ¿O quizás quisiste decir "cazar" patitos en el charquito?
+                Valeria: ¡Eso, eso! ¡Cazar patitos! ¡Divertido! ¡Ay, Dios mío! 
+                Valeria: Calzar suena tan raro. Gracias, Abril. 
+                Abril: Ugh, yo nunca cazaría patitos, son tan lindos.
+              * (500) ¿Calzar patitos? No entiendo...
+                set valeria_frustracion +1
+                Valeria: ¡Ay no! Me equivoqué. Erm... quise decir "cazar" patitos en el charquito. ¡Qué lío me hago con las palabras!
+                Abril: ¡Jajaja! No te preocupes, Valeria. Todos nos confundimos a veces. Suena como un día divertido, aunque no para los patitos.
+        -> preguntas
+      * Pregunto sobre Fede
+        unique
+        // ...
+        -> preguntas
+      * Pregunto sobre Jaime
+        unique
+        // ...
+        -> preguntas
+      * Pregunto sobre Gabriel
+        req gabriel_conocidos
+        unique
+        // ...
+        -> preguntas
+      * Pregunto sobre Alejandro y Javier
+        req alejav_conocidos
+        unique
+        // ...
+        -> preguntas
+      * Pregunto sobre Bianca
+        req bianca_conocidos
+        unique
+        // ...
+        -> preguntas
+      * Pregunto sobre Cristina
+        req cristina_conocidos
+        unique
+        // ...
+        -> preguntas
+      * Hablo con otro fantasma
+        -> hub
+    -> hub
+
+## arca
+  ### preguntas
+    Arca: Hola Abril, cómo te puedo ayudar?
+      * Pregunto cómo puedo ayudar a Jaime
+        unique
+        Abril: Jaime está totalmente enamorado de Fede, cómo lo puedo ayudar?
+        Arca: Mirá, es un poco peligroso, pero si querés ayudarlo puedo hacerte una poción.
+        Arca: Pero eso sí, hay que ver que no metamos la pata.
+        Arca: Las pociones son muy poderosas.
+        Arca: Y si usás la poción incorrecta, podemos arruinarle la eternidad a ambos.
+        Arca: Hay que asegurarse bien de que ambos quieren y tienen que estar juntos.
+        Arca: Lo mejor es hablar con los fantasmas y preguntarles que piensan. Los conocen a ambos hace muchos más años que vos y yo.
+        Abril: Bueno, eso tiene sentido.
+      * Pregunto sobre Fede
+        unique
+        // ...
+        -> preguntas
+      * Pregunto sobre Jaime
+        unique
+        // ...
+        -> preguntas
+      * Pregunto sobre Alejandro y Javier
+        req alejav_conocidos
+        unique
+          Abril: ¿Qué pensás de los fantasmas Alejandro y Javier?
+          Arca: Ay, querida Abril, esos dos son como una ensalada mixta de emociones y actitudes, ¿sabés? Tienen su buena onda, pero a veces son medio pesados.
+          Abril: ¿Pesados? ¿Cómo?
+          Arca: Mirá, por un lado, ellos siempre andan jodiendo y haciendo travesuras a los demás fantasmas y a veces también a los humanos. Pero también tienen sus momentos en que ayudan y son solidarios, aunque les cuesta mostrar esa parte.
+          Arca suspira, mirando a la distancia, recordando algunos episodios.
+          Abril: Pero todos podemos ser buenos y malos a veces, ¿no? Yo también hago travesuras.
+          Arca: Sí, mi amor, es verdad. Pero la cuestión es que ellos a veces actúan sin pensar en cómo sus acciones afectan a los demás. Como cuando asustaron al pobre Fede y casi hace que su alma se desvanezca del susto.
+          Abril: Eso no está nada bien. ¿Pero vos creés que se pueden dar cuenta de eso y cambiar?
+          Arca: Es complicado, mi cielo. La gente -y los fantasmas- pueden cambiar, pero necesitan querer hacerlo, ¿entendés? A veces, uno no se da cuenta de sus errores hasta que algo grande pasa.
+          Abril: Entiendo... mejor me enfoco en Jaime ahora...
+          -> preguntas
+      * Pregunto sobre Bianca
+        req bianca_conocidos
+        unique
+        // ...
+        -> preguntas
+      * Pregunto sobre Valeria
+        req valeria_conocidos
+        unique
+        // ...
+        -> preguntas
+      * Pregunto sobre Cristina
+        req cristina_conocidos
+        unique
+        set arca_pociones
+        // ...
+        -> preguntas
+      * Le digo que en nada por ahora
+        Abril: Nada por ahora, gracias!
+      * Le pido que me haga una poción
+        req pocion ninguna
+        req arca_pociones
+        Abril: Me podrías hacer una poción?
+        Arca: Como poder puedo. La pregunta es ¿debo?
+          * Le pido por favor
+            Abril: Porfis!
+            La mirás con ojitos de gato mojado
+          * La chicaneo
+            Abril: Claro! O sino...
+            Arca te mira fijo
+            Arca: O sino qué?
+            Abril: Puedo contarle a mamá que me dejaste entrar en una fiesta de fantasmas en el medio del bosque...
+            Arca: Jaja! Sos terrible eh...
+        Arca: Bueno, pero sólo te puedo hacer una, hoy ando corta de ingredientes.
+          * Poción de memoria
+            set pocion memoria
+            set achiv_memoria
+            -> hub
+          * Poción de amor
+            set pocion amor
+            set achiv_amor
+            -> hub
+          * Poción de verdad
+            set pocion verdad
+            set achiv_verdad
+            -> hub    
+      * Hablo con algún fantasma mejor
+        -> hub
+  -> hub
+
+# finales
+  ## fede_honesto
+    req fede honesto
+    Abril: Hola Fede! 
+    Fede asiente suavemente pero no te mira ni dice nada
+    Abril: Soy Abril... ¿Qué pasa que estás triste?
+    Fede mueve la cabeza lentamente hacia vos, pero no levanta la vista.
+    Fede: Hola Abril.. Perdón por mi estado deplorable... 
+    Fede: Después de cada recital me siento un poco perdido. Como una semifusa arrastrada por el viento. Sin dirección.
+    Levanta su vista, y al encontrarse con tus ojos se sobresalta.
+    Fede: Vos.. no sos etérea.. ¿Qué hacés acá?
+    Abril: No, no soy etérea. Pero tengo amigos que lo son y por eso estoy acá.
+    Abril: Jaime, por ejemplo, es un buen amigo mío.
+    Fede frunce el ceño, mostrando cierta confusión al escuchar el nombre de Jaime.
+    Fede: Jaime... Ese nombre me suena, pero no puedo recordar bien.
+    Fede: Es que.. por lo que me dice Gabriel, es común que algunas personas al volverse fantasma pierdan la memoria.
+    Abril: Sí, me contaron que te pasó eso.
+    Abril: También me contaron sobre Jaime. Era muy importante para vos cuando estaban vivos.
+    Abril: Era tu pareja y juntos compartieron muchas cosas lindas. 
+    Abril: Pero sé que eso es difícil de recordar ahora, ya que tu memoria está nublada.
+    Abril: Hay cosas en tu pasado, momentos felices y hermosos, que se escaparon de tus recuerdos.
+    Abril: Si te dijera que puedo ayudarte a recordar, ¿Qué dirías?
+    Fede: No se...
+    Fede: ¿Y si lo que hay en mi pasado me duele, Abril? ¿Y si hay razones por las cuales he olvidado?
+      * Le digo que en lo bueno y lo malo se encuentra la vida
+        req importancia_del_pasado
+        Abril: Creo que todos los fragmentos de nuestra historia merecen ser recordados y valorados, ¿no?
+        Abril: Y claro, Fede, tus palabras hacen mucho sentido. Puede ser que en tu pasado haya dolor y quizás la vida te ofreció este olvido como un alivio temporal. 
+        Abril: Pero también está el amor, las risas compartidas y esos momentos mágicos que viviste con Jaime. Momentos que te ayudaron a ser el músico talentoso que sos hoy. 
+        Abril: ¿No te parece que, aunque puedan haber cosas dolorosas, también pueda haber recuerdos que te llenen el alma de alegría?
+        Fede: Tal vez... pero también me preocupa qué pasaría con Gabriel si recupero mis recuerdos. Gabriel ha sido mi compañero durante mucho tiempo, y no quiero lastimarlo.
+          * Le digo que recordar no va a cambiar eso
+            req sentirse_completo
+            Abril: Es lógico que cuides los sentimientos de Gabriel, Fede, y eso habla de lo hermoso de tu alma. 
+            Abril: Pero tus recuerdos son parte tuya, y recuperarlos no significa que vayas a dejar de sentir cariño por quienes están en tu vida ahora.
+            Fede: No sé, Abril, es complicado. ¿Y si al recuperar mis memorias, mis sentimientos por Gabriel cambian?
+            Abril: Los sentimientos son algo muy complejo y único en cada persona. 
+            Abril: Tus memorias y tus experiencias forman parte de vos y te hacen ser quién sos hoy en día. Puede que tus sentimientos cambien, sí, pero eso no necesariamente es algo negativo. 
+            Abril: Puede que al recordar lo vivido con Jaime, también encuentres un espacio en tu corazón para apreciar y valorar el tiempo compartido con él, sin que eso opaque lo que viviste y vivís con Gabriel.
+            Fede baja la mirada, pensativo. Mira en dirección a Jaime y suspira.
+            Fede: Vos decís que Jaime me espera, ¿no?
+            Abril: Sí. Jaime te espera, pero no para obligarte a ser alguien que no sos ni para que vivas de una forma que no querés. 
+            Abril: Él te espera porque te quiere, y porque desea que vos tengas la oportunidad de recordar todo lo que fuiste y todo lo que son juntos. 
+            Abril: Independientemente de tu decisión, Jaime respeta tus sentimientos y tu elección.
+              * Le digo que sus memorias pueden traerle paz
+                Abril: Tus memorias también pueden traerte paz y cerrar heridas del pasado. 
+                Abril: Hay amor en ellas, y amor siempre es luz en la oscuridad.
+                Fede: ¿Y cómo me pueden ayudar, Abril? ¿Hay una forma de recuperar esas memorias sin perderme en el dolor y la confusión que puedan traer?
+                Le sonreís suavemente, extendiendo una mano hacia él con gentileza y empatía.
+                Abril: Mi amiga Arca, que es una talentosa alquimista, creó una poción. Esta poción tiene la maravillosa habilidad de permitirte acceder a tus memorias perdidas de una manera suave y compasiva. 
+                Abril: Podés recordar los momentos que viviste con Jaime sin que el dolor te abrume. Te da la opción de ver esos recuerdos a tu propio ritmo y de procesarlos de la forma que te sientas más cómodo.
+                Fede levanta la vista, sus ojos reflejando el lío de pensamientos y sentimientos en su interior. 
+                Con la mirada fija en tu mano, la toma con firmeza, como buscando anclarse en un presente que de repente parece haberse vuelto extremadamente frágil. Sentís un frío que te recorre todo el cuerpo. 
+                Nunca antes habías tocado un fantasma.
+                Fede: ¿Y si al recordar, todo cambia, Abril? ¿Si al explorar ese pasado, me doy cuenta de que he estado viviendo una mentira?
+                Abril: Cada paso que das, cada nota que has tocás y cada emoción que sentís es auténtica y valiosa. 
+                Abril: Recordar tu pasado con Jaime no invalida tu presente ni lo que construiste. 
+                Fede, con una mezcla de temor y valentía en sus ojos, asiente lentamente. 
+                Le das la pequeña botella de tu bolsillo
+                La luz de la habitación juega con los líquidos que bailan en su interior
+                Abril: Tomá la poción, Fede. 
+                Abril: La decisión es completamente tuya. Lo que decidas estará bien, porque es tu camino y tus recuerdos los que están en juego.
+                Fede toma la pequeña botella, mirando cómo los colores se mueven en su interior
+                Cómo las memorias que están por aflorar en su mente.
+                Con un susurro apenas audible, como el eco de un pasado distante, Fede suspira y, cerrando los ojos, lleva la botella a sus labios. 
+                El líquido desciende, y con él, un torrente de recuerdos perdidos, momentos olvidados, y un amor que, aunque oculto en las sombras del olvido, nunca dejó de brillar en algún rincón.
+                Las imágenes de Jaime vienen a él, su risa, su calor, los momentos de amor compartidos. 
+                Fede siente el dolor, pero también la belleza de esos recuerdos, y entiende que aunque el pasado pueda doler, también es un tesoro que llevamos dentro, porque forma parte de nosotros, de nuestras historias, y de las personas que hemos amado.
+                Al final del día, no somos solo nuestro presente o nuestro futuro, somos también nuestro pasado, y todas las personas que hemos sido y las que hemos amado siguen viviendo en nosotros, en cada nota que tocamos, en cada palabra que decimos, en cada paso que damos hacia el mañana.
+                -> END
+              * Decirle que está bien no querer recordar
+                Abril: Si elegís no recordar, eso también está bien. Es tu vida y tu historia, y cada quien elige cómo vivirla y cómo contarla
+                Fede: Abril, agradezco mucho tus palabras y siento que tienen verdad adentro. 
+                Fede: Pero esto es como andar a los ponchazos, en lo oscuro. Algo me dice que tenés razón y lo que tuve con Jaime fue algo lindo y real, pero también me da un miedo bárbaro que todo lo que construí después se venga abajo.
+                Fede: Gabriel fue mi luz en la oscuridad, el que me ayudó a encontrar un poco de paz en medio de este lío que tengo por dentro. 
+                Fede: Y sí, me da miedo que al recordar, al abrirme a esos recuerdos de Jaime, mi mundo, tal como lo conozco, se desarme.
+                Fede: Creo que cada uno tiene su camino y su momento para las cosas. Y, aunque siento este vacío dentro, no estoy listo para recordar. 
+                Fede: No todavía. Necesito... necesito navegar este presente, construir y asegurarme de que lo que tengo acá y ahora es sólido antes de meterme en las aguas desconocidas de mi pasado.
+                Fede: Espero que Jaime entienda y pueda encontrar alguna forma de paz sabiendo que lo llevo en algún lugar adentro mío, aunque no pueda ponerle nombre a esos recuerdos o a esos sentimientos.
+                Fede: Gracias, Abril. No sé qué me depara el futuro, pero tus palabras dejaron una semilla en mi alma que quizás algún día florezca en coraje para enfrentar lo que he olvidado.
+                Sacás una sonrisa cálida y compasiva. Entendiés la profundidad de su dilema y el peso que sus decisiones llevan consigo. 
+                En este cruce de caminos, ambos encuentran un respeto mutuo y un entendimiento que trasciende las palabras no dichas, los recuerdos no recordados, y las decisiones que quedan por tomar.
+                Te levantás y ahora hay sólo una cosa en tu cabeza...
+                ¿Cómo vas a decirle esto a Jaime?
+                -> END
+          * Decirle que Gabriel lo va a tener que aceptar
+            req que_se_la_aguante
+            Abril: Gabriel lo va a tener que entender, Fede. Tu pasado es tuyo y te merecés recordarlo.
+            Fede frunce el ceño.
+            Fede: Pero ¿Por qué insistís tanto? ¿Por qué te importa tanto que yo recupere mi memoria? Pareciera que tenés algún interés en todo esto.
+              * Le digo que tengo una maldición
+                req dar_pena
+                Abril: Mirá, Fede, te voy a ser sincera porque creo que merecés la verdad y confío en que podés entenderla.
+                Abril: Si bien es cierto que creo firmemente que tu pasado tiene valor, y que los recuerdos que compartiste con Jaime son realmente especiales, también hay algo más.
+                Abril: Recientemente, una maldición cayó sobre mí y está atada a los lazos olvidados, a las memorias perdidas.
+                Sus ojos se agrandan.
+                Fede: ¿Una maldición? ¿Qué.. cómo pasó eso, Abril?
+                Abril: Es una historia larga y complicada, pero la verdad es que, si no lográs recordar tu pasado, si esos lazos de amor y amistad que se rompieron no se restauran, la maldición me va a llevar a mí también.
+                Abril: No te cuento esto para presionarte, Fede, sino porque confío en vos y creo que podés entender la importancia de todo esto.
+                Fede: Pero Abril, eso es muchísimo peso para una piba de 11 años. No podés cargar con todo eso vos sola.
+                Abril: A veces la vida nos pone en situaciones que no elegimos, Fede. Pero sí podemos elegir cómo enfrentarlas y con quién compartirlas.
+                Abril: Y a pesar de que es mucho para llevar, he encontrado amigos en este camino, como Jaime, que me ayudan a sobrellevar la carga.
+                Abril: Te necesitamos, Fede. No sólo para salvarme a mí, sino para salvar un pasado y un amor que fue puro y verdadero.
+                Abril: Y yo sé que vos, en el fondo, sos una persona que no dejaría a los demás sufrir si podés hacer algo para evitarlo.
+                Fede te mira fijo, reflejando un torbellino de emociones.
+                Fede: No puedo creer que una chica tan joven pueda soportar una carga tan pesada y hablar con tanta sabiduría.
+                Fede: La verdad, Abril, me das miedo, pero también me das esperanza.
+                Se lleva una mano al corazón, sus ojos finalmente desbordando con las lágrimas espectrales que había estado conteniendo.
+                Fede: Ahora, ¿me podrías pasar esa poción?
+                -> END
+              * Le digo que nada que ver
+                req ocultar
+                Abril: ¡No, Fede! No es eso... es solo que creo que cada uno de nosotros tiene derecho a conocer su propia historia. 
+                Abril: Y Jaime... Jaime está tan triste, se siente tan perdido sin vos.
+                Abril: Me parte el alma verlo así, y me hizo darme cuenta de lo valioso que es recordar, incluso cuando duele.
+                Abril: No te estoy pidiendo que cambies tu vida ahora, ni que tomes decisiones apresuradas. 
+                Fede: Entiendo que quieras ayudar, Abril, y aprecio tu preocupación. 
+                Fede: Pero es mi vida y mi elección. No sé si quiero remover todo eso. La incertidumbre es aterradora, y me asusta que todo cambie.
+                Abril: Y está perfecto, Fede. No quiero presionarte ni forzarte a hacer nada que no quieras hacer. 
+                Abril: Tomá, te dejo la poción, y si decidís no tomarla, está bien también. 
+                Fede: No sé, Abril... No sé si puedo. La idea de dañar a Gabriel me resulta insufrible y... también temo perderme a mí mismo en un mar de recuerdos olvidados.
+                Abril: Lo entiendo, y lo último que quisiera sería que te sientas perdido o lastimado. 
+                Abril: Mi mamá siempre dice: la verdad y la honestidad con uno mismo son el camino más seguro hacia la felicidad.
+                Fede: Sabio...
+                Fede: Necesito tiempo para pensar en todo esto. No es una decisión que pueda tomar a la ligera.
+                -> END
+              * No sé qué decirle
+                -> reset_final
+          * No sé qué decirle
+            -> reset_final
+      * Le digo que eso es egoista
+        req egoismo
+        Abril: ¿No te parece egoísta olvidar a las personas que te amaron sólo para evitar la tristeza?
+        Abril: Es cierto que el dolor puede ser parte de esos recuerdos, pero también lo es el amor, la risa y la alegría. Además, esas personas que te amaron y que vos amaste, ¿no merecen ser recordadas con amor y alegría, aun en su ausencia?
+        Fede entrelaza sus dedos, reflexionando sobre tus palabras, pero se nota en sus ojos un atisbo de miedo e incertidumbre.
+        Fede: Mirá, es cierto, las palabras que decís son lindas, Abril, pero la vida y la muerte enseñan que a veces es mejor dejar que las cosas queden como están.
+        Fede baja la cabeza, contemplando sus propias manos entrelazadas. 
+        Los murmullos del Baile de los Espectros se sienten lejanos y un suave viento susurra a través del espacio, agitando sus cabellos transparentes.
+        Fede: Pero, ¿y qué pasa con Gabriel? No puedo traicionarlo así, recuperando un pasado que ya no está. Estoy con él ahora, y tengo que ser leal a eso, ¿no?
+          * Le digo qué sentiría si Gabriel perdiera su memoria
+            Abril: ¿Qué sentirías si Gabriel perdiera sus recuerdos de vos, Fede? ¿Querrías que él te recordara?
+            Fede: ¿Y por qué debería creerte, Abril? Capaz estás inventando todo esto por alguna razón que desconozco. 
+            Fede: Apenas si te conozco, y me pedís que confíe en vos para recuperar recuerdos que ni siquiera sé si son reales.
+            Fede se pone de pie y da un paso hacia atrás, poniendo distancia entre vos y él.
+            Abril: Entiendo tu desconfianza, Fede. No tengo forma de demostrarte que lo que te cuento es cierto. 
+            Abril: Pero, ¿y si hablás con Jaime? Él no te va a mentir, y podes ver en sus ojos que todos esos momentos que compartieron son reales.
+            Fede: No, no quiero hablar con ningún Jaime. ¡No quiero que nadie más me diga lo que tengo que hacer o sentir!
+            Abril: Jamás te diría lo que tenés que hacer o sentir. No es mi lugar y tampoco es mi intención.
+            Abril: Gabriel tiene el derecho a amar a alguien que está presente de forma completa, no a alguien que vive a medias porque una parte de su historia está perdida.
+            Abril: Y lo mismo vale para vos, ¿no te parece?
+            Fede se sienta nuevamente, su expresión muestra que tus palabras le tocaron de alguna manera.
+            Fede: ¿Y si recuerdo y quiero volver con Jaime? ¿Qué pasa con Gabriel entonces? ¿No será eso también una traición?
+            Abril: Fede, los sentimientos no son una traición. Son simplemente lo que son. Y si después de recordar, tu amor por Jaime resurge, eso no es traicionar a Gabriel. Es ser honesto con vos mismo y con él.
+            Abril: Pero también puede ser que tus sentimientos por Gabriel se mantengan igual de fuertes, o incluso más. No lo sabemos. Pero estarás decidiendo desde la honestidad y no desde el olvido forzado.
+            Abril: No podemos prever el futuro, Fede. Pero podemos vivirlo de la forma más auténtica y verdadera posible, siendo leales a nuestros corazones.
+            Fede: No sé... me da miedo, Abril. Pero algo de lo que decís resuena en mí. No puedo negarlo.
+            Abril: El miedo es normal. Pero te prometo que, sin importar lo que decidas, no vas a estar solo en este camino. Jaime, yo, y seguramente muchos otros, vamos a estar acá para vos.
+            Fede mira hacia el infinito, como intentando visualizar las posibilidades que se abren ante él.
+            Fede: Necesito pensar, Abril. Necesito tiempo.
+            Abril: Tu corazón te dirá cuándo estás listo para tomar una decisión.
+            Fede te regala una suave sonrisa, llena de agradecimiento pero también de esa melancolía que no lo ha abandonado.
+            -> END
+          * Le digo que nada va a cambiar 
+            Abril: Vos podés querer a Gabriel incluso recordando tu pasado, Fede. Mi mamá siempre me dice: El amor no se divide, se multiplica.
+            Fede mira a sus manos, todavía entrelazadas, y luego te observa con una expresión pensativa.
+            Fede: Tu mamá suena como una mujer muy sabia. Pero, ¿y si Gabriel no piensa lo mismo? ¿Y si él no quiere que recuerde mi pasado?
+            Abril: Fede, ¿Gabriel te quiere? Si la respuesta es sí, debería querer lo mejor para vos, incluso si eso implica enfrentar tu pasado.
+            Fede: Sí, Gabriel me quiere, pero él también tiene sus miedos. Temores de que al recuperar mis recuerdos, yo lo deje.
+            Abril: Y, si vos recuperás tus recuerdos y decidís estar con Gabriel, ¿no sería esa elección mucho más significativa? Elegir estar con alguien a pesar de todo es el acto más puro de amor.
+            Fede suspira, pareciendo más calmado y menos a la defensiva.
+            Fede: Me asusta. Me asusta pensar en todo lo que no sé, en lo que podría descubrir. Pero también me duele pensar que hay partes de mi vida, personas que amé, que se han desvanecido en la niebla de la olvido.
+            Fede: ¿Y vos, por qué te tomás el trabajo de ayudarme? Ni siquiera me conocés.
+            Abril: Porque creo en hacer lo correcto, Fede. 
+            Abril: Y porque, aunque no te conozca personalmente, siento que todos merecemos una oportunidad de ser felices y conocer nuestra verdadera historia.
+            Fede te sonríe
+            Fede: Gracias, Abril. Voy a pensarlo. 
+            Fede: Es mucho para procesar ahora, pero tus palabras han calado hondo. Aunque no tome una decisión hoy, te agradezco por darme la opción y por mostrarme un poco de comprensión y empatía. 
+            Fede: Es más de lo que he recibido en mucho tiempo.
+            Abril: No tenés que agradecerme, Fede. Sólo espero que encuentres la paz y la felicidad que merecés.
+            -> END
+      * No sé qué decirle
+        -> reset_final
+
+  ## fede_groomer
+    req fede groomer
+    Abril: ¡Hola Fede!
+    Fede asiente. Pero no te mira ni dice nada.
+    Abril: Soy Abril... ¿Todo bien? Parecés medio bajón.
+    Fede gira la cabeza lentamente hacia vos, pero sus ojos se quedan en el piso.
+    Fede: Hola Abril.. Perdón por mi estado deplorable... 
+    Fede: Después de cada recital me siento un poco perdido. Como una semifusa que El Músico se salteó. Sin dirección.
+    Levanta su vista, y cuando te ve se sobresalta.
+    Fede: Vos... no sos un fantasma... ¿Qué hacés acá?
+    Abril: No sólo los fantasmas pueden entrar al baile.
+    Abril: Escuché tu música, es tan triste y a la vez tan llena de amor.
+    Abril: ¿No te pasa que la música, a veces, te dice cosas que las palabras no pueden?
+    Una media sonrisa se dibuja en la cara de Fede.
+    Fede: Sí, Abril... La música, a veces, me habla, y me dice más de lo que quisiera escuchar.
+    Fede: Es un reflejo de alguna melodía interna, supongo.
+    Abril: Y esa melodía que tocás, tan llena de nostalgia y amor perdido... ¿Es por alguien en particular?
+    Fede titubea, parece que va a quebrarse, pero rápidamente se recupera, poniendo una barrera invisible entre vos y él.
+    Fede: A veces la música es simplemente música. No todos tenemos historias que contar.
+      * Le digo que en el pasado es parte de nuestra melodía
+        req importancia_del_pasado
+        Abril: ¿No pensás que el pasado, aunque pueda doler, es parte de la melodía que nos da identidad y sentido?
+        Fede: Tal vez tengas razón... El pasado es como una cadena de notas que, queramos o no, se hilvanan en nuestra vida, creando nuestra propia sinfonía, ¿no?
+        Abril: Exacto! 
+        Abril: Y cada nota, cada pausa, cada acorde... 
+        Abril: son piezas de lo que somos y de cómo vemos el mundo. Tu música tiene un toque tan personal y emocional que se nota que viene de un lugar profundo.
+        Fede: Siempre pensé que la música era mi única salida, mi único canal para liberar todas esas emociones que bullen en mi interior. 
+        Fede:A veces creo que es mi maldición y mi salvación al mismo tiempo.
+        Te sentás al lado de Fede, mostrando empatía a través de tu mirada.
+        Abril: No es una maldición. Eso seguro. 
+        Abril: La música es tu voz cuando las palabras no son suficientes. 
+        Abril: Es tu alma hablando y tocando las almas de quienes te escuchan. 
+        Abril: Y sí, puede doler, pero también puede ser un bálsamo, tanto para vos como para los demás.
+        Fede: Pero, ¿y si las melodías que creo involuntariamente destapan viejas heridas que ni siquiera sabía que existían, Abril? ¿Y si cada nota que toco es un recordatorio de algo que intento olvidar desesperadamente?
+          * Le digo que nunca se va a sentir completo
+            req sentirse_completo
+            Abril: Las heridas ocultas pueden ser las más difíciles de sanar porque las ignoramos, las guardamos en un rincón oscuro y esperamos que se desvanezcan con el tiempo.
+            Abril: No necesitas olvidar, solo necesitas aprender a convivir con esos recuerdos, y quien sabe, tal vez con el tiempo, transformar ese dolor en algo bello a través de tu arte.
+            Fede: ¿Y si no estoy listo para enfrentarlas, Abril? ¿Y si esas melodías me arrastran a un lugar del que no pueda salir?
+              * Le digo que sus memorias pueden traerle paz
+                req dar_pena
+                Abril: Fede, tu música tiene el poder de sanar, pero también es un espejo de tus propias cicatrices. 
+                Abril: Tu arte es genuino, honesto y apasionado porque nace de esos lugares ocultos y vulnerables. Cada nota, cada melodía, puede ser un paso hacia la paz, hacia la aceptación.
+                Fede, mirando hacia algún punto perdido en la distancia, parece reflexionar sobre tus palabras.
+                Fede: A veces, creo que mi música quiere decirme algo, Abril...
+                Fede: Como si hubiera mensajes, sentimientos, esperando ser descubiertos y comprendidos.
+                Fede: Y por más que me gustaría poder ignorarlos, sé que están ahí, latentes, queriendo ser liberados de alguna manera.
+                Abril: Y eso está bien, Fede. 
+                Abril: No todos los mensajes tienen que ser descifrados de inmediato. La tristeza, el amor, la pérdida... se procesan a su debido tiempo.
+                Abril: Pero también es importante recordar que, en algunos casos, esos recuerdos, esas melodías internas que intentan hablar, pueden ser la llave para encontrar una paz que ahora parece elusiva.
+                Fede: Abril, te agradezco tus palabras y tu amabilidad, pero vos no entendés...
+                Fede: Hay cosas, memorias, que preferiría mantener encerradas, aunque parte de mí anhele conocerlas, entenderlas.
+                Abril: Te ofrezco una opción, un pequeño acto de coraje para enfrentar esas sombras.
+                Abril saca una pequeña botella de su bolsillo, el líquido en su interior brillando con un fulgor suave y misterioso.
+                Fede observa la botella, una mezcla de curiosidad y temor en sus ojos. Mira a Gabriel, y te mira a vos.
+                Abril: Esta poción puede ayudarte a recordar y, de esa manera, tal vez, a encontrar un poco de paz. 
+                Abril: No va a solucionar todo, pero podría ser un paso, un comienzo.
+                Fede sostiene la poción en su mano, mirándola con recelo y consideración.
+                Fede: ¿Y si las cosas se complican, Abril? ¿Y si las memorias que encuentro son demasiado duras de soportar?
+                Abril: Las memorias, sean alegres o dolorosas, son parte de tu melodía, y tal vez, al comprenderlas, puedas encontrar una nueva armonía en tu música y en tu ser.
+                Se crea un silencio, donde solo se perciben los leves susurros del viento nocturno. Fede, con mano temblorosa, destapa la botella.
+                Fede: No sé qué pasará después de esto, pero, en algún nivel, siento que es necesario.
+                -> END
+              * Decirle que está bien no querer recordar
+                req ocultar
+                Abril: Fede, es completamente válido no querer recordar, y está bien no estar listo para enfrentar ciertas cosas.
+                Fede: Abril, es que algunas notas... parecen quererme llevar a esos recuerdos, aún si yo me resisto. 
+                Fede: Es como si mis propias creaciones me traicionaran.
+                Abril: Tal vez, lo que necesitas es permitirte vivir esas emociones sin temor a ser consumido por ellas. 
+                Abril: Y no tienes que hacerlo solo. La música te trajo hasta aquí, te unió a las personas que, de una forma u otra, pueden comprender tu dolor. 
+                Abril: Pero también es una elección, la elección de dejarte caer en esas emociones, o encontrar una manera de expresarlas que no te lastime tanto.
+                Le mostrás la poción a Fede
+                Abril: Es una poción. Para ayudarte a recordar.
+                Fede: ¿Una poción? ¿Cómo puedo creer que un líquido pueda cambiar mi perspectiva del dolor?
+                Fede: Todo bien pero creo que las pociones mágicas no son para mí. 
+                Fede: Prefiero entender mis melodías a mi manera, aunque sea doloroso.
+                Fede: Aprecio que quieras ayudar, realmente lo aprecio. Pero hay algunas cosas que simplemente tienen que seguir su curso, sin importar cuánto duelan.
+                Abril: Todo bien. El camino para sanar es diferente para cada uno de nosotros. 
+                Abril: Tal vez, algún día encuentres la manera de bailar con tus demonios en lugar de luchar contra ellos.
+                -> END
+          * Decirle que la verdad es la verdad
+            req que_se_la_aguante
+            Abril: Fede, la verdad siempre va a ser la verdad, aunque intentemos olvidarla, aunque intentemos taparla con otras cosas. 
+            Abril: Las emociones reprimidas y las memorias olvidadas de alguna forma siempre buscan la manera de volver a la superficie. 
+            Abril: Y tu música, tan emocional y cruda, es prueba de ello.
+            Fede: Pero, ¿y si la verdad es demasiado dura? ¿Y si me desgarra por dentro cada vez que intento recordar?
+            Abril: Es que la verdad, por más dura que sea, es una parte de nosotros. 
+            Fede: Pero hay cosas que son demasiado dolorosas... cosas que preferiría no recordar, que preferiría que se quedaran en el pasado.
+            Abril: Te entiendo Fede, de verdad que sí. Considerá esto: las cosas que intentamos olvidar, las que guardamos en lo más profundo de nosotros, son las que a la larga nos terminan haciendo más daño.
+            Fede te mira. Sus ojos esconden un océano de conflictos y tristezas.
+            Abril: Además, Fede, las personas que formaron parte de tu vida, las que te amaron y a las que amaste, merecen ser recordadas, no por el dolor que pueda causarte, sino por los momentos felices y el amor compartido.
+            Abril se acerca a Fede, le toma suavemente la mano y se la aprieta con ternura.
+              req !sensibilidad_tactil
+            Fede baja la cabeza, es evidente que tus palabras están moviendo algo en él.
+            Fede: Hay algo en tus palabras, Abril, que resuena en mi interior, como una melodía olvidada que de repente vuelve a mí...
+            Abril: Fede, te tengo una propuesta.
+            Fede levanta la cabeza y te mira confundido
+            Abril: Tengo conmigo una poción. Es algo mágico que te puede ayudar a recuperar esos recuerdos que te duelen, pero que también son parte de quien sos. 
+            Abril: No te voy a obligar a tomarla, la decisión es completamente tuya. Pero creo que tu alma ya está lista para recordar, para enfrentar esos fantasmas del pasado y quizás, solo quizás, encontrar cierta paz y cerrar esa herida que tu música lleva gritando desde hace tanto tiempo.
+            Fede suelta una risa, pero no de gracia, sino de soberbia, y después suspira.
+            Fede: Te agradezco, pero... no necesito esa poción.
+            Abril: ¿Cómo?
+            Fede: Abril, yo no me olvidé de nada. 
+            Fede: Mis recuerdos están acá, cada uno de ellos. 
+            Abril: Pero... ¿Por qué fingirías algo así?
+            Fede: Jaime. Todo es por Jaime. 
+            Fede: Mirá, cuando me morí, Jaime no pudo superarlo. 
+            Fede: Y por su dolor y su incapacidad de dejarme ir, me quedé atascado acá, en este plano intermedio. 
+            Fede: Yo no pude seguir adelante, no pude encontrar mi paz.
+            Mirás sus ojos, ya no reflejan tristeza...
+            Fede: Jaime siempre fue... intenso. 
+            Fede: Incluso en vida, nuestra relación estaba llena de altibajos. 
+            Fede: Él tenía este amor... absorbente, ahogante, que me dejaba sin aire. 
+            Fede levanta la cabeza. Tiene la mirada perdida.
+            Fede: Después de morirme, me di cuenta de que necesitaba avanzar, necesitaba mi propia paz. 
+            Fede: Pero Jaime, él simplemente... no me dejaba ir.
+            Abril: Pero el amor es un lazo tan fuerte. Jaime solo estaba intentando aferrarse a lo que amaba. Es entendible, es humano...
+            Ves la frustración en la cara de Fede.
+            Fede: ¡Pero eso no es justo, Abril! ¿Y mi paz? ¿Y mi descanso? 
+            Fede: Jaime tuvo la oportunidad de seguir con su vida y eligió quedarse anclado a mí, y ahora, que él también está muerto, estamos los dos atascados acá.
+            Fede: Conocí a Gabriel en este limbo en el que Jaime me tenía atrapado. 
+            Fede: Gabriel también está estancado, por sus propios demonios, y entiende mi necesidad de avanzar, de encontrar la paz que Jaime nunca me permitió tener.
+            Abril: Pero Fede, huir de los recuerdos, de las personas que fuimos y que amamos... eso no es encontrar paz. 
+            Abril: La paz se trata de aceptación, de entender y perdonar, incluso cuando duele.
+            Fede: ¡Jaime me robó mi paz, Abril! Y no estoy dispuesto a darle nada más. 
+            Fede: ¿Sabés cuántas veces intenté comunicarme con él, explicarle, pedirle que me deje ir? Pero él nunca escuchó. Siempre fue sobre su dolor, su pérdida.
+            Abril: Entiendo tu frustración. Pero venganza y resentimiento no son el camino. 
+            Abril: Ahora ambos, vos y Jaime, tienen la oportunidad de encontrar la paz juntos. 
+            Abril: Pero eso requiere honestidad y vulnerabilidad. Eso requiere que te enfrentes a Jaime, no con odio, sino con verdad.
+            Fede parece perder la paciencia.
+            Fede: Abril, todo bien con lo que estás queriendo hacer. Pero después de décadas ya me da lo mismo Jaime. Jaime y yo tuvimos una historia, pero esa historia ya no existe, no para mí.
+            Fede se levanta, su mirada es dura, pero pora vos revela un dolor escondido.
+            Fede: No todos los finales son felices.
+            Sin esperar respuesta, Fede se acerca a Gabriel. Ambos espectros se abrazan y desaparecen.
+            Te quedás ahí con una sensación de vacío. 
+            Te sentás en un rincón a pensar...
+            Es increíble cómo las emociones humanas pueden perdurar, incluso después de la muerte. 
+            Las heridas, los rencores, las penas... Todo sigue latente, como una melodía que nunca cesa. 
+            Quizás la verdadera magia no está en las pociones o los encantamientos, sino en nuestra capacidad de perdonar, de soltar, de hacer las paces con nosotros mismos y con los demás.
+            No siempre puede ayudar a todos, pero eso no significa no intentarlo. 
+            La noche en el Baile de los Espectros te enseñó que el verdadero desafío no está en enfrentar monstruos o magia oscura, sino en comprender y sanar.
+            -> END
+          * No sé qué decirle
+            -> reset_final
+      * Le pregunto si realmente es sincero lo que dice
+        req egoismo
+        Abril: ¿Seguro, Fede? Porque tus ojos cuentan otra historia. 
+        Abril: Hay tanto sentimiento en cada nota que tocás… No creo que sea simplemente música.
+        Fede mira a Gabriel, después te mira.
+        Fede: No sé de qué hablás, Abril... Mi música es simplemente una expresión, no una confesión.
+        Abril: A veces, cuando intentamos olvidar, o pretendemos que no nos duele algo, esa cosa se vuelve un susurro constante en nuestra mente y corazón. 
+        Abril: Yo creo que compartirlo, dejar que otro lo sepa, puede hacernos sentir un poco más livianos.
+        Fede vuelve a mirar al piso
+        Abril: Y vos sabés, Fede, las cosas guardadas se vuelven pesadas con el tiempo, como cargar con un morral que se hace cada vez más y más grande.
+        Fede suspira
+        Fede: Me esfuerzo tanto por ser fuerte, por no recordar, por vivir este presente eterno... pero en el fondo, siempre hay esa canción triste que se desliza a través de mí.
+        Abril: Fede, no hay nada de malo en sentir, en recordar, incluso si duele. La tristeza también es parte de quiénes somos.
+        Fede: Si dejo que esos recuerdos vuelvan, podría destruir la paz de alguien más, y no quiero ser la razón de la tristeza de nadie.
+          * Le digo qué sentiría si Gabriel perdiera su memoria
+            Abril: Fede, ¿y si la situación fuese al revés?
+            Abril: ¿Qué sentirías si Gabriel perdiera la memoria un día y decidiera seguir adelante, fingiendo que no te recuerda para protegerte?
+            Fede cierra sus ojos, y sus hombros comienzan a temblar ligeramente.
+            Abril: ¿No te gustaría que, aun con todo el dolor del pasado, él eligiese ser honesto contigo?
+            Fede: Pero yo... yo estoy protegiendo a Jaime.
+            Abril: Fede, el amor nunca fue la causa del sufrimiento de nadie. Es la mentira, el ocultamiento, lo que realmente duele.
+            Fede suelta una lágrima, y luego otra, hasta que se rompe en un llanto silencioso.
+            Abril se acerca y le pone una mano en el hombro.
+            Abril: No mereces cargar con este morral lleno de tristezas y silencios por toda la eternidad.
+            Abril: Y Jaime tampoco merece vivir sin saber la verdad, aunque creas que eso lo protege.
+            Fede: No sé cómo enfrentarlo, Abril, no sé cómo decirle todo esto.
+            Abril: La honestidad, Fede, siempre es el camino. Es una charla, es mirarlo a los ojos y dejar que tu corazón hable.
+            Fede: ¿Y si al recordar todo lo que compartimos, Jaime sufre más que ahora?
+            Abril: Fede, Jaime ya sufre. Puede que no comprendas por qué, pero lo hace. Y quizás, al saber la verdad, aunque duela al principio, pueda encontrar la paz.
+            Abril: La paz que vos también necesitás.
+            Fede asiente lentamente, mirando hacia el suelo, sus ojos aún brillan por las lágrimas, pero en su rostro se asoma una especie de alivio, una ligera liberación.
+            Fede: Tengo tanto miedo, Abril... pero sabés, en el fondo, siempre supe que esto no estaba bien, que yo no estaba bien.
+            Abril: Está bien tener miedo. Y vos vas a estar bien, porque elegir la verdad, aunque asuste, siempre nos lleva por el mejor camino.
+            Fede: Gracias, Abril... Por ayudarme a ver, por no dejarme seguir en esta mentira eterna.
+            -> END
+          * Le digo que nada va a cambiar 
+            Abril: Las cosas no van a cambiar si vos no querés.
+            Abril: La honestidad, incluso cuando duele, tiene un valor increíble. Pero también está bien no hacer algo que no querés.
+            Fede: ¿Honestidad? ¿Y vos sabés acaso lo que significa cargar con la verdad?
+            Abril: No sé lo que es cargar con TU verdad, pero sé lo que es ver a alguien sufrir y no poder hacer nada al respecto.
+            Abril: Creo que, a veces, la valentía no está en olvidar o en aparentar fortaleza, sino en enfrentar esas verdades, por más que duelan o por más que creamos que protegemos a otros al ocultarlas.
+            Fede: ¿Enfrentar? ¿Vos decís que no estoy siendo valiente? Llevo décadas viviendo con esta decisión, Abril, y no necesito que una niña venga a decirme lo que tengo que hacer.
+            Fede: ¡Ya es suficiente! No te metas en cosas que no entendés, Abril. ¡Ni vos ni Jaime! Basta.
+            Fede cruza los brazos y mira hacia otro lado.
+            Fede: Mirá, la verdad es que nunca perdí la memoria. ¡Sé todo! 
+            Fede: Sé quién era Jaime para mí, sé lo que vivimos y sé que él aún siente algo por mí. 
+            Fede: Pero no quiero volver a eso. Estoy con Gabriel, y Jaime... 
+            Fede: Jaime tiene que seguir adelante como lo hice yo. Pero como no lo hace, tengo que hacerme el amnésico.
+            Fede: Simplemente estoy eligiendo un camino diferente y Jaime no lo puede aceptar.
+            Abril: Fede, entiendo que hayas elegido un camino diferente, pero no podés hacerle eso a Jaime, ¿no ves que está sufriendo?
+            Fede: Y, ¿qué pasa con mi sufrimiento, Abril? ¿Te pensás que es fácil vivir con estos recuerdos? A veces uno toma decisiones y tiene que ser consecuente con ellas.
+            Abril: Pero hay una diferencia entre ser consecuente con tus decisiones y fingir que no recordás, solo para no enfrentar la realidad.
+            Fede: ¿Injusto? No me hables de justicia. Jaime merece ser feliz, y conmigo no lo va a ser. No después de todo lo que pasó.
+            Abril: Pero Fede, merece saber la verdad, merece que seas honesto con él. No podes decidir por los demás lo que es mejor para ellos. 
+            Fede: No sabés lo que decís, sos muy chica.
+            Fede: ¿Sabés qué, Abril? Ya es suficiente. No se quién te crees que sos para decirme lo que tengo que hacer.
+            Fede se da vuelta y camina hacia Gabriel, 
+            Lo mirás irse
+            Abril: Jaime merece saber la verdad, y voy a decírsela!
+            Respirás hondo y vas a buscar a Jaime...
+            -> END
+      * No sé qué decirle
+        -> reset_final
+
+  ## reset_final
+    Abril: No se que decirte la verdad...
+    Fede: Es comprensible...
+    Todo el recinto se desvanece a tu alrededor. 
+    Arca te mira con cara de preocupación
+    Arca: Ya lo vamos a resolver... tal vez el próximo año...
+    `game_over`
+    -> END

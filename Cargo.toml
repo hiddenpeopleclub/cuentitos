@@ -6,4 +6,5 @@ members = [
   "compiler",
   "common",
   "cli",
+  "godot"
 ]
