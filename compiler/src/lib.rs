@@ -1,3 +1,4 @@
+use cuentitos_common::Database;
 use i18n::I18n;
 use palabritas::parse_database_from_path;
 use rmp_serde::Serializer;
@@ -28,6 +29,20 @@ where
   file.write_all(&buf)?;
 
   Ok(())
+}
+
+pub fn compile_database<T>(source_path: T) -> Result<Database, Box<dyn std::error::Error>>
+where
+  T: AsRef<Path>,
+{
+  let db = parse_database_from_path(&source_path)?;
+
+  // I18n::process(&mut db, source_path, &destination_path)?;
+
+  // let mut buf: Vec<u8> = Vec::new();
+  // let mut serializer = Serializer::new(&mut buf);
+
+  Ok(db)
 }
 
 #[cfg(test)]

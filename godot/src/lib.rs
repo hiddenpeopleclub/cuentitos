@@ -1,8 +1,11 @@
+use godot::private::class_macros::property::PropertyHintInfo;
+use std::path::PathBuf;
 use cuentitos_runtime::Runtime;
 use std::str::FromStr;
 use godot::engine::*;
 use godot::prelude::*;
 use cuentitos_common::*;
+use godot::obj::Gd;
 
 struct CuentitosExtension;
 
@@ -28,9 +31,26 @@ unsafe impl ExtensionLibrary for CuentitosExtension {
       );
     }
   }
-
 }
 
+#[derive(GodotClass)]
+#[class(tool, init, base=Resource)]
+struct CuentitosDatabase {
+    database: Database,
+    base: Base<Resource>,
+}
+
+impl CuentitosDatabase {
+  fn new(source: String) -> Gd<Self> {
+    let database = cuentitos_compiler::compile_database(&source).unwrap();
+    Gd::from_init_fn(|base| {
+      Self {
+        database,
+        base,
+      }
+    })
+  }
+}
 
 #[derive(GodotClass)]
 #[class(tool, init, base=Object)]
@@ -42,52 +62,60 @@ struct Cuentitos {
 
 #[godot_api]
 impl Cuentitos {
-  
   #[func]
-  fn load_config(&mut self, content: String) {
-    self.config = Config::from_str(&content).unwrap();
+  fn compile(&mut self, source: String) -> Gd<CuentitosDatabase> {
+    CuentitosDatabase::new(source)
   }
 
   #[func]
-  fn load_script(&mut self, content: ArrayBuffer) {
-    let database = Database::from_u8(&content);
-
+  fn load(&mut self, script: String) {
+    let database = load::<CuentitosDatabase>(script);
   }
+
+}  
+//   #[func]
+//   fn load_config(&mut self, content: String) {
+//     self.config = Config::from_str(&content).unwrap();
+//   }
+
+
+
+//   }
   
-  // pub fn reset_story(&mut self)  {}
-  // pub fn reset_state(&mut self)  {}
-  // pub fn reset_all(&mut self)  {}
+//   // pub fn reset_story(&mut self)  {}
+//   // pub fn reset_state(&mut self)  {}
+//   // pub fn reset_all(&mut self)  {}
 
-  // pub fn set_locale<T>(&mut self, locale: T) -> Result<(), String> {}
+//   // pub fn set_locale<T>(&mut self, locale: T) -> Result<(), String> {}
 
-  // pub fn set_seed(&mut self, seed: u64) {}
-  // pub fn divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError>  {}
+//   // pub fn set_seed(&mut self, seed: u64) {}
+//   // pub fn divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError>  {}
 
-  // pub fn boomerang_divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError>  {}
+//   // pub fn boomerang_divert(&mut self, section: &Section) -> Result<Vec<Block>, RuntimeError>  {}
 
-  // pub fn peek_next(&self) -> Result<Output, RuntimeError>  {}
+//   // pub fn peek_next(&self) -> Result<Output, RuntimeError>  {}
 
-  // pub fn next_block(&mut self) -> Result<Output, RuntimeError>  {}
+//   // pub fn next_block(&mut self) -> Result<Output, RuntimeError>  {}
 
-  // pub fn progress_story(&mut self) -> Result<Output, RuntimeError> {}
+//   // pub fn progress_story(&mut self) -> Result<Output, RuntimeError> {}
 
-  // pub fn skip(&mut self) -> Result<Output, RuntimeError>  {}
-  // pub fn skip_all(&mut self) -> Result<Output, RuntimeError>  {}
+//   // pub fn skip(&mut self) -> Result<Output, RuntimeError>  {}
+//   // pub fn skip_all(&mut self) -> Result<Output, RuntimeError>  {}
 
-  // pub fn get_block(&self, stack_data: &BlockStackData) -> Result<Block, RuntimeError>  {}
+//   // pub fn get_block(&self, stack_data: &BlockStackData) -> Result<Block, RuntimeError>  {}
 
-  // pub fn current(&self) -> Result<Output, RuntimeError>  {}
+//   // pub fn current(&self) -> Result<Output, RuntimeError>  {}
 
-  // pub fn pick_choice(&mut self, choice: usize) -> Result<Output, RuntimeError>  {}
+//   // pub fn pick_choice(&mut self, choice: usize) -> Result<Output, RuntimeError>  {}
 
-  // pub fn set_variable<R, T>(&mut self, variable: R, value: T) -> Result<(), RuntimeError> {}
+//   // pub fn set_variable<R, T>(&mut self, variable: R, value: T) -> Result<(), RuntimeError> {}
 
-  // pub fn get_variable_kind<R>(&self, variable: R) -> Result<VariableKind, RuntimeError> {}
+//   // pub fn get_variable_kind<R>(&self, variable: R) -> Result<VariableKind, RuntimeError> {}
 
-  // pub fn get_variable<R, T>(&self, variable: R) -> Result<T, RuntimeError> {}
+//   // pub fn get_variable<R, T>(&self, variable: R) -> Result<T, RuntimeError> {}
 
-  // pub fn apply_modifier(&mut self, modifier: &Modifier) -> Result<(), RuntimeError>  {}
+//   // pub fn apply_modifier(&mut self, modifier: &Modifier) -> Result<(), RuntimeError>  {}
 
-  // pub fn get_current_choices_strings(&self) -> Result<Vec<String>, RuntimeError>  {}
-}
+//   // pub fn get_current_choices_strings(&self) -> Result<Vec<String>, RuntimeError>  {}
+// }
 

@@ -4,9 +4,9 @@
 
 mkdir -p build/debug/macos/arm64/
 mkdir -p build/release/macos/arm64/
+mkdir -p build/debug/windows/
 # mkdir -p build/debug/linux/
 # mkdir -p build/release/linux/
-# mkdir -p build/debug/windows/
 # mkdir -p build/release/windows/
 
 echo "Building for macos m1"
@@ -16,17 +16,21 @@ cargo build --target=aarch64-apple-darwin --release
 cp ../target/aarch64-apple-darwin/debug/libcuentitos_godot.dylib build/debug/macos/arm64/
 cp ../target/aarch64-apple-darwin/release/libcuentitos_godot.dylib build/release/macos/arm64/
 
+# echo "Building for windows"
+# brew install mingw-w64
+# rustup target add x86_64-pc-windows-gnu
+# cargo build --target=x86_64-pc-windows-gnu
+# cargo build --target=x86_64-pc-windows-gnu --release
+
+# cp ../target/x86_64-pc-windows-gnu/debug/libcuentitos_godot.dll build/debug/windows/
+# cp ../target/x86_64-pc-windows-gnu/release/libcuentitos_godot.dll build/release/windows/
+
 # echo "Building for macos x86"
 # rustup target add x86_64-apple-darwin
 # cargo build --target=x86_64-apple-darwin
 # cargo build --target=x86_64-apple-darwin --release
 
 
-# echo "Building for windows"
-# brew install mingw-w64
-# rustup target add x86_64-pc-windows-gnu
-# cargo build --target=x86_64-pc-windows-gnu
-# cargo build --target=x86_64-pc-windows-gnu --release
 
 # echo "Building for Linux"
 # rustup target add x86_64-unknown-linux-gnu
