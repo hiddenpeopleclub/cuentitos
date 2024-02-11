@@ -1,10 +1,11 @@
-use godot::private::class_macros::property::PropertyHintInfo;
-use std::path::PathBuf;
+use cuentitos_runtime::Database;
+use std::borrow::BorrowMut;
+
+use rmp_serde::Serializer;
+use serde::Serialize;
 use cuentitos_runtime::Runtime;
-use std::str::FromStr;
 use godot::engine::*;
 use godot::prelude::*;
-use cuentitos_common::*;
 use godot::obj::Gd;
 
 struct CuentitosExtension;
@@ -33,29 +34,82 @@ unsafe impl ExtensionLibrary for CuentitosExtension {
   }
 }
 
+// -------
+// RUNTIME OUTPUTS
+// -------
 #[derive(GodotClass)]
-#[class(tool, init, base=Resource)]
-struct CuentitosDatabase {
-    database: Database,
-    base: Base<Resource>,
+#[class(init, base=Object)]
+struct Output {
+  #[var]
+  text: GString,
+  #[var]
+  choices: Array<GString>,
+  #[var]
+  blocks: Array<Gd<Block>>,
+  base: Base<Object>
 }
 
-impl CuentitosDatabase {
-  fn new(source: String) -> Gd<Self> {
-    let database = cuentitos_compiler::compile_database(&source).unwrap();
+impl Output {
+  fn new_gd(cuentitos_output: cuentitos_runtime::Output) -> Gd<Self> {
+    let text = cuentitos_output.text.into();
+    let mut choices = Array::new();
+    let mut blocks = Array::new();
+
+    for choice in cuentitos_output.choices {
+      choices.push(choice.into())
+    }
+
+    for block in cuentitos_output.blocks {
+
+    }
+
     Gd::from_init_fn(|base| {
       Self {
-        database,
+        text,
+        choices,
+        blocks,
         base,
       }
     })
   }
 }
 
+#[derive(Default)]
+enum BlockType {
+  #[default]
+  None,
+  Text,
+  Choice,
+  Bucket,
+  Section,
+  Divert,
+  BoomerangDivert
+}
+
+#[class(init, base=Object)]
+#[derive(GodotClass)]
+struct Block {
+  kind: BlockType,
+  id: String,
+  name: String,
+  // next: NextBlock,
+  // settings: BlockSettings,
+  base: Base<Object>
+}
+
+// #[derive(Default)]
+// struct NextBlock {
+//   #[default]
+//   EndOfFile,
+//   BlockId(BlockId),
+//   Section(Section),
+// }
+
+
+
 #[derive(GodotClass)]
 #[class(tool, init, base=Object)]
 struct Cuentitos {
-  config: Config,
   runtime: Runtime,
   base: Base<Object>
 }
@@ -63,25 +117,65 @@ struct Cuentitos {
 #[godot_api]
 impl Cuentitos {
   #[func]
-  fn compile(&mut self, source: String) -> Gd<CuentitosDatabase> {
-    CuentitosDatabase::new(source)
+  fn compile(&mut self, source: String) -> PackedByteArray
+  {
+    let database = cuentitos_compiler::compile_database(&source).unwrap();
+
+    let mut buf: Vec<u8> = Vec::new();
+    let mut serializer = Serializer::new(&mut buf);
+
+    database.serialize(&mut serializer).unwrap();
+
+    PackedByteArray::from(buf.as_slice())
   }
 
   #[func]
-  fn load(&mut self, script: String) {
-    let database = load::<CuentitosDatabase>(script);
+  fn load(&mut self, database: PackedByteArray) {
+    let database = Database::from_u8(database.as_slice()).unwrap();
+    self.runtime = Runtime::new(database.clone());
   }
 
+  #[func]
+  fn progress_story(&mut self) -> Gd<Output>
+  {
+    match self.runtime.progress_story() {
+        Ok(output) => {
+          Output::new_gd(output)
+        }
+        Err(err) => {
+          panic!("Error: {}", err)
+        }
+    }
+  }
+
+  #[func]
+  fn skip(&mut self) -> Gd<Output> {
+    match self.runtime.skip() {
+        Ok(output) => {
+          Output::new_gd(output)
+        }
+        Err(err) => {
+          panic!("Error: {}", err)
+        }
+    }        
+  }
+
+  #[func]
+  fn pick_choice(&mut self, choice: u32) -> Gd<Output> {
+    match self.runtime.pick_choice(choice.try_into().unwrap()) {
+        Ok(output) => {
+          Output::new_gd(output)
+        }
+        Err(err) => {
+          panic!("Error: {}", err)
+        }
+    }    
+  }
+
+
+
+
 }  
-//   #[func]
-//   fn load_config(&mut self, content: String) {
-//     self.config = Config::from_str(&content).unwrap();
-//   }
-
-
-
-//   }
-  
 //   // pub fn reset_story(&mut self)  {}
 //   // pub fn reset_state(&mut self)  {}
 //   // pub fn reset_all(&mut self)  {}
@@ -95,18 +189,13 @@ impl Cuentitos {
 
 //   // pub fn peek_next(&self) -> Result<Output, RuntimeError>  {}
 
-//   // pub fn next_block(&mut self) -> Result<Output, RuntimeError>  {}
 
-//   // pub fn progress_story(&mut self) -> Result<Output, RuntimeError> {}
-
-//   // pub fn skip(&mut self) -> Result<Output, RuntimeError>  {}
 //   // pub fn skip_all(&mut self) -> Result<Output, RuntimeError>  {}
 
 //   // pub fn get_block(&self, stack_data: &BlockStackData) -> Result<Block, RuntimeError>  {}
 
 //   // pub fn current(&self) -> Result<Output, RuntimeError>  {}
 
-//   // pub fn pick_choice(&mut self, choice: usize) -> Result<Output, RuntimeError>  {}
 
 //   // pub fn set_variable<R, T>(&mut self, variable: R, value: T) -> Result<(), RuntimeError> {}
 
