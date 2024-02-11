@@ -1,5 +1,5 @@
 use cuentitos_runtime::Database;
-use std::borrow::BorrowMut;
+
 
 use rmp_serde::Serializer;
 use serde::Serialize;
@@ -45,7 +45,7 @@ struct Output {
   #[var]
   choices: Array<GString>,
   #[var]
-  blocks: Array<Gd<Block>>,
+  blocks: GString,
   base: Base<Object>
 }
 
@@ -53,14 +53,10 @@ impl Output {
   fn new_gd(cuentitos_output: cuentitos_runtime::Output) -> Gd<Self> {
     let text = cuentitos_output.text.into();
     let mut choices = Array::new();
-    let mut blocks = Array::new();
-
+    let blocks = serde_json::to_string(&cuentitos_output.blocks).unwrap().into();
+    
     for choice in cuentitos_output.choices {
       choices.push(choice.into())
-    }
-
-    for block in cuentitos_output.blocks {
-
     }
 
     Gd::from_init_fn(|base| {
@@ -74,36 +70,6 @@ impl Output {
   }
 }
 
-#[derive(Default)]
-enum BlockType {
-  #[default]
-  None,
-  Text,
-  Choice,
-  Bucket,
-  Section,
-  Divert,
-  BoomerangDivert
-}
-
-#[class(init, base=Object)]
-#[derive(GodotClass)]
-struct Block {
-  kind: BlockType,
-  id: String,
-  name: String,
-  // next: NextBlock,
-  // settings: BlockSettings,
-  base: Base<Object>
-}
-
-// #[derive(Default)]
-// struct NextBlock {
-//   #[default]
-//   EndOfFile,
-//   BlockId(BlockId),
-//   Section(Section),
-// }
 
 
 
@@ -161,6 +127,18 @@ impl Cuentitos {
   }
 
   #[func]
+  fn current(&self) -> Gd<Output> {
+    match self.runtime.current() {
+        Ok(output) => {
+          Output::new_gd(output)
+        }
+        Err(err) => {
+          panic!("Error: {}", err)
+        }
+    }            
+  }
+
+  #[func]
   fn pick_choice(&mut self, choice: u32) -> Gd<Output> {
     match self.runtime.pick_choice(choice.try_into().unwrap()) {
         Ok(output) => {
@@ -171,10 +149,6 @@ impl Cuentitos {
         }
     }    
   }
-
-
-
-
 }  
 //   // pub fn reset_story(&mut self)  {}
 //   // pub fn reset_state(&mut self)  {}
