@@ -1,10 +1,15 @@
+use palabritas::Rule;
+use cuentitos_common::Script;
+use cuentitos_common::Config;
+use cuentitos_common::Database;
 use i18n::I18n;
-use palabritas::parse_database_from_path;
+use palabritas::parse_database_str;
 use rmp_serde::Serializer;
-use serde::Serialize;
+use serde::{ Serialize };
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
+use palabritas::*;
 
 mod i18n;
 
@@ -29,6 +34,30 @@ where
 
   Ok(())
 }
+
+pub fn compile_from_str(source_code: &str, _config_toml: &str) -> Result<Database, Box<dyn std::error::Error>> {
+
+  // let config: Config = match toml::from_str(config_toml) {
+  //   Ok(d) => d,
+  //   Err(err) => {
+  //     return Err(Box::new(err));
+  //   }
+  // };
+
+  // println!("Compiling from config: {:?}", config);
+  Ok(parse_database_str(source_code, &Config::default())?)
+}
+
+
+pub fn compile_database<T>(source_path: T) -> Result<Database, Box<dyn std::error::Error>>
+where
+  T: AsRef<Path>,
+{
+  let db = parse_database_from_path(&source_path)?;
+  
+  Ok(db)
+}
+
 
 #[cfg(test)]
 mod test {

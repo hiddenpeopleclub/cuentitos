@@ -1,0 +1,52 @@
+body {
+  background-color: #bc9262;
+  margin: 0;
+  font-family: Arial, sans-serif;
+}
+
+#buffer {
+  background-color: #edd1b0;
+  padding: 2rem;
+  width: 900px;
+  margin: 2rem auto;
+  margin-bottom: 5vh;
+  font-size: 1.2em;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-font-smoothing: antialiased !important;
+  text-rendering: optimizelegibility !important;
+  letter-spacing: .03em;
+  height: 80vh;
+  overflow: scroll;
+}
+
+p {
+  margin: 0.5rem;
+}
+
+.choice {
+  background: #222831;
+  color: white;
+  padding: 0.5rem;
+  cursor: pointer;
+  max-width: 80%;
+  margin: 0.2rem auto;
+}
+
+.choice:hover {
+  background-color: #bc9262;
+}
+
+.selected-choice {
+  font-weight: bold;
+  font-style: italic;
+}
+
+#actions {
+  position: fixed;
+  bottom: 0;
+  width: 100vw;
+  padding: 1rem;
+  background-color: #bc9262;
+  text-align: center;
+}

@@ -2,8 +2,10 @@
 resolver = "2"
 members = [
   "runtime",
+  "runtime-wasm",
   "palabritas",
   "compiler",
+  "compiler-wasm",
   "common",
-  "cli",
+  "cli"
 ]

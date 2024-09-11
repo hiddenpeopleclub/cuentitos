@@ -12,3 +12,5 @@ Cargo.lock
 .DS_Store
 **/*.db
 history.txt
+
+node_modules
