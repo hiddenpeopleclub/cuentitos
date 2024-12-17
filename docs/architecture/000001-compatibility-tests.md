@@ -78,7 +78,14 @@ This tool will be created in the `compat` directory and named
 To run all tests, you will use:
 
 ```bash
-./cuentitos-compat [runtime_cli] [test_cases_directory]
+./cuentitos-compat [runtime_cli] [test_case_glob]
+```
+
+`runtime_cli` is the path to the runtime executable, and `test_case_glob` is a
+glob pattern to match the test files:
+
+```bash
+./cuentitos-compat ./cuentitos-cpp compatibility-tests/**/*.md
 ```
 
 To run a specific test case:
@@ -98,7 +105,7 @@ To skip failing tests for scripts with errors, you can use the `--ignore-errors`
 flag:
 
 ```bash
-./cuentitos-compat [runtime_cli] [test_case_file_path] --ignore-errors
+./cuentitos-compat [runtime_cli] [test_case_glob] --ignore-errors
 ```
 
 This option will exclude error-producing test cases from the final report.

@@ -1,0 +1,2 @@
+#!/bin/bash
+cargo run -- ./target/debug/cuentitos-runtime ./compatibility-tests/**/*.md

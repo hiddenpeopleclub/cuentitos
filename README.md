@@ -4,11 +4,11 @@ NOTICE: I'm in the process of reimplementing the whole project. This will be ext
 
 # `cuentitos`
 
-`cuentitos` is a probabilistic narrative environment designed to make creating interactive stories a pleasure.
+`cuentitos` is a probabilistic narrative environment designed to make creating interactive stories **frictionless**.
 
 It's designed from the ground up to make writers more productive, simplifying workflows and assisting the creative process as much as possible.
 
-This repository holds the core components of Cuentitos, the probabilistic narrative engine.
+This repository holds the core components of `cuentitos`, its scripting language, compiler and runtimes.
 
 Please, refer to each project's README.md for specific information.
 
@@ -26,19 +26,18 @@ Please, refer to each project's README.md for specific information.
 ## Components
 
 - [ADRs](docs/architecture): Every time I make a design decision, I write an ADR. This is the place to look for the rationale behind the design.
-- [Compatibility Test Suite](tests): This repository contains all the tests that are run against the different runtimes to ensure compatibility.
+- [Compatibility Test Suite](compatibility-tests): This repository contains all the tests that are run against the different runtimes to ensure compatibility.
 - [Language](language): 
 - [Compiler](compiler):
 - [Reference Runtime](runtime): A reference runtime written in Rust.
+- [C++ Runtime](runtime-cpp): A C++ runtime that can be embedded in game engines and consoles.
 - [Developer Portal](website): The SSR for [https://dev.cuentitos.studio](https://dev.cuentitos.studio)
 
 ## Philosophy
 
 `cuentitos` is expected to be a **powerful** and **extremely productive** environment.
 
-This goal enforces a very opinionated design that is the consequence of hitting my head to the wall for years.
-
-TODO(fran): Write a proper Philosophy doc.
+This goal enforces a very opinionated design that is the consequence of hitting my head against the wall for years.
 
 ## Build
 
