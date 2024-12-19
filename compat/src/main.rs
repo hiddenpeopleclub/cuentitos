@@ -1,29 +1,70 @@
+use crate::test_runner::TestRunner;
+use crate::test_case::TestCase;
 use glob::{glob, GlobError};
 use std::path::PathBuf;
 use clap::Parser;
-/// Simple program to greet a person
+
+mod test_runner;
+mod test_case;
 
 #[derive(Parser, Debug)]
 struct Args {
-    /// Runtime path
-    // #[arg(short, long)]
-    runtime: PathBuf,
+  /// Runtime path
+  // #[arg(short, long)]
+  runtime: PathBuf,
 
-    /// Compatibility Tests path
-    // #[arg(short, long, default_value_t = 1)]
-    compatibility_tests: String,
-
+  /// Compatibility Tests path
+  // #[arg(short, long, default_value_t = 1)]
+  compatibility_tests: String,
 }
 
-
 fn main() {
-    let args = Args::parse();
+  let args = Args::parse();
 
-    let compatibility_tests = get_compatibility_tests(args.compatibility_tests);
+  // Check that the runtime exists
+  if !args.runtime.exists() {
+    eprintln!("Error: Runtime path does not exist");
+    return;
+  }
 
-    // println!("Runtime {:?}, {:?}", args.runtime, args.compatibility_tests);
+  // Check that the runtime is a file
+  if !args.runtime.is_file() {
+    eprintln!("Error: Runtime path is not a file");
+    return;
+  }
 
-    dbg!(compatibility_tests);
+  let compatibility_tests = get_compatibility_tests(args.compatibility_tests);
+
+  // Check that there are compatibility tests
+  if compatibility_tests.len() == 0 {
+    eprintln!("Error: No compatibility tests found");
+    return;
+  }
+  let runner = TestRunner::from_path(args.runtime);
+  let mut results = vec![];
+
+  for test in compatibility_tests {
+    match test {
+      Ok(path) => {
+        // Load test content
+        let content = std::fs::read_to_string(path);
+        match content {
+          Ok(content) => {
+            let test_case = TestCase::from_string(content);
+            results.push(runner.run(test_case));
+          },
+          Err(e) => {
+            eprintln!("Error: {:?}", e);
+          }
+        }
+      },
+      Err(e) => {
+        eprintln!("Error: {:?}", e);
+      }
+    }
+  }
+
+  dbg!(results);
 }
 
 
