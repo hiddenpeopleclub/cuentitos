@@ -1,8 +1,8 @@
 pub struct TestCase {
-  name: String,
-  script: String,
-  input: String,
-  result: String
+  pub name: String,
+  pub script: String,
+  pub input: String,
+  pub result: String
 }
 
 
