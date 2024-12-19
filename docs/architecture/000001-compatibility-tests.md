@@ -2,7 +2,7 @@
 
 ### Submitters
 
-- Fran Tufro (Hidden People Club)
+- Fran Tufro
 
 ## Change Log
 
@@ -125,6 +125,9 @@ The runtime CLI must support the following parameters:
 - Return **1** when the script fails.
 - Print all output to the standard output, so it can be captured by the test
 runner.
+
+For more information, see the [relevant ADR](./000002-cli-requirements-for-compatibility-tests.md).
+
 
 ### Documentation
 
