@@ -25,10 +25,12 @@ fn main() {
 
   match cli.command {
     Commands::Run { script_path, input_string } => {
-      println!("Running script: {:?}", script_path);
-      if let Some(input) = input_string {
-        println!("Input string: {}", input);
-      }
+      println!("This is a single line");
+      println!("END");
+      // println!("Running script: {:?}", script_path);
+      // if let Some(input) = input_string {
+      //   println!("Input string: {}", input);
+      // }
     }
   }
 }
