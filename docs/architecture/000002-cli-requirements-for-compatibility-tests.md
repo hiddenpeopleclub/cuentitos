@@ -1,12 +1,14 @@
 # CLI Requirements for Compatibility Tests
 
-Para poder correr los tests de compatibilidad en forma efectiva, quiero definir un conjunto de requerimientos para la CLI.
+To effectively run compatibility tests, I aim to establish a clear set of
+requirements for the runtime's command line interface (CLI).
 
-En este ADR voy a documentar estos requerimientos para facilitar la implementación del CLI
+In this ADR, I will document these requirements to streamline the implementation
+process.
 
 ### Submitters
 
-- Fran Tufro (Hidden People Club)
+- Fran Tufro
 
 ## Change Log
 
@@ -14,46 +16,58 @@ En este ADR voy a documentar estos requerimientos para facilitar la implementaci
 
 ## Referenced Use Case(s)
 
-To simplify the process of implementing a new runtime it must be clear what the compatibility test runner is expecting.
+To simplify the implementation of a new runtime, it must be clear what the
+compatibility test runner expects.
 
 ## Context
 
-As part of creating a healthy ecosystem for runtimes, we need a set of tests for compatibility.
+Creating a robust ecosystem for runtimes requires a comprehensive set of
+compatibility tests.
 
-These tests will be created in the `compatibility-tests` folder, and executed using the `cuentitos-compat` command.
+These tests will reside in the `compatibility-tests` folder and will be executed
+using the `cuentitos-compat` command.
 
-`cuentitos-compat` will call the provided cuentitos CLI with the tests and generate a report.
+`cuentitos-compat` will invoke the provided `cuentitos` CLI with the tests and
+generate a report.
 
-For this to work, I need to define how that CLI behaves for this purpose.
+To enable this functionality, we need to define the expected behavior of the
+CLI.
 
 ## Proposed Design
 
-First of all, the CLI should support being called with a `run` command that receives a script file and an input file:
+The CLI should support a `run` command that accepts a `script` file and an
+`input_string` sequence:
 
 ```bash
-./runtime-cli run [script_file_path] --input [input_file_path]
+./runtime-cli run [script_file_path] --input [input_string]
 ```
 
-The script can be both a valid, or invalid `cuentitos` script file.
+The script can be either a valid or invalid `cuentitos` script file.
 
-If it's invalid, the error has to be printed in the standard output.
+- If the script is invalid, the error must be printed to the standard output.
+  This ensures we can test for error compatibility.
 
-We care about this because we want to be able to test for error compatibility.
+- If the script is valid, the input should be executed as if a human was
+  interacting with the runtime.
 
-If it's valid, the input should be executed as if there was a human typing it.
-
-The CLI needs to implement the latest CLI Spec, that can be found in the docs section of this repository (I'm not including it here because it will change frequently during development).
+The CLI must adhere to the latest CLI Spec, which is available in the
+repository's documentation. (The spec is not included here, as it will evolve
+frequently during development.)
 
 ## Considerations
 
-The CLI will have multiple modes, so it made sense to add a `run` mode that can be interactive or headless.
+Since the CLI will support multiple modes, it makes sense to introduce a `run`
+mode that can operate interactively or headlessly.
 
-I'll define other modes that might be required for different uses.
+Additional modes may be defined for other use cases as needed.
 
 ## Decision
 
-I'll create a new document that's called `cli-spec.md` and will keep the latest spec of the CLI. This can be used both to document the usage and support whoever is implementing a new runtime with its associated CLI.
+I will create a new document, `cli-spec.md`, to maintain the latest CLI
+specifications. This document will serve as both usage documentation and a
+resource for developers implementing new runtimes with their associated CLI.
 
 ## Other Related ADRs
 
-- [Compatibility Tests](adr/000001-compatibility-tests) - This defines how compatibility tests are built.
+- [Compatibility Tests](adr/000001-compatibility-tests) - Defines the process
+for building compatibility tests.
