@@ -8,4 +8,5 @@ default-run = 'cuentitos-compat'
 
 [dependencies]
 clap = { version = "4.5.23", features = ["derive"] }
+colored = "3.0.0"
 glob = "0.3.1"
