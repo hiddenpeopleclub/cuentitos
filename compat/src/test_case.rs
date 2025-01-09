@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct TestCase {
   pub name: String,
   pub script: String,
@@ -30,15 +31,14 @@ impl TestCase {
 }
 
 mod test {
-  use super::*;
 
-  #[test]
+#[test]
   fn test_case_from_string_with_simple_test() {
     let content = include_str!(
       "../../compatibility-tests/00000000001-single-line-and-end.md"
     );
 
-    let test_case = TestCase::from_string(content);
+    let test_case = super::TestCase::from_string(content);
     assert_eq!(test_case.name, "Single Line and End");
     assert_eq!(test_case.script, "This is a single line");
     assert_eq!(test_case.input, "n");
