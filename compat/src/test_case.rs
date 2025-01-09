@@ -1,9 +1,14 @@
+use std::path::Path;
+use std::path::PathBuf;
+
+
 #[derive(Clone)]
 pub struct TestCase {
   pub name: String,
   pub script: String,
   pub input: String,
-  pub result: String
+  pub result: String,
+  pub path: PathBuf
 }
 
 
@@ -18,15 +23,16 @@ fn parse_markdown_blog(content: &str, language: &str) -> String {
 
 
 impl TestCase {
-  pub fn from_string<A>(content: A) -> Self
-    where A : AsRef<str>
+  pub fn from_string<A, B>(content: A, path: B) -> Self
+    where A : AsRef<str>, B : AsRef<Path>
   {
     let name = parse_name(content.as_ref());
     let script = parse_markdown_blog(content.as_ref(), "cuentitos");
     let input = parse_markdown_blog(content.as_ref(), "input");
     let result = parse_markdown_blog(content.as_ref(), "result");
 
-    TestCase { name, script, input, result }
+    TestCase { name, script, input, result, path: path.as_ref().into() }
+
   }
 }
 
@@ -38,7 +44,10 @@ mod test {
       "../../compatibility-tests/00000000001-single-line-and-end.md"
     );
 
-    let test_case = super::TestCase::from_string(content);
+    let test_case = super::TestCase::from_string(
+      content,
+      "compatibility-tests/00000000001-single-line-and-end.md"
+      );
     assert_eq!(test_case.name, "Single Line and End");
     assert_eq!(test_case.script, "This is a single line");
     assert_eq!(test_case.input, "n");

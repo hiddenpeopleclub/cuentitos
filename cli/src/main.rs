@@ -24,7 +24,7 @@ fn main() {
   let cli = Args::parse();
 
   match cli.command {
-    Commands::Run { script_path, input_string } => {
+    Commands::Run { script_path: _, input_string: _ } => {
       println!("This is a single line");
       println!("END");
       // println!("Running script: {:?}", script_path);

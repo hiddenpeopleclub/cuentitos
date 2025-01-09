@@ -8,7 +8,7 @@ use crate::TestCase;
 #[derive(Debug, Clone)]
 pub enum TestResult{
   Pass,
-  Fail(String)
+  Fail{ expected: Option<String>, actual: String }
 }
 
 pub struct TestRunner {
@@ -44,17 +44,18 @@ impl TestRunner {
           if expected == output {
             TestResult::Pass
           } else {
-            TestResult::Fail(
-              format!(
-                "Expected output:\n{}\n\nBut runtime returned:{}\n", test_case.result, String::from_utf8(result.stdout).unwrap()
-              )
-            )
+            TestResult::Fail {
+              expected: Some(test_case.result),
+              actual: String::from_utf8(result.stdout).unwrap()
+            }
           }
         }
         Err(err) => {
           dbg!(err);
-          TestResult::Fail("Error running test".to_string())
-
+          TestResult::Fail {
+            expected: None,
+            actual: "Error running test".to_string()
+          }
         }
     };
 
