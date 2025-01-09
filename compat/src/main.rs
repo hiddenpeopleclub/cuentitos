@@ -1,3 +1,4 @@
+use crate::test_runner::TestResult;
 use crate::test_runner::TestRunner;
 use crate::test_case::TestCase;
 use glob::{glob, GlobError};
@@ -41,7 +42,8 @@ fn main() {
     return;
   }
   let runner = TestRunner::from_path(args.runtime);
-  let mut results = vec![];
+
+  let mut failed_tests = vec![];
 
   for test in compatibility_tests {
     match test {
@@ -51,7 +53,14 @@ fn main() {
         match content {
           Ok(content) => {
             let test_case = TestCase::from_string(content);
-            results.push(runner.run(test_case));
+
+            match runner.run(test_case.clone()) {
+              TestResult::Pass => print!("."),
+              TestResult::Fail(reason) => {
+                print!("F");
+                failed_tests.push((test_case, reason));
+              }
+            };
           },
           Err(e) => {
             eprintln!("Error: {:?}", e);
@@ -64,7 +73,10 @@ fn main() {
     }
   }
 
-  dbg!(results);
+  for (test, reason) in failed_tests {
+    eprintln!("Test failed: {}", test.name);
+    eprintln!("{}", reason);
+  }
 }
 
 
