@@ -21,3 +21,19 @@ pub fn parse(line: Line) -> Result<LineParserResult, ParseError> {
     }
   )
 }
+
+mod tests {
+  use super::*;
+
+#[test]
+  fn test_parse() {
+    let line = Line {
+      parsed: false,
+      text: "Hello, world!",
+    };
+
+    let result = super::parse(line).unwrap();
+    assert_eq!(result.block, super::Block::String(1));
+    assert_eq!(result.string, "Hello, world!");
+  }
+}

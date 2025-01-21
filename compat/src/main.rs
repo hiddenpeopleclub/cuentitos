@@ -1,13 +1,12 @@
 use crate::test_runner::TestResult;
 use crate::test_runner::TestRunner;
-use crate::test_case::TestCase;
 use glob::{glob, GlobError};
 use std::path::PathBuf;
 use clap::Parser;
 use colored::Colorize;
+use cuentitos_common::test_case::TestCase;
 
 mod test_runner;
-mod test_case;
 
 #[derive(Parser, Debug)]
 struct Args {
