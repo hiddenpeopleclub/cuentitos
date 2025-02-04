@@ -11,7 +11,6 @@ pub struct TestCase {
   pub path: PathBuf
 }
 
-
 fn parse_name(content: &str) -> String {
   content.lines().next().unwrap().split("# ").collect::<Vec<&str>>()[1].to_string()
 }
@@ -37,8 +36,7 @@ impl TestCase {
 }
 
 mod test {
-
-#[test]
+  #[test]
   fn test_case_from_string_with_simple_test() {
     let content = include_str!(
       "../../compatibility-tests/00000000001-single-line-and-end.md"
@@ -56,5 +54,4 @@ mod test {
 END"
 );
   }
-
 }

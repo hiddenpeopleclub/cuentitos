@@ -7,7 +7,7 @@ pub enum Block {
     String(StringId)
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Database {
     pub blocks: Vec<Block>,
     pub strings: Vec<String>

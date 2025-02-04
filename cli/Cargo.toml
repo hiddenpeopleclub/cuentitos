@@ -9,3 +9,4 @@ edition = "2021"
 clap = { version = "4.5.23", features = ["derive"] }
 cuentitos-common = { path = "../common" }
 cuentitos-parser = { path = "../parser" }
+cuentitos-runtime = { path = "../runtime" }

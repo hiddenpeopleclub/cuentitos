@@ -1,4 +1,3 @@
-use std::fs::File;
 use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 /// Simple program to greet a person
@@ -32,7 +31,20 @@ fn main() {
 
       // Parse it
       let database = cuentitos_parser::parse(&script).unwrap();
-      println!("{:?}", database);
+
+      // Run in runtime
+      let mut runtime = cuentitos_runtime::Runtime::new(database);
+
+      runtime.run();
+
+      while runtime.running() {
+        if let Some(input) = input_string {
+          input.split(",").for_each(|input| {
+            println!("Input string: {}", input);
+          });
+        }
+        break;
+      }
 
       // println!("This is a single line");
       // println!("END");
