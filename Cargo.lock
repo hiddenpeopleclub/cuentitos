@@ -113,6 +113,7 @@ dependencies = [
  "clap",
  "cuentitos-common",
  "cuentitos-parser",
+ "cuentitos-runtime",
 ]
 
 [[package]]
@@ -134,6 +135,14 @@ name = "cuentitos-parser"
 version = "0.3.0"
 dependencies = [
  "cuentitos-common",
+]
+
+[[package]]
+name = "cuentitos-runtime"
+version = "0.3.0"
+dependencies = [
+ "cuentitos-common",
+ "cuentitos-parser",
 ]
 
 [[package]]
