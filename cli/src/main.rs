@@ -19,7 +19,6 @@ enum Commands {
   },
 }
 
-
 fn main() {
   let cli = Args::parse();
 
@@ -37,21 +36,49 @@ fn main() {
 
       runtime.run();
 
-      while runtime.running() {
-        if let Some(input) = input_string {
+      render_current_block(&runtime);
+      if let Some(input) = input_string {
+        if input != "" {
           input.split(",").for_each(|input| {
-            println!("Input string: {}", input);
+            process_input(input, &mut runtime);
+            render_current_block(&runtime);
           });
         }
-        break;
       }
-
-      // println!("This is a single line");
-      // println!("END");
-      // println!("Running script: {:?}", script_path);
-      // if let Some(input) = input_string {
-      //   println!("Input string: {}", input);
-      // }
+      if runtime.has_ended() {
+        println!("END");
+        runtime.stop();
+      } else {
+        println!("DID NOT END");
+      }
     }
+  }
+}
+
+fn process_input(input: &str, runtime: &mut cuentitos_runtime::Runtime) {
+  match input {
+    "n" => {
+      if runtime.can_continue() {
+        runtime.step();
+      } else {
+        panic!("TODO ADR: Input Can't Continue");
+      }
+    }
+    "q" => {
+      runtime.stop();
+    } ,
+    &_ => {}
+  }
+}
+
+fn render_current_block(runtime: &cuentitos_runtime::Runtime) {
+  if let Some(block) = runtime.current_block() {
+    match block {
+      cuentitos_common::Block::String(id) => {
+        println!("{}", runtime.database.strings[id]);
+      }
+    }
+  } else {
+    println!("END");
   }
 }
