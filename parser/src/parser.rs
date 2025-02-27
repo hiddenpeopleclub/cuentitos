@@ -19,6 +19,8 @@ impl Parser {
 
     let script = script.as_ref();
 
+    database.blocks.push(Block::Start);
+
     // iterate through each line
     for line in script.lines() {
       let line = line_parser::Line { parsed: false, text: line };
@@ -33,11 +35,13 @@ impl Parser {
       }
     }
 
+    database.blocks.push(Block::End);
+
     Ok(database)
   }
 }
 
-
+#[cfg(test)]
 mod test {
   use cuentitos_common::test_case::TestCase;
   use super::*;
@@ -51,10 +55,12 @@ mod test {
 
     let mut parser = Parser::default();
     let database = parser.parse(test_case.script).unwrap();
-    assert_eq!(database.blocks.len(), 1);
+    assert_eq!(database.blocks.len(), 3);
     assert_eq!(database.strings.len(), 1);
-    assert_eq!(database.blocks[0], Block::String(0));
+    assert_eq!(database.blocks[0], Block::Start);
+    assert_eq!(database.blocks[1], Block::String(0));
     assert_eq!(database.strings[0], "This is a single line");
+    assert_eq!(database.blocks[2], Block::End);
 
   }
 }

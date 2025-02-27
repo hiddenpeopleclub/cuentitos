@@ -12,6 +12,8 @@ This is another line of text
 ## Input
 ```input
 n
+n
+n
 ```
 
 ## Result

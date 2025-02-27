@@ -16,6 +16,7 @@ s
 
 ## Result
 ```result
+START
 This is a single line
 This is another line of text
 END

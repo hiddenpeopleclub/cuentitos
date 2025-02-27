@@ -10,6 +10,8 @@ This is a single line
 
 ## Input
 ```input
+n
+n
 ```
 
 ## Result
