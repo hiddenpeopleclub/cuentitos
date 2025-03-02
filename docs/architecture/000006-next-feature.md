@@ -54,7 +54,6 @@ The implementation of the "next" feature will be housed in the `Runtime` struct 
    - `can_continue()`: Verifies if the runtime is running and has not reached the end
    - `has_ended()`: Checks if the current block is an End block
    - `current_block()`: Returns the block at the current program counter
-   - `current_blocks()`: Returns a vector of blocks between the previous and current program counter
 
 3. Integration with the CLI:
    - The CLI will interpret the 'n' command as a request to call the `step()` method
