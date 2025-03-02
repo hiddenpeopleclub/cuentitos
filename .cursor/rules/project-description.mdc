@@ -1,0 +1,14 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+
+cuentitos is a game narrative engine with probability in its core.
+
+The `compatibility-tests` folder includes all the tests that explain how the engine should work.
+
+The command `./bin/run-compat` runs these compatibility tests to see if everything is working correctly.
+
+We use Test Driven Development by first writing a compatibility test, having it fail, then implement the feature, and having it pass.
+

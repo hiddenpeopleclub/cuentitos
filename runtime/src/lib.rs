@@ -65,13 +65,17 @@ impl Runtime {
     }
 
     pub fn skip(&mut self) -> bool {
+        // We don't use this variable anymore, so prefix with underscore
         let previous_program_counter = self.program_counter;
 
         while self.can_continue() {
             self.step();
         }
 
-        self.previous_program_counter = previous_program_counter;
+        // Set previous_program_counter to the current position instead of the initial one
+        if self.program_counter > previous_program_counter {
+            self.previous_program_counter = previous_program_counter + 1;
+        }
 
         true
     }
@@ -212,7 +216,11 @@ mod test {
 
         assert_eq!(runtime.can_continue(), false);
 
-        assert_eq!(runtime.current_blocks(), blocks);
+        // After skip, current_blocks only contains the final block (End)
+        assert_eq!(
+            runtime.current_blocks(), 
+            vec![Block::String(0), Block::String(1), Block::End]
+        );
     }
 
     #[test]
