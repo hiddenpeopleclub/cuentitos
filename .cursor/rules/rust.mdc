@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description: These are the rules for Rust development
+globs: *.rs
 alwaysApply: false
 ---
 You are an expert in Rust, async programming, concurrent systems, language design and game narrative engine design.

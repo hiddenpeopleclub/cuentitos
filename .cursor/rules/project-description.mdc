@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description: These rules apply to all chats and define how the project works
+globs: *
 alwaysApply: false
 ---
 
