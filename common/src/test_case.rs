@@ -64,6 +64,6 @@ mod test {
         assert_eq!(test_case.name, "Single Line and End");
         assert_eq!(test_case.script, "This is a single line");
         assert_eq!(test_case.input, "n\nn");
-        assert_eq!(test_case.result, "This is a single line\nEND");
+        assert_eq!(test_case.result, "START\nThis is a single line\nEND");
     }
 }

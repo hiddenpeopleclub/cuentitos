@@ -39,6 +39,7 @@ fn main() {
             runtime.run();
 
             // Render start
+            render_current_blocks(&runtime);
             if let Some(input) = input_string {
                 if !input.is_empty() {
                     input.split(",").for_each(|input| {
