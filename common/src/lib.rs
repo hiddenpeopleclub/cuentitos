@@ -1,6 +1,6 @@
-pub mod test_case;
 pub mod block;
 pub mod database;
+pub mod test_case;
 
 pub type StringId = usize;
 

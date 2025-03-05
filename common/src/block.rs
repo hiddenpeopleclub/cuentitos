@@ -69,4 +69,4 @@ mod tests {
         let block = Block::new(BlockType::String(0), None, 0);
         assert!(block.is_leaf());
     }
-} 
+}

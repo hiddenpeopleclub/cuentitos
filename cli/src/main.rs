@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
 use cuentitos_parser::Parser as CuentitosParser;
+use std::path::PathBuf;
 /// Cuentitos - A narrative game engine with probability at its core
 
 #[derive(Parser, Debug)]
