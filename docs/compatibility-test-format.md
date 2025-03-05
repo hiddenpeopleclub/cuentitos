@@ -94,6 +94,7 @@ For the result we want to put the exact output that we expect from the runtime w
 Example:
 ````
 ```result
+BEGIN
 It's winter.
 But it's not that cold.
 I'm standing in front of my house, but I hear strange noises.
@@ -102,5 +103,6 @@ ME: Who are you?
 The person looks at you.
 UNFAMILIAR_FACE: The question is who are you?
 UNFAMILIAR_FACE: And what are you doing in MY house?
+END
 ```
 ````
