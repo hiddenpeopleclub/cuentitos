@@ -1,36 +1,30 @@
 use crate::ParseError;
-use cuentitos_common::Block;
 
 pub struct Line<'a> {
-    pub parsed: bool,
     pub text: &'a str,
 }
 
-#[derive(Debug)]
-pub struct LineParserResult {
-    pub block: Block,
+pub struct ParseResult {
     pub string: String,
 }
 
-pub fn parse(line: Line) -> Result<LineParserResult, ParseError> {
-    Ok(LineParserResult {
-        block: Block::String(1),
-        string: String::from(line.text),
+pub fn parse(line: Line) -> Result<ParseResult, ParseError> {
+    Ok(ParseResult {
+        string: line.text.to_string(),
     })
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_parse() {
         let line = Line {
-            parsed: false,
             text: "Hello, world!",
         };
 
         let result = super::parse(line).unwrap();
-        assert_eq!(result.block, super::Block::String(1));
         assert_eq!(result.string, "Hello, world!");
     }
 }
