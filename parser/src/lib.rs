@@ -1,7 +1,7 @@
 use cuentitos_common::*;
 
 mod parser;
-pub use parser::{Parser, ParseError};
+pub use parser::{ParseError, Parser};
 
 mod line_parser;
 

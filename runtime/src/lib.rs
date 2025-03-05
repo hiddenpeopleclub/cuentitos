@@ -43,7 +43,10 @@ impl Runtime {
     }
 
     pub fn has_ended(&self) -> bool {
-        matches!(self.current_block().map(|b| b.block_type), Some(BlockType::End))
+        matches!(
+            self.current_block().map(|b| b.block_type),
+            Some(BlockType::End)
+        )
     }
 
     pub fn current_blocks(&self) -> Vec<Block> {
@@ -77,7 +80,7 @@ impl Runtime {
         }
 
         let current_block = &self.database.blocks[self.program_counter];
-        
+
         // First, try to find a child
         if !current_block.children.is_empty() {
             return Some(current_block.children[0]);
@@ -87,13 +90,17 @@ impl Runtime {
         let mut current_id = self.program_counter;
         while let Some(parent_id) = self.database.blocks[current_id].parent_id {
             let parent = &self.database.blocks[parent_id];
-            let current_index = parent.children.iter().position(|&id| id == current_id).unwrap();
-            
+            let current_index = parent
+                .children
+                .iter()
+                .position(|&id| id == current_id)
+                .unwrap();
+
             // If there's a next sibling, return it
             if current_index + 1 < parent.children.len() {
                 return Some(parent.children[current_index + 1]);
             }
-            
+
             // Otherwise, move up to the parent and try again
             current_id = parent_id;
         }
@@ -175,14 +182,19 @@ mod test {
 
         runtime.run();
 
-        assert!(matches!(runtime.current_block().map(|b| b.block_type), Some(BlockType::Start)));
+        assert!(matches!(
+            runtime.current_block().map(|b| b.block_type),
+            Some(BlockType::Start)
+        ));
         assert_eq!(runtime.current_blocks().len(), 1);
 
         runtime.step();
 
         if let Some(block) = runtime.current_block() {
             match block.block_type {
-                BlockType::String(id) => assert_eq!(runtime.database.strings[id], "This is a single line"),
+                BlockType::String(id) => {
+                    assert_eq!(runtime.database.strings[id], "This is a single line")
+                }
                 _ => panic!("Expected String block"),
             }
         } else {
@@ -193,7 +205,9 @@ mod test {
 
         if let Some(block) = runtime.current_block() {
             match block.block_type {
-                BlockType::String(id) => assert_eq!(runtime.database.strings[id], "This is another line of text"),
+                BlockType::String(id) => {
+                    assert_eq!(runtime.database.strings[id], "This is another line of text")
+                }
                 _ => panic!("Expected String block"),
             }
         } else {
@@ -202,7 +216,10 @@ mod test {
 
         runtime.step();
 
-        assert!(matches!(runtime.current_block().map(|b| b.block_type), Some(BlockType::End)));
+        assert!(matches!(
+            runtime.current_block().map(|b| b.block_type),
+            Some(BlockType::End)
+        ));
     }
 
     #[test]
@@ -226,7 +243,9 @@ mod test {
 
         if let Some(block) = runtime.current_block() {
             match block.block_type {
-                BlockType::String(id) => assert_eq!(runtime.database.strings[id], "This is another line of text"),
+                BlockType::String(id) => {
+                    assert_eq!(runtime.database.strings[id], "This is another line of text")
+                }
                 _ => panic!("Expected String block"),
             }
         } else {
@@ -251,7 +270,10 @@ mod test {
 
         assert_eq!(runtime.can_continue(), false);
 
-        assert!(matches!(runtime.current_block().map(|b| b.block_type), Some(BlockType::End)));
+        assert!(matches!(
+            runtime.current_block().map(|b| b.block_type),
+            Some(BlockType::End)
+        ));
     }
 
     #[test]
@@ -271,25 +293,30 @@ mod test {
 
         // After skip, current_blocks shows all blocks that were skipped
         let blocks = runtime.current_blocks();
-        
+
         // We expect: Start, String1, String2, End
         assert_eq!(blocks.len(), 4);
-        
+
         // Start block
         assert!(matches!(blocks[0].block_type, BlockType::Start));
-        
+
         // First string
         match &blocks[1].block_type {
-            BlockType::String(id) => assert_eq!(runtime.database.strings[*id], "This is a single line"),
+            BlockType::String(id) => {
+                assert_eq!(runtime.database.strings[*id], "This is a single line")
+            }
             _ => panic!("Expected String block"),
         }
-        
+
         // Second string
         match &blocks[2].block_type {
-            BlockType::String(id) => assert_eq!(runtime.database.strings[*id], "This is another line of text"),
+            BlockType::String(id) => assert_eq!(
+                runtime.database.strings[*id],
+                "This is another line of text"
+            ),
             _ => panic!("Expected String block"),
         }
-        
+
         // End block
         assert!(matches!(blocks[3].block_type, BlockType::End));
     }
@@ -356,7 +383,10 @@ mod test {
         runtime.run();
 
         // Verify Start block
-        assert!(matches!(runtime.current_block().map(|b| b.block_type), Some(BlockType::Start)));
+        assert!(matches!(
+            runtime.current_block().map(|b| b.block_type),
+            Some(BlockType::Start)
+        ));
 
         // Step through each block and verify the order
         let expected_strings = vec![
@@ -384,7 +414,10 @@ mod test {
 
         // Final step should reach End block
         runtime.step();
-        assert!(matches!(runtime.current_block().map(|b| b.block_type), Some(BlockType::End)));
+        assert!(matches!(
+            runtime.current_block().map(|b| b.block_type),
+            Some(BlockType::End)
+        ));
     }
 
     #[test]
@@ -478,11 +511,14 @@ mod test {
         runtime.skip();
 
         // Verify we're at the End block
-        assert!(matches!(runtime.current_block().map(|b| b.block_type), Some(BlockType::End)));
+        assert!(matches!(
+            runtime.current_block().map(|b| b.block_type),
+            Some(BlockType::End)
+        ));
 
         // Verify current_blocks shows all blocks that were skipped
         let blocks = runtime.current_blocks();
-        
+
         // Check levels and parent-child relationships
         assert_eq!(blocks[1].level, 0); // Parent
         assert_eq!(blocks[2].level, 1); // Child1
@@ -504,10 +540,10 @@ mod test {
         let mut database = Database::new();
         let start_block = Block::new(BlockType::Start, None, 0);
         database.add_block(start_block);
-        
+
         let mut runtime = Runtime::new(database);
         runtime.run();
-        
+
         // Should return None since there are no more blocks
         assert_eq!(runtime.find_next_block(), None);
 
@@ -516,10 +552,10 @@ mod test {
         database.add_block(Block::new(BlockType::Start, None, 0));
         database.add_block(Block::new(BlockType::String(0), None, 0));
         database.add_block(Block::new(BlockType::End, None, 0));
-        
+
         let mut runtime = Runtime::new(database);
         runtime.run();
-        
+
         // Should still be able to move to the next block
         assert_eq!(runtime.find_next_block(), Some(1));
         runtime.step();
