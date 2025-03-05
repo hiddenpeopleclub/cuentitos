@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
-/// Simple program to greet a person
+use cuentitos_parser::Parser as CuentitosParser;
+/// Cuentitos - A narrative game engine with probability at its core
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -11,11 +12,12 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// does testing things
+    /// Run a Cuentitos script
     Run {
-        /// lists test values
+        /// Path to the script file to run
         script_path: PathBuf,
-        input_string: Option<String>,
+        /// Comma-separated list of inputs (e.g., "n,n,s,q")
+        input_string: String,
     },
 }
 
@@ -28,71 +30,86 @@ fn main() {
             input_string,
         } => {
             // Read the script file
-            let script = std::fs::read_to_string(script_path).unwrap();
+            let script = match std::fs::read_to_string(&script_path) {
+                Ok(content) => content,
+                Err(err) => {
+                    eprintln!("Error reading script file: {}", err);
+                    std::process::exit(1);
+                }
+            };
+
+            // Create parser with file path
+            let mut parser = CuentitosParser::with_file(script_path);
 
             // Parse it
-            let database = cuentitos_parser::parse(&script).unwrap();
+            match parser.parse(&script) {
+                Ok(database) => {
+                    // Run in runtime
+                    let mut runtime = cuentitos_runtime::Runtime::new(database);
+                    runtime.run();
 
-            // Run in runtime
-            let mut runtime = cuentitos_runtime::Runtime::new(database);
+                    // Process inputs
+                    if !input_string.is_empty() {
+                        for input in input_string.split(',') {
+                            if !process_input(input.trim(), &mut runtime) {
+                                break;
+                            }
+                        }
+                    }
 
-            runtime.run();
+                    // Final render
+                    render_current_blocks(&runtime);
 
-            // Render start
-            render_current_blocks(&runtime);
-            if let Some(input) = input_string {
-                if !input.is_empty() {
-                    input.split(",").for_each(|input| {
-                        process_input(input, &mut runtime);
-                        render_current_blocks(&runtime);
-                    });
+                    if runtime.has_ended() {
+                        runtime.stop();
+                    } else {
+                        eprintln!("\nWarning: Script did not reach the End block.");
+                    }
                 }
-            }
-
-            if runtime.has_ended() {
-                runtime.stop();
-            } else {
-                println!("DID NOT END");
+                Err(err) => {
+                    println!("{}", err);
+                    std::process::exit(1);
+                }
             }
         }
     }
 }
 
-fn process_input(input: &str, runtime: &mut cuentitos_runtime::Runtime) {
+fn process_input(input: &str, runtime: &mut cuentitos_runtime::Runtime) -> bool {
     match input {
         "n" => {
             if runtime.can_continue() {
                 runtime.step();
+                true
             } else {
-                panic!("TODO ADR: Input Can't Continue");
+                println!("Cannot continue - reached the end of the script.");
+                false
             }
         }
         "s" => {
             if runtime.can_continue() {
                 runtime.skip();
+                true
             } else {
-                panic!("TODO ADR: Input Can't Continue");
+                println!("Cannot skip - reached the end of the script.");
+                false
             }
         }
-        "q" => {
-            runtime.stop();
+        "q" => false,
+        "" => true, // Ignore empty input
+        _ => {
+            eprintln!("Unknown command: {}", input);
+            false
         }
-        &_ => {}
     }
 }
 
 fn render_current_blocks(runtime: &cuentitos_runtime::Runtime) {
     for block in runtime.current_blocks() {
-        match block {
-            cuentitos_common::Block::Start => {
-                println!("START");
-            }
-            cuentitos_common::Block::String(id) => {
-                println!("{}", runtime.database.strings[id]);
-            }
-            cuentitos_common::Block::End => {
-                println!("END");
-            }
+        match block.block_type {
+            cuentitos_common::BlockType::Start => println!("START"),
+            cuentitos_common::BlockType::String(id) => println!("{}", runtime.database.strings[id]),
+            cuentitos_common::BlockType::End => println!("END"),
         }
     }
 }
