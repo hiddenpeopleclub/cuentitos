@@ -29,7 +29,12 @@
   - [ ] Probabilistic Frequency manipulation (Docs & Implementation)
   - [ ] Function Calling (Docs & Implementation)
 
+# Compiler
+  - [ ] Script to JSON (Docs & Implementation)
+  - [ ] Script to Binary (Docs & Implementation)
+
 # Plugins
+  - [ ] Plugin Support (Docs & Implementation)
   - [ ] Image Backgrounds (Docs & Implementation)
   - [ ] Characters (Docs & Implementation)
   - [ ] Background Music (Docs & Implementation)
