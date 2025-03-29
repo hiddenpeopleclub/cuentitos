@@ -1,4 +1,4 @@
-use crate::line_parser;
+use crate::parsers::{FeatureParser, ParserContext, line_parser::LineParser};
 use cuentitos_common::*;
 use std::fmt;
 use std::path::PathBuf;
@@ -7,7 +7,7 @@ use std::path::PathBuf;
 pub struct Parser {
     last_block_at_level: Vec<BlockId>, // Stack to track last block at each level
     file_path: Option<PathBuf>,
-    current_line: usize,
+    line_parser: LineParser,
 }
 
 #[derive(Debug, Clone)]
@@ -49,12 +49,16 @@ impl fmt::Display for ParseError {
 
 impl Parser {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            line_parser: LineParser::new(),
+            ..Self::default()
+        }
     }
 
     pub fn with_file(file_path: PathBuf) -> Self {
         Self {
             file_path: Some(file_path),
+            line_parser: LineParser::new(),
             ..Self::default()
         }
     }
@@ -63,29 +67,27 @@ impl Parser {
     where
         A: AsRef<str>,
     {
-        let mut database = Database::new();
-        let script = script.as_ref();
-
-        // Reset line counter
-        self.current_line = 1;
+        let mut context = if let Some(file_path) = &self.file_path {
+            ParserContext::with_file(file_path.clone())
+        } else {
+            ParserContext::new()
+        };
 
         // Add Start block
         let start_block = Block::new(BlockType::Start, None, 0);
-        let start_id = database.add_block(start_block);
+        let start_id = context.database.add_block(start_block);
         self.last_block_at_level.push(start_id);
 
         // Iterate through each line
-        for line in script.lines() {
-            let (level, content) = self.parse_indentation(line)?;
+        for line in script.as_ref().lines() {
+            let (level, content) = self.parse_indentation(line, &context)?;
             if content.trim().is_empty() {
-                self.current_line += 1;
+                context.current_line += 1;
                 continue; // Skip empty lines
             }
 
-            let line = line_parser::Line {
-                text: content.trim(),
-            };
-            let result = line_parser::parse(line)?;
+            // Parse the line using the line parser
+            let result = self.line_parser.parse(content.trim(), &mut context)?;
 
             // Find parent block
             let parent_id = if level == 0 {
@@ -100,14 +102,14 @@ impl Parser {
                 return Err(ParseError::InvalidIndentation {
                     message: format!("found {} spaces in: {}", level * 2, content),
                     file: self.file_path.clone(),
-                    line: self.current_line,
+                    line: context.current_line,
                 });
             };
 
             // Create new block
-            let string_id = database.add_string(result.string);
+            let string_id = context.database.add_string(result.string);
             let block = Block::new(BlockType::String(string_id), parent_id, level);
-            let block_id = database.add_block(block);
+            let block_id = context.database.add_block(block);
 
             // Update last block at this level
             if level >= self.last_block_at_level.len() {
@@ -115,18 +117,16 @@ impl Parser {
             } else {
                 self.last_block_at_level[level] = block_id;
             }
-
-            self.current_line += 1;
         }
 
         // Add End block (with no parent)
         let end_block = Block::new(BlockType::End, None, 0);
-        database.add_block(end_block);
+        context.database.add_block(end_block);
 
-        Ok(database)
+        Ok(context.database)
     }
 
-    fn parse_indentation<'a>(&self, line: &'a str) -> Result<(usize, &'a str), ParseError> {
+    fn parse_indentation<'a>(&self, line: &'a str, context: &ParserContext) -> Result<(usize, &'a str), ParseError> {
         let spaces = line.chars().take_while(|c| *c == ' ').count();
 
         // Check if indentation is valid (multiple of 2)
@@ -134,7 +134,7 @@ impl Parser {
             return Err(ParseError::InvalidIndentation {
                 message: format!("found {} spaces.", spaces),
                 file: self.file_path.clone(),
-                line: self.current_line,
+                line: context.current_line,
             });
         }
 
