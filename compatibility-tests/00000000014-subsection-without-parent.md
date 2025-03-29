@@ -20,5 +20,5 @@ s
 
 ## Result
 ```result
-1: ERROR: Invalid section hierarchy: found sub-section without parent section.
+test.cuentitos:1: ERROR: Invalid section hierarchy: found sub-section without parent section.
 ```

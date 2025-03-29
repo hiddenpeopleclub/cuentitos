@@ -83,12 +83,23 @@ impl Parser {
                     dbg!(&section_result.title, section_result.level, &self.last_section_at_level);
 
                     // Check for orphaned sub-sections
-                    if section_result.level > 0 && (self.last_section_at_level.is_empty() || self.last_section_at_level.len() < section_result.level) {
-                        dbg!("Orphaned section detected", &section_result.title, section_result.level, &self.last_section_at_level);
-                        return Err(ParseError::OrphanedSubSection {
-                            file: self.file_path.clone(),
-                            line: self.current_line,
-                        });
+                    if section_result.level > 0 {
+                        // For a sub-section at level N, we need a section at level N-1
+                        let parent_level = section_result.level - 1;
+
+                        // Ensure we have enough levels tracked
+                        while self.last_section_at_level.len() <= parent_level {
+                            self.last_section_at_level.push(start_id);
+                        }
+
+                        let parent_id = self.last_section_at_level[parent_level];
+                        if !matches!(db.blocks[parent_id].block_type, BlockType::Section(_)) {
+                            dbg!("No valid parent section found", &section_result.title, section_result.level, &self.last_section_at_level);
+                            return Err(ParseError::OrphanedSubSection {
+                                file: self.file_path.clone(),
+                                line: self.current_line,
+                            });
+                        }
                     }
 
                     // Get parent section name if this is a sub-section
@@ -252,5 +263,97 @@ mod test {
         let mut parser = Parser::with_file("test.md");
         let result = parser.parse("   Hello");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_nested_sections() {
+        let mut parser = Parser::with_file("test.cuentitos");
+        let script = "\
+# Main Section
+This is text in the main section
+  ## First Sub-section
+  This is text in the first sub-section
+    ### Deep Sub-section
+    This is text in a deep sub-section
+  ## Second Sub-section
+  This is text in the second sub-section
+
+# Another Main Section
+This is text in another main section
+  ## Its Sub-section
+  This is text in its sub-section";
+
+        let database = parser.parse(script).unwrap();
+
+        // Verify we have the expected number of blocks:
+        // START + END + 2 root sections + 3 sub-sections + 1 deep sub-section + 6 text blocks
+        assert_eq!(database.blocks.len(), 13);
+
+        // Find the block IDs for each section
+        let find_section = |title: &str| -> BlockId {
+            database.blocks.iter()
+                .position(|block| matches!(block.block_type, BlockType::Section(id) if database.strings[id] == title))
+                .unwrap()
+        };
+
+        let main_section = find_section("Main Section");
+        let first_sub = find_section("First Sub-section");
+        let deep_sub = find_section("Deep Sub-section");
+        let second_sub = find_section("Second Sub-section");
+        let another_main = find_section("Another Main Section");
+        let its_sub = find_section("Its Sub-section");
+
+        // Verify section levels
+        assert_eq!(database.blocks[main_section].level, 0);
+        assert_eq!(database.blocks[first_sub].level, 1);
+        assert_eq!(database.blocks[deep_sub].level, 2);
+        assert_eq!(database.blocks[second_sub].level, 1);
+        assert_eq!(database.blocks[another_main].level, 0);
+        assert_eq!(database.blocks[its_sub].level, 1);
+
+        // Verify parent-child relationships
+        assert_eq!(database.blocks[main_section].parent_id, Some(0)); // Main Section -> START
+        assert_eq!(database.blocks[first_sub].parent_id, Some(main_section)); // First Sub-section -> Main Section
+        assert_eq!(database.blocks[deep_sub].parent_id, Some(first_sub)); // Deep Sub-section -> First Sub-section
+        assert_eq!(database.blocks[second_sub].parent_id, Some(main_section)); // Second Sub-section -> Main Section
+        assert_eq!(database.blocks[another_main].parent_id, Some(0)); // Another Main Section -> START
+        assert_eq!(database.blocks[its_sub].parent_id, Some(another_main)); // Its Sub-section -> Another Main Section
+
+        // Verify text blocks are present with correct content
+        let text_blocks: Vec<_> = database.blocks.iter()
+            .filter_map(|block| {
+                if let BlockType::String(id) = block.block_type {
+                    Some((block.level, database.strings[id].as_str()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(text_blocks, vec![
+            (0, "This is text in the main section"),
+            (1, "This is text in the first sub-section"),
+            (2, "This is text in a deep sub-section"),
+            (1, "This is text in the second sub-section"),
+            (0, "This is text in another main section"),
+            (1, "This is text in its sub-section"),
+        ]);
+    }
+
+    #[test]
+    fn test_orphaned_subsection() {
+        let mut parser = Parser::with_file("test.cuentitos");
+        let script = "  ## Orphaned Sub-section\n  This should cause an error\n\n# Valid Section\nThis is text in a valid section\n  ## Valid Sub-section\n  This is valid";
+
+        let result = parser.parse(script);
+        assert!(result.is_err());
+
+        match result {
+            Err(ParseError::OrphanedSubSection { file, line }) => {
+                assert_eq!(file.to_str().unwrap(), "test.cuentitos");
+                assert_eq!(line, 1);
+            }
+            _ => panic!("Expected OrphanedSubSection error"),
+        }
     }
 }

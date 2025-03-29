@@ -28,3 +28,4 @@ This is a sub-section with the same name
 This is a sub-sub-section with the same name
 END
 ```
+!!! disabled
