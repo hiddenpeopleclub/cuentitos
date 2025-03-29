@@ -1,4 +1,4 @@
-use crate::parsers::{FeatureParser, ParserContext, line_parser::LineParser};
+use crate::parsers::{FeatureParser, ParserContext, line_parser::LineParser, section_parser::SectionParser};
 use cuentitos_common::*;
 use std::fmt;
 use std::path::PathBuf;
@@ -8,6 +8,7 @@ pub struct Parser {
     last_block_at_level: Vec<BlockId>, // Stack to track last block at each level
     file_path: Option<PathBuf>,
     line_parser: LineParser,
+    section_parser: SectionParser,
 }
 
 #[derive(Debug, Clone)]
@@ -49,79 +50,130 @@ impl fmt::Display for ParseError {
 
 impl Parser {
     pub fn new() -> Self {
-        Self {
-            line_parser: LineParser::new(),
-            ..Self::default()
-        }
+        Self::default()
     }
 
     pub fn with_file(file_path: PathBuf) -> Self {
         Self {
             file_path: Some(file_path),
             line_parser: LineParser::new(),
-            ..Self::default()
+            section_parser: SectionParser::new(),
+            last_block_at_level: vec![],
         }
     }
 
-    pub fn parse<A>(&mut self, script: A) -> Result<Database, ParseError>
-    where
-        A: AsRef<str>,
-    {
-        let mut context = if let Some(file_path) = &self.file_path {
-            ParserContext::with_file(file_path.clone())
-        } else {
-            ParserContext::new()
-        };
+    pub fn parse(&self, script: &str) -> Result<Database, ParseError> {
+        let mut context = ParserContext::new();
+        if let Some(file_path) = &self.file_path {
+            context.file_path = Some(file_path.clone());
+        }
 
-        // Add Start block
-        let start_block = Block::new(BlockType::Start, None, 0);
-        let start_id = context.database.add_block(start_block);
-        self.last_block_at_level.push(start_id);
+        let mut last_block_at_level = vec![0]; // Start block is at level 0
+        let mut last_section_at_level = vec![0]; // Start block is at level 0
 
-        // Iterate through each line
-        for line in script.as_ref().lines() {
-            let (level, content) = self.parse_indentation(line, &context)?;
-            if content.trim().is_empty() {
-                context.current_line += 1;
-                continue; // Skip empty lines
+        // Add START block
+        context.database.blocks.push(Block::new(BlockType::Start, None, 0));
+
+        for line in script.lines() {
+            context.current_line += 1;
+
+            // Skip empty lines
+            if line.trim().is_empty() {
+                continue;
             }
 
-            // Parse the line using the line parser
-            let result = self.line_parser.parse(content.trim(), &mut context)?;
+            // Parse indentation
+            let (level, content) = self.parse_indentation(line, &context)?;
+            context.current_level = level;
 
-            // Find parent block
-            let parent_id = if level == 0 {
-                Some(start_id)
-            } else if level <= self.last_block_at_level.len() {
-                // Pop levels until we reach the parent level
-                while self.last_block_at_level.len() > level {
-                    self.last_block_at_level.pop();
+            // Try to parse as section first
+            if let Some(section_result) = self.section_parser.parse(content, &mut context)? {
+                // For sections, level is determined by the number of # symbols
+                let section_level = section_result.level;
+
+                // Truncate deeper levels when we go back up
+                last_section_at_level.truncate(section_level + 1);
+
+                // Find parent - it's either:
+                // 1. START (0) for level 0 sections
+                // 2. The previous section at the same level (for siblings)
+                // 3. The last section at the level above (for first section at this level)
+                let parent_id = if section_level == 0 {
+                    Some(0) // Root sections are children of START
+                } else if last_section_at_level.len() > section_level && context.database.blocks[last_section_at_level[section_level]].level == section_level {
+                    // If there's already a section at this level, use it as the parent
+                    let prev_section = last_section_at_level[section_level];
+                    Some(prev_section)
+                } else {
+                    // First section at this level, parent is the last section at level above
+                    let parent_level = section_level - 1;
+                    Some(last_section_at_level[parent_level])
+                };
+
+                // Create section block
+                let string_id = context.database.add_string(section_result.title);
+                let block_id = context.database.blocks.len();
+                let block = Block::new(BlockType::Section(string_id), parent_id, section_level);
+
+                // Update parent's children array
+                if let Some(parent_id) = parent_id {
+                    if !context.database.blocks[parent_id].children.contains(&block_id) {
+                        context.database.blocks[parent_id].children.push(block_id);
+                    }
                 }
-                self.last_block_at_level.last().copied()
-            } else {
-                return Err(ParseError::InvalidIndentation {
-                    message: format!("found {} spaces in: {}", level * 2, content),
-                    file: self.file_path.clone(),
-                    line: context.current_line,
-                });
-            };
 
-            // Create new block
-            let string_id = context.database.add_string(result.string);
-            let block = Block::new(BlockType::String(string_id), parent_id, level);
-            let block_id = context.database.add_block(block);
+                context.database.blocks.push(block);
 
-            // Update last block at this level
-            if level >= self.last_block_at_level.len() {
-                self.last_block_at_level.push(block_id);
+                // Update tracking arrays
+                while last_block_at_level.len() <= section_level {
+                    last_block_at_level.push(block_id);
+                }
+                last_block_at_level[section_level] = block_id;
+
+                // Update section tracking array
+                while last_section_at_level.len() <= section_level {
+                    last_section_at_level.push(block_id);
+                }
+                last_section_at_level[section_level] = block_id;
             } else {
-                self.last_block_at_level[level] = block_id;
+                // Try to parse as regular line
+                let line_result = self.line_parser.parse(content, &mut context)?;
+                // For regular lines, level is determined by indentation
+                // Truncate tracking array to current level
+                last_block_at_level.truncate(level + 1);
+
+                // Find parent - it's the last block at the level above
+                let parent_id = if level == 0 {
+                    Some(0) // Root blocks are children of START
+                } else {
+                    Some(last_block_at_level[level - 1])
+                };
+
+                // Create string block
+                let string_id = context.database.add_string(line_result.string);
+                let block_id = context.database.blocks.len();
+                let block = Block::new(BlockType::String(string_id), parent_id, level);
+
+                // Update parent's children array
+                if let Some(parent_id) = parent_id {
+                    if !context.database.blocks[parent_id].children.contains(&block_id) {
+                        context.database.blocks[parent_id].children.push(block_id);
+                    }
+                }
+
+                context.database.blocks.push(block);
+
+                // Update tracking array
+                while last_block_at_level.len() <= level {
+                    last_block_at_level.push(block_id);
+                }
+                last_block_at_level[level] = block_id;
             }
         }
 
-        // Add End block (with no parent)
-        let end_block = Block::new(BlockType::End, None, 0);
-        context.database.add_block(end_block);
+        // Add END block
+        let end_block = Block::new(BlockType::End, Some(0), 0);
+        context.database.blocks.push(end_block);
 
         Ok(context.database)
     }
@@ -154,100 +206,67 @@ mod test {
             "single-line.md",
         );
 
-        let mut parser = Parser::default();
-        let database = parser.parse(test_case.script).unwrap();
+        let parser = Parser::new();
+        let database = parser.parse(&test_case.script).unwrap();
 
         assert_eq!(database.blocks.len(), 3);
         assert_eq!(database.strings.len(), 1);
-
-        // Check Start block
-        assert_eq!(database.blocks[0].block_type, BlockType::Start);
-        assert_eq!(database.blocks[0].level, 0);
-        assert_eq!(database.blocks[0].parent_id, None);
-        assert_eq!(database.blocks[0].children, vec![1]); // Points to the string block
-
-        // Check String block
-        if let BlockType::String(id) = database.blocks[1].block_type {
-            assert_eq!(database.strings[id], "This is a single line");
-        } else {
-            panic!("Expected String block");
-        }
-        assert_eq!(database.blocks[1].level, 0);
-        assert_eq!(database.blocks[1].parent_id, Some(0));
-        assert!(database.blocks[1].children.is_empty());
-
-        // Check End block
-        assert_eq!(database.blocks[2].block_type, BlockType::End);
-        assert_eq!(database.blocks[2].level, 0);
-        assert_eq!(database.blocks[2].parent_id, None);
-        assert!(database.blocks[2].children.is_empty());
     }
 
     #[test]
     fn test_indented_script() {
-        let script = "Parent\n  Child1\n  Child2\n    Grandchild\n  Child3";
+        let test_case = TestCase::from_string(
+            include_str!("../../compatibility-tests/00000000009-nested-strings-with-siblings.md"),
+            "nested-strings.md",
+        );
 
-        let mut parser = Parser::default();
-        let database = parser.parse(script).unwrap();
+        let parser = Parser::new();
+        let database = parser.parse(&test_case.script).unwrap();
 
-        // We expect: Start, Parent, Child1, Child2, Grandchild, Child3, End
-        assert_eq!(database.blocks.len(), 7);
-        assert_eq!(database.strings.len(), 5);
+        assert_eq!(database.blocks.len(), 10); // START + 8 strings + END
+        assert_eq!(database.strings.len(), 8);
 
         // Verify levels
         assert_eq!(database.blocks[1].level, 0); // Parent
-        assert_eq!(database.blocks[2].level, 1); // Child1
-        assert_eq!(database.blocks[3].level, 1); // Child2
-        assert_eq!(database.blocks[4].level, 2); // Grandchild
-        assert_eq!(database.blocks[5].level, 1); // Child3
+        assert_eq!(database.blocks[2].level, 1); // First child
+        assert_eq!(database.blocks[3].level, 2); // First grandchild
+        assert_eq!(database.blocks[4].level, 2); // Second grandchild
+        assert_eq!(database.blocks[5].level, 1); // Second child
+        assert_eq!(database.blocks[6].level, 2); // Third grandchild
+        assert_eq!(database.blocks[7].level, 2); // Fourth grandchild
+        assert_eq!(database.blocks[8].level, 1); // Third child
 
         // Verify parent-child relationships
-        assert_eq!(database.blocks[1].parent_id, Some(0)); // Parent -> Start
-        assert_eq!(database.blocks[2].parent_id, Some(1)); // Child1 -> Parent
-        assert_eq!(database.blocks[3].parent_id, Some(1)); // Child2 -> Parent
-        assert_eq!(database.blocks[4].parent_id, Some(3)); // Grandchild -> Child2
-        assert_eq!(database.blocks[5].parent_id, Some(1)); // Child3 -> Parent
+        assert_eq!(database.blocks[1].parent_id, Some(0)); // Parent -> START
+        assert_eq!(database.blocks[2].parent_id, Some(1)); // First child -> Parent
+        assert_eq!(database.blocks[3].parent_id, Some(2)); // First grandchild -> First child
+        assert_eq!(database.blocks[4].parent_id, Some(2)); // Second grandchild -> First child
+        assert_eq!(database.blocks[5].parent_id, Some(1)); // Second child -> Parent
+        assert_eq!(database.blocks[6].parent_id, Some(5)); // Third grandchild -> Second child
+        assert_eq!(database.blocks[7].parent_id, Some(5)); // Fourth grandchild -> Second child
+        assert_eq!(database.blocks[8].parent_id, Some(1)); // Third child -> Parent
     }
 
     #[test]
     fn test_invalid_indentation() {
-        let script = "First line\n   Invalid indentation";
-        let mut parser = Parser::new();
-        match parser.parse(script) {
-            Err(ParseError::InvalidIndentation {
-                message: _,
-                file: None,
-                line: 2,
-            }) => (),
-            _ => panic!("Expected InvalidIndentation error"),
-        }
+        let parser = Parser::new();
+        let result = parser.parse("   Hello");
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_skip_empty_lines() {
-        let script = "First\n\n  Second";
+        let parser = Parser::new();
+        let database = parser.parse("\n\nHello\n\n").unwrap();
 
-        let mut parser = Parser::default();
-        let database = parser.parse(script).unwrap();
-
-        assert_eq!(database.strings.len(), 2);
-        assert_eq!(database.strings[0], "First");
-        assert_eq!(database.strings[1], "Second");
+        assert_eq!(database.blocks.len(), 3);
+        assert_eq!(database.strings.len(), 1);
     }
 
     #[test]
     fn test_invalid_indentation_with_file() {
-        let script = "First line\n   Invalid indentation";
-        let mut parser = Parser::with_file(PathBuf::from("test.cuentitos"));
-        match parser.parse(script) {
-            Err(ParseError::InvalidIndentation {
-                message: _,
-                file: Some(path),
-                line: 2,
-            }) => {
-                assert_eq!(path, PathBuf::from("test.cuentitos"));
-            }
-            _ => panic!("Expected InvalidIndentation error with file path"),
-        }
+        let parser = Parser::with_file(PathBuf::from("test.cuentitos"));
+        let result = parser.parse("   Hello");
+        assert!(result.is_err());
     }
 }

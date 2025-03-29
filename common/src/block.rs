@@ -5,8 +5,9 @@ pub type BlockId = usize;
 #[derive(Debug, Clone, PartialEq)]
 pub enum BlockType {
     Start,
-    String(StringId),
     End,
+    String(usize),
+    Section(usize),
 }
 
 #[derive(Debug, Clone, PartialEq)]
