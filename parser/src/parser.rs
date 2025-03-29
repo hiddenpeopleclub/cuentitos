@@ -1,196 +1,181 @@
-use crate::parsers::{FeatureParser, ParserContext, line_parser::LineParser, section_parser::SectionParser};
 use cuentitos_common::*;
-use std::fmt;
 use std::path::PathBuf;
+use std::collections::HashMap;
+use crate::parsers::{FeatureParser, ParserContext};
+use crate::parsers::line_parser::LineParser;
+use crate::parsers::section_parser::SectionParser;
+use crate::ParseError;
 
-#[derive(Debug, Default)]
 pub struct Parser {
-    last_block_at_level: Vec<BlockId>, // Stack to track last block at each level
-    file_path: Option<PathBuf>,
+    last_block_at_level: Vec<BlockId>,
+    last_section_at_level: Vec<BlockId>,  // Track the last section block at each level
+    current_line: usize,
+    file_path: PathBuf,
+    section_map: HashMap<(String, usize), (BlockId, usize)>, // (section_name, level) -> (block_id, line_number)
     line_parser: LineParser,
     section_parser: SectionParser,
 }
 
-#[derive(Debug, Clone)]
-pub enum ParseError {
-    UnexpectedToken {
-        file: Option<PathBuf>,
-        line: usize,
-    },
-    UnexpectedEndOfFile {
-        file: Option<PathBuf>,
-        line: usize,
-    },
-    InvalidIndentation {
-        message: String,
-        file: Option<PathBuf>,
-        line: usize,
-    },
-}
-
-impl fmt::Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ParseError::UnexpectedToken { file: _, line } => {
-                write!(f, "{}: ERROR: Unexpected token", line)
-            }
-            ParseError::UnexpectedEndOfFile { file: _, line } => {
-                write!(f, "{}: ERROR: Unexpected end of file", line)
-            }
-            ParseError::InvalidIndentation {
-                message,
-                file: _,
-                line,
-            } => {
-                write!(f, "{}: ERROR: Invalid indentation: {}", line, message)
-            }
-        }
-    }
-}
-
 impl Parser {
     pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with_file(file_path: PathBuf) -> Self {
-        Self {
-            file_path: Some(file_path),
+        Parser {
+            last_block_at_level: Vec::new(),
+            last_section_at_level: Vec::new(),
+            current_line: 0,
+            file_path: PathBuf::from("<unknown>"),
+            section_map: HashMap::new(),
             line_parser: LineParser::new(),
             section_parser: SectionParser::new(),
-            last_block_at_level: vec![],
         }
     }
 
-    pub fn parse(&self, script: &str) -> Result<Database, ParseError> {
-        let mut context = ParserContext::new();
-        if let Some(file_path) = &self.file_path {
-            context.file_path = Some(file_path.clone());
+    pub fn with_file<P: Into<PathBuf>>(file_path: P) -> Self {
+        Parser {
+            last_block_at_level: Vec::new(),
+            last_section_at_level: Vec::new(),
+            current_line: 0,
+            file_path: file_path.into(),
+            section_map: HashMap::new(),
+            line_parser: LineParser::new(),
+            section_parser: SectionParser::new(),
         }
-
-        let mut last_block_at_level = vec![0]; // Start block is at level 0
-        let mut last_section_at_level = vec![0]; // Start block is at level 0
-
-        // Add START block
-        context.database.blocks.push(Block::new(BlockType::Start, None, 0));
-
-        for line in script.lines() {
-            context.current_line += 1;
-
-            // Skip empty lines
-            if line.trim().is_empty() {
-                continue;
-            }
-
-            // Parse indentation
-            let (level, content) = self.parse_indentation(line, &context)?;
-            context.current_level = level;
-
-            // Try to parse as section first
-            if let Some(section_result) = self.section_parser.parse(content, &mut context)? {
-                // For sections, level is determined by the number of # symbols
-                let section_level = section_result.level;
-
-                // Truncate deeper levels when we go back up
-                last_section_at_level.truncate(section_level + 1);
-
-                // Find parent - it's either:
-                // 1. START (0) for level 0 sections
-                // 2. The previous section at the same level (for siblings)
-                // 3. The last section at the level above (for first section at this level)
-                let parent_id = if section_level == 0 {
-                    Some(0) // Root sections are children of START
-                } else if last_section_at_level.len() > section_level && context.database.blocks[last_section_at_level[section_level]].level == section_level {
-                    // If there's already a section at this level, use it as the parent
-                    let prev_section = last_section_at_level[section_level];
-                    Some(prev_section)
-                } else {
-                    // First section at this level, parent is the last section at level above
-                    let parent_level = section_level - 1;
-                    Some(last_section_at_level[parent_level])
-                };
-
-                // Create section block
-                let string_id = context.database.add_string(section_result.title);
-                let block_id = context.database.blocks.len();
-                let block = Block::new(BlockType::Section(string_id), parent_id, section_level);
-
-                // Update parent's children array
-                if let Some(parent_id) = parent_id {
-                    if !context.database.blocks[parent_id].children.contains(&block_id) {
-                        context.database.blocks[parent_id].children.push(block_id);
-                    }
-                }
-
-                context.database.blocks.push(block);
-
-                // Update tracking arrays
-                while last_block_at_level.len() <= section_level {
-                    last_block_at_level.push(block_id);
-                }
-                last_block_at_level[section_level] = block_id;
-
-                // Update section tracking array
-                while last_section_at_level.len() <= section_level {
-                    last_section_at_level.push(block_id);
-                }
-                last_section_at_level[section_level] = block_id;
-            } else {
-                // Try to parse as regular line
-                let line_result = self.line_parser.parse(content, &mut context)?;
-                // For regular lines, level is determined by indentation
-                // Truncate tracking array to current level
-                last_block_at_level.truncate(level + 1);
-
-                // Find parent - it's the last block at the level above
-                let parent_id = if level == 0 {
-                    Some(0) // Root blocks are children of START
-                } else {
-                    Some(last_block_at_level[level - 1])
-                };
-
-                // Create string block
-                let string_id = context.database.add_string(line_result.string);
-                let block_id = context.database.blocks.len();
-                let block = Block::new(BlockType::String(string_id), parent_id, level);
-
-                // Update parent's children array
-                if let Some(parent_id) = parent_id {
-                    if !context.database.blocks[parent_id].children.contains(&block_id) {
-                        context.database.blocks[parent_id].children.push(block_id);
-                    }
-                }
-
-                context.database.blocks.push(block);
-
-                // Update tracking array
-                while last_block_at_level.len() <= level {
-                    last_block_at_level.push(block_id);
-                }
-                last_block_at_level[level] = block_id;
-            }
-        }
-
-        // Add END block
-        let end_block = Block::new(BlockType::End, Some(0), 0);
-        context.database.blocks.push(end_block);
-
-        Ok(context.database)
     }
 
-    fn parse_indentation<'a>(&self, line: &'a str, context: &ParserContext) -> Result<(usize, &'a str), ParseError> {
+    fn parse_indentation<'a>(&self, line: &'a str) -> Result<(usize, &'a str), ParseError> {
         let spaces = line.chars().take_while(|c| *c == ' ').count();
 
         // Check if indentation is valid (multiple of 2)
         if spaces % 2 != 0 {
             return Err(ParseError::InvalidIndentation {
-                message: format!("found {} spaces.", spaces),
                 file: self.file_path.clone(),
-                line: context.current_line,
+                line: self.current_line,
+                spaces,
             });
         }
 
         Ok((spaces / 2, &line[spaces..]))
+    }
+
+    pub fn parse(&mut self, script: &str) -> Result<Database, ParseError> {
+        self.current_line = 0;
+        let mut db = Database::new();
+        let mut context = ParserContext::new();
+        context.file_path = Some(self.file_path.clone());
+
+        // Add START block
+        let start_id = db.add_block(Block::new(BlockType::Start, None, 0));
+        self.last_block_at_level.push(start_id);
+        self.last_section_at_level.push(start_id);
+
+        for line in script.lines() {
+            self.current_line += 1;
+            context.current_line = self.current_line;
+
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            let (level, content) = self.parse_indentation(line)?;
+            dbg!(&line, level, &content);
+
+            if content.starts_with('#') {
+                if let Some(section_result) = self.section_parser.parse(content, &mut context)? {
+                    dbg!(&section_result.title, section_result.level, &self.last_section_at_level);
+
+                    // Check for orphaned sub-sections
+                    if section_result.level > 0 && (self.last_section_at_level.is_empty() || self.last_section_at_level.len() < section_result.level) {
+                        dbg!("Orphaned section detected", &section_result.title, section_result.level, &self.last_section_at_level);
+                        return Err(ParseError::OrphanedSubSection {
+                            file: self.file_path.clone(),
+                            line: self.current_line,
+                        });
+                    }
+
+                    // Get parent section name if this is a sub-section
+                    let parent_name = if section_result.level > 0 {
+                        let parent_id = self.last_section_at_level[section_result.level - 1];
+                        dbg!("Parent section info", section_result.level - 1, parent_id);
+                        if let BlockType::Section(string_id) = db.blocks[parent_id].block_type {
+                            Some(db.strings[string_id].clone())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                    // Check for duplicate section names at the same level under the same parent
+                    if let Some((_, previous_line)) = self.section_map.get(&(section_result.title.clone(), section_result.level)) {
+                        let parent_name = parent_name.unwrap_or_else(|| "<root>".to_string());
+                        return Err(ParseError::DuplicateSectionName {
+                            file: self.file_path.clone(),
+                            line: self.current_line,
+                            name: section_result.title.clone(),
+                            parent: parent_name,
+                            previous_line: *previous_line,
+                        });
+                    }
+
+                    // Create section block
+                    let string_id = db.add_string(section_result.title.clone());
+                    let parent_id = if section_result.level == 0 {
+                        Some(start_id)
+                    } else {
+                        Some(self.last_section_at_level[section_result.level - 1])
+                    };
+
+                    let block = Block::new(BlockType::Section(string_id), parent_id, section_result.level);
+                    let block_id = db.add_block(block);
+                    dbg!("Added section block", &section_result.title, block_id, parent_id);
+
+                    // Update section map and last block at level
+                    self.section_map.insert((section_result.title, section_result.level), (block_id, self.current_line));
+
+                    // Extend last_section_at_level if needed and update the current level
+                    while self.last_section_at_level.len() <= section_result.level {
+                        self.last_section_at_level.push(block_id);
+                    }
+                    self.last_section_at_level[section_result.level] = block_id;
+                    dbg!("Updated last_section_at_level", &self.last_section_at_level);
+
+                    // Also update last_block_at_level
+                    while self.last_block_at_level.len() <= section_result.level {
+                        self.last_block_at_level.push(block_id);
+                    }
+                    self.last_block_at_level[section_result.level] = block_id;
+                }
+            } else {
+                let line_result = self.line_parser.parse(content, &mut context)?;
+                let string_id = db.add_string(line_result.string);
+
+                // For text blocks, we need to ensure they're properly parented to the last block at the previous level
+                let parent_id = if level == 0 {
+                    Some(start_id)
+                } else if level <= self.last_block_at_level.len() {
+                    // Get the last block at the previous level as the parent
+                    Some(self.last_block_at_level[level - 1])
+                } else {
+                    // If we're at a level beyond what we have, use the last available block
+                    Some(self.last_block_at_level[self.last_block_at_level.len() - 1])
+                };
+
+                let block = Block::new(BlockType::String(string_id), parent_id, level);
+                let block_id = db.add_block(block);
+                dbg!("Added string block", block_id, parent_id, level);
+
+                // Update last_block_at_level for the current level if needed
+                while self.last_block_at_level.len() <= level {
+                    self.last_block_at_level.push(block_id);
+                }
+                self.last_block_at_level[level] = block_id;
+                dbg!("Updated last_block_at_level for text", &self.last_block_at_level);
+            }
+        }
+
+        // Add END block
+        db.add_block(Block::new(BlockType::End, Some(start_id), 0));
+
+        Ok(db)
     }
 }
 
@@ -206,7 +191,7 @@ mod test {
             "single-line.md",
         );
 
-        let parser = Parser::new();
+        let mut parser = Parser::new();
         let database = parser.parse(&test_case.script).unwrap();
 
         assert_eq!(database.blocks.len(), 3);
@@ -220,7 +205,7 @@ mod test {
             "nested-strings.md",
         );
 
-        let parser = Parser::new();
+        let mut parser = Parser::new();
         let database = parser.parse(&test_case.script).unwrap();
 
         assert_eq!(database.blocks.len(), 10); // START + 8 strings + END
@@ -249,23 +234,22 @@ mod test {
 
     #[test]
     fn test_invalid_indentation() {
-        let parser = Parser::new();
+        let mut parser = Parser::new();
         let result = parser.parse("   Hello");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_skip_empty_lines() {
-        let parser = Parser::new();
+        let mut parser = Parser::new();
         let database = parser.parse("\n\nHello\n\n").unwrap();
-
         assert_eq!(database.blocks.len(), 3);
         assert_eq!(database.strings.len(), 1);
     }
 
     #[test]
     fn test_invalid_indentation_with_file() {
-        let parser = Parser::with_file(PathBuf::from("test.cuentitos"));
+        let mut parser = Parser::with_file("test.md");
         let result = parser.parse("   Hello");
         assert!(result.is_err());
     }

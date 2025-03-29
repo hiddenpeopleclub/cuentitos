@@ -105,11 +105,44 @@ fn process_input(input: &str, runtime: &mut cuentitos_runtime::Runtime) -> bool 
 }
 
 fn render_current_blocks(runtime: &cuentitos_runtime::Runtime) {
+    let mut current_sections: Vec<cuentitos_common::Block> = Vec::new();
+    let mut last_shown_sections: Vec<cuentitos_common::Block> = Vec::new();
+
     for block in runtime.current_blocks() {
         match block.block_type {
             cuentitos_common::BlockType::Start => println!("START"),
-            cuentitos_common::BlockType::String(id) => println!("{}", runtime.database.strings[id]),
+            cuentitos_common::BlockType::String(id) => {
+                // Show the current section path before each text block if it has changed
+                if current_sections != last_shown_sections {
+                    if !current_sections.is_empty() {
+                        let path = current_sections.iter()
+                            .filter_map(|section| {
+                                if let cuentitos_common::BlockType::Section(id) = section.block_type {
+                                    Some(runtime.database.strings[id].clone())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect::<Vec<_>>();
+
+                        println!("-> {}", path.join(" \\ "));
+                    }
+                    last_shown_sections = current_sections.clone();
+                }
+                println!("{}", runtime.database.strings[id]);
+            }
             cuentitos_common::BlockType::End => println!("END"),
+            cuentitos_common::BlockType::Section(_) => {
+                // Update current sections based on level
+                while let Some(last) = current_sections.last() {
+                    if last.level >= block.level {
+                        current_sections.pop();
+                    } else {
+                        break;
+                    }
+                }
+                current_sections.push(block.clone());
+            }
         }
     }
 }

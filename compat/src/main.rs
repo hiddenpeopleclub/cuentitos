@@ -46,6 +46,7 @@ fn main() {
     let runner = TestRunner::from_path(args.runtime);
 
     let mut failed_tests = vec![];
+    let mut disabled_tests = vec![];
 
     for test in compatibility_tests {
         match test {
@@ -55,6 +56,12 @@ fn main() {
                 match content {
                     Ok(content) => {
                         let test_case = TestCase::from_string(content, &path);
+
+                        if test_case.disabled {
+                            print!("{}", "*".yellow());
+                            disabled_tests.push(test_case);
+                            continue;
+                        }
 
                         match runner.run(test_case.clone()) {
                             TestResult::Pass => print!("{}", ".".green()),
@@ -79,6 +86,7 @@ fn main() {
     println!("\n");
 
     let failed_count = failed_tests.len();
+    let disabled_count = disabled_tests.len();
 
     for (test, fail) in failed_tests {
         println!("{}", "------------------------------------".red().bold());
@@ -98,13 +106,22 @@ fn main() {
         }
     }
 
+    if !disabled_tests.is_empty() {
+        println!("\n{}", "Disabled Tests:".yellow().bold());
+        for test in disabled_tests {
+            println!("  {} ({})", test.name.yellow(), test.path.to_str().unwrap());
+        }
+    }
+
     println!("\n");
     println!(
-        "{} {} | {} {}",
+        "{} {} | {} {} | {} {}",
         "Total:".bold(),
         test_count,
         "Failed:".red().bold(),
-        failed_count
+        failed_count,
+        "Disabled:".yellow().bold(),
+        disabled_count
     );
 }
 

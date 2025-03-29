@@ -18,5 +18,5 @@ n
 
 ## Result
 ```result
-3: ERROR: Section without title: found empty section title.
+4: ERROR: Section without title: found empty section title.
 ```

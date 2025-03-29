@@ -14,10 +14,7 @@ This is text in the second section
 
 ## Input
 ```input
-n
-n
-n
-n
+s
 ```
 
 ## Result

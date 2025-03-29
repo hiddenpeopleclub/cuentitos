@@ -15,7 +15,7 @@ This test verifies that sections at the same level under the same parent cannot 
 
 ## Input
 ```input
-n
+s
 ```
 
 ## Result

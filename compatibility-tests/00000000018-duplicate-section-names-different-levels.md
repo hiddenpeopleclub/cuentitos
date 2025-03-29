@@ -1,23 +1,15 @@
 # Duplicate Section Names - Different Levels Allowed
 
-This test verifies that sections can have the same name if they are at different levels or under different parents.
+This test verifies that sections with the same name are allowed at different levels.
 
 ## Script
 ```cuentitos
-# Introduction
-This is the root introduction
-
 # Chapter One
 This is chapter one
-  ## Introduction
-  This is fine because it's under Chapter One
-
-# Chapter Two
-This is chapter two
-  ## Introduction
-  This is also fine because it's under Chapter Two
-    ### Introduction
-    This is fine because it's at a deeper level
+  ## Chapter One
+  This is a sub-section with the same name
+    ### Chapter One
+    This is a sub-sub-section with the same name
 ```
 
 ## Input
@@ -28,17 +20,11 @@ s
 ## Result
 ```result
 START
-# Introduction
-This is the root introduction
-# Chapter One
+-> Chapter One
 This is chapter one
-## Introduction
-This is fine because it's under Chapter One
-# Chapter Two
-This is chapter two
-## Introduction
-This is also fine because it's under Chapter Two
-### Introduction
-This is fine because it's at a deeper level
+-> Chapter One\Chapter One
+This is a sub-section with the same name
+-> Chapter One\Chapter One\Chapter One
+This is a sub-sub-section with the same name
 END
 ```

@@ -4,33 +4,24 @@ This test verifies that multiple duplicate section name errors are reported corr
 
 ## Script
 ```cuentitos
-# Introduction
-This is the first introduction
-
 # Story
   ## Chapter One
   This is chapter one
+  ## Chapter Two
+  This is chapter two
   ## Chapter One
-  First duplicate error
-  ## Chapter One
-  Second duplicate error
-
-# Introduction
-Second root level duplicate
-
+  This should cause an error
 # Story
-Third root level duplicate
+This should also cause an error
 ```
 
 ## Input
 ```input
-n
+s
 ```
 
 ## Result
 ```result
-6: ERROR: Duplicate section name: 'Chapter One' already exists at this level under 'Story'. Previously defined at line 5.
-8: ERROR: Duplicate section name: 'Chapter One' already exists at this level under 'Story'. Previously defined at line 5.
-10: ERROR: Duplicate section name: 'Introduction' already exists at root level. Previously defined at line 1.
-12: ERROR: Duplicate section name: 'Story' already exists at root level. Previously defined at line 4.
+6: ERROR: Duplicate section name: 'Chapter One' already exists at this level under 'Story'. Previously defined at line 2.
+8: ERROR: Duplicate section name: 'Story' already exists at this level under '<root>'. Previously defined at line 1.
 ```

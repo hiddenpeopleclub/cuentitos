@@ -12,7 +12,7 @@ This is text in the main section
 
 ## Input
 ```input
-n
+s
 ```
 
 ## Result

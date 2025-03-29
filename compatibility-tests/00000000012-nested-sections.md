@@ -21,14 +21,7 @@ This is text in another main section
 
 ## Input
 ```input
-n
-n
-n
-n
-n
-n
-n
-n
+s
 ```
 
 ## Result
@@ -40,7 +33,7 @@ This is text in the main section
 This is text in the first sub-section
 -> Main Section \ First Sub-section \ Deep Sub-section
 This is text in a deep sub-section
--> Main Section \ First Sub-section \ Second Sub-section
+-> Main Section \ Second Sub-section
 This is text in the second sub-section
 -> Another Main Section
 This is text in another main section
