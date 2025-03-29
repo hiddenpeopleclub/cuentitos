@@ -18,5 +18,5 @@ n
 
 ## Result
 ```result
-4: ERROR: Section without title: found empty section title.
+test.cuentitos:4: ERROR: Section without title: found empty section title.
 ```

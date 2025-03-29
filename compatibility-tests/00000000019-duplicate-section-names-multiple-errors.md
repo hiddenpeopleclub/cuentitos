@@ -22,6 +22,8 @@ s
 
 ## Result
 ```result
-6: ERROR: Duplicate section name: 'Chapter One' already exists at this level under 'Story'. Previously defined at line 2.
-8: ERROR: Duplicate section name: 'Story' already exists at this level under '<root>'. Previously defined at line 1.
+test.cuentitos:6: ERROR: Duplicate section name: 'Chapter One' already exists at this level under 'Story'. Previously defined at line 2.
+
+test.cuentitos:8: ERROR: Duplicate section name: 'Story' already exists at this level under '<root>'. Previously defined at line 1.
 ```
+!!! disabled

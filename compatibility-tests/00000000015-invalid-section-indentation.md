@@ -17,5 +17,5 @@ s
 
 ## Result
 ```result
-3: ERROR: Invalid indentation: found 3 spaces.
+test.cuentitos:3: ERROR: Invalid indentation: found 3 spaces.
 ```
