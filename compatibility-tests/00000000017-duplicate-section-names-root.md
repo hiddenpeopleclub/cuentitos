@@ -4,22 +4,20 @@ This test verifies that sections at the root level cannot have the same name.
 
 ## Script
 ```cuentitos
-# Introduction
-This is the first introduction
-
 # Chapter One
 This is chapter one
-
-# Introduction
+# Chapter Two
+This is chapter two
+# Chapter One
 This should cause an error
 ```
 
 ## Input
 ```input
-n
+s
 ```
 
 ## Result
 ```result
-7: ERROR: Duplicate section name: 'Introduction' already exists at root level. Previously defined at line 1.
+5: ERROR: Duplicate section name: 'Chapter One' already exists at this level under '<root>'. Previously defined at line 1.
 ```

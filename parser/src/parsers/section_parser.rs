@@ -1,6 +1,6 @@
 use super::{FeatureParser, ParserContext};
 use crate::ParseError;
-use cuentitos_common::BlockType;
+use std::path::PathBuf;
 
 /// Parser for handling section headers (lines starting with #)
 #[derive(Debug, Default)]
@@ -39,8 +39,8 @@ impl FeatureParser for SectionParser {
         // Extract the title (skip the # symbols and any whitespace)
         let title = input[level..].trim().to_string();
         if title.is_empty() {
-            return Err(ParseError::UnexpectedToken {
-                file: context.file_path.clone(),
+            return Err(ParseError::EmptySectionTitle {
+                file: context.file_path.clone().unwrap_or_else(|| PathBuf::from("<unknown>")),
                 line: context.current_line,
             });
         }

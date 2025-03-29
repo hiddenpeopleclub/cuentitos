@@ -54,10 +54,62 @@ impl Runtime {
             Vec::new()
         } else if self.has_ended() {
             // When we've reached the end, show all blocks up to and including END
-            self.database.blocks.to_vec()
+            let mut blocks = Vec::new();
+            let mut current_sections: Vec<Block> = Vec::new();
+
+            for block in &self.database.blocks {
+                match block.block_type {
+                    BlockType::Start | BlockType::End => blocks.push(block.clone()),
+                    BlockType::String(_) => {
+                        // Show all current sections before each text block
+                        for section in &current_sections {
+                            blocks.push(section.clone());
+                        }
+                        blocks.push(block.clone());
+                    }
+                    BlockType::Section(_) => {
+                        // Update current sections based on level
+                        while let Some(last) = current_sections.last() {
+                            if last.level >= block.level {
+                                current_sections.pop();
+                            } else {
+                                break;
+                            }
+                        }
+                        current_sections.push(block.clone());
+                    }
+                }
+            }
+            blocks
         } else {
             // Otherwise show blocks up to current position
-            self.database.blocks[0..=self.program_counter].to_vec()
+            let mut blocks = Vec::new();
+            let mut current_sections: Vec<Block> = Vec::new();
+
+            for block in &self.database.blocks[0..=self.program_counter] {
+                match block.block_type {
+                    BlockType::Start | BlockType::End => blocks.push(block.clone()),
+                    BlockType::String(_) => {
+                        // Show all current sections before each text block
+                        for section in &current_sections {
+                            blocks.push(section.clone());
+                        }
+                        blocks.push(block.clone());
+                    }
+                    BlockType::Section(_) => {
+                        // Update current sections based on level
+                        while let Some(last) = current_sections.last() {
+                            if last.level >= block.level {
+                                current_sections.pop();
+                            } else {
+                                break;
+                            }
+                        }
+                        current_sections.push(block.clone());
+                    }
+                }
+            }
+            blocks
         }
     }
 
@@ -140,6 +192,63 @@ impl Runtime {
         }
 
         true
+    }
+
+    /// Returns the current section hierarchy, from root to leaf.
+    /// For example, if we're in "Chapter 1 > Section 2 > Subsection 3",
+    /// this will return [Chapter 1, Section 2, Subsection 3] in that order.
+    pub fn current_section_hierarchy(&self) -> Vec<Block> {
+        let mut sections = Vec::new();
+        let current_id = self.program_counter;
+
+        // Get the current block
+        let current_block = match self.database.blocks.get(current_id) {
+            Some(block) => block,
+            None => return sections,
+        };
+
+        // If we're at a section block, include it
+        if matches!(current_block.block_type, BlockType::Section(_)) {
+            sections.push(current_block.clone());
+        }
+
+        // Start from the parent of the current block
+        let start_id = current_block.parent_id;
+
+        // Walk up the parent chain until we reach the root
+        let mut current_id = match start_id {
+            Some(id) => id,
+            None => return sections,
+        };
+
+        while let Some(block) = self.database.blocks.get(current_id) {
+            // If this is a section block, check if we should include it
+            if matches!(block.block_type, BlockType::Section(_)) {
+                // Only include sections that are at a lower level than the current section
+                let should_include = if let Some(current_section) = sections.last() {
+                    block.level < current_section.level
+                } else {
+                    // If no sections yet, always include
+                    true
+                };
+
+                if should_include {
+                    sections.push(block.clone());
+                }
+            }
+
+            // Move up to the parent
+            if let Some(parent_id) = block.parent_id {
+                current_id = parent_id;
+            } else {
+                break;
+            }
+        }
+
+        // Reverse to get root-to-leaf order
+        sections.reverse();
+
+        sections
     }
 }
 

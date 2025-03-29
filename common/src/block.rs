@@ -1,5 +1,3 @@
-use crate::StringId;
-
 pub type BlockId = usize;
 
 #[derive(Debug, Clone, PartialEq)]

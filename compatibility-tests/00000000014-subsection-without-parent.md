@@ -15,7 +15,7 @@ This is text in a valid section
 
 ## Input
 ```input
-n
+s
 ```
 
 ## Result
