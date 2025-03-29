@@ -1,9 +1,9 @@
 use cuentitos_common::*;
 
-mod parser;
-pub use parser::{ParseError, Parser};
+pub mod parser;
+pub mod parsers;
 
-mod line_parser;
+pub use parser::*;
 
 pub fn parse(script: &str) -> Result<Database, ParseError> {
     let mut parser = Parser::new();
