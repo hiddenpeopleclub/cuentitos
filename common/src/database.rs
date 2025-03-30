@@ -1,13 +1,27 @@
 use crate::block::{Block, BlockId};
 use crate::StringId;
 
+/// The central database that holds all blocks and strings in a cuentitos script.
+///
+/// The Database maintains:
+/// - A list of all blocks in the script
+/// - A table of all strings used in the script
+/// - Parent-child relationships between blocks
+/// - Block ordering and hierarchy
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Database {
+    /// All blocks in the script, in order of addition
     pub blocks: Vec<Block>,
+    /// All strings used in the script, indexed by StringId
     pub strings: Vec<String>,
 }
 
 impl Database {
+    /// Creates a new, empty database.
+    ///
+    /// # Returns
+    ///
+    /// A Database instance with empty blocks and strings vectors.
     pub fn new() -> Self {
         Self {
             blocks: Vec::new(),
@@ -15,6 +29,19 @@ impl Database {
         }
     }
 
+    /// Adds a block to the database and updates parent-child relationships.
+    ///
+    /// If the block has a parent ID, this method will also:
+    /// - Verify the parent exists
+    /// - Add this block as a child to its parent
+    ///
+    /// # Arguments
+    ///
+    /// * `block` - The block to add to the database
+    ///
+    /// # Returns
+    ///
+    /// The ID assigned to the block (its index in the blocks vector)
     pub fn add_block(&mut self, block: Block) -> BlockId {
         let block_id = self.blocks.len();
         // If the block has a parent, add this block as a child to its parent
@@ -27,6 +54,15 @@ impl Database {
         block_id
     }
 
+    /// Adds a string to the database's string table.
+    ///
+    /// # Arguments
+    ///
+    /// * `string` - The string to add to the database
+    ///
+    /// # Returns
+    ///
+    /// The ID assigned to the string (its index in the strings vector)
     pub fn add_string(&mut self, string: String) -> StringId {
         let string_id = self.strings.len();
         self.strings.push(string);

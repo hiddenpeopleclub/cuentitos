@@ -1,14 +1,31 @@
 use cuentitos_common::*;
 
+/// The runtime engine that executes a cuentitos script.
+///
+/// The Runtime is responsible for:
+/// - Managing the execution state of the script
+/// - Traversing blocks in the correct order
+/// - Maintaining section hierarchy
+/// - Providing access to the current execution state
 pub struct Runtime {
+    /// The database containing all blocks and strings
     pub database: Database,
+    /// Whether the runtime is currently executing
     running: bool,
+    /// The index of the current block being executed
     program_counter: usize,
+    /// The index of the previously executed block
     previous_program_counter: usize,
-    current_path: Vec<BlockId>, // Track the current execution path
+    /// Track the current execution path through block IDs
+    current_path: Vec<BlockId>,
 }
 
 impl Runtime {
+    /// Creates a new Runtime instance with the given database.
+    ///
+    /// # Arguments
+    ///
+    /// * `database` - The database containing blocks and strings to execute
     pub fn new(database: Database) -> Self {
         Self {
             database,
@@ -19,6 +36,13 @@ impl Runtime {
         }
     }
 
+    /// Starts the runtime execution from the beginning.
+    ///
+    /// This will:
+    /// - Set the running state to true
+    /// - Reset the program counter to 0
+    /// - Clear the current path
+    /// - Initialize with the START block if available
     pub fn run(&mut self) {
         self.running = true;
         self.program_counter = 0;
@@ -28,20 +52,34 @@ impl Runtime {
         }
     }
 
+    /// Stops the runtime execution.
+    ///
+    /// This will:
+    /// - Set the running state to false
+    /// - Reset the program counter to 0
+    /// - Clear the current path
     pub fn stop(&mut self) {
         self.running = false;
         self.program_counter = 0;
         self.current_path.clear();
     }
 
+    /// Returns whether the runtime is currently executing.
     pub fn running(&self) -> bool {
         self.running
     }
 
+    /// Returns whether the runtime can continue executing.
+    ///
+    /// This is true when:
+    /// - The runtime is running
+    /// - The END block hasn't been reached
+    /// - There are blocks in the database
     pub fn can_continue(&self) -> bool {
         self.running && !self.has_ended() && !self.database.blocks.is_empty()
     }
 
+    /// Returns whether the runtime has reached the END block.
     pub fn has_ended(&self) -> bool {
         matches!(
             self.current_block().map(|b| b.block_type),
@@ -49,6 +87,12 @@ impl Runtime {
         )
     }
 
+    /// Returns all blocks that should be displayed at the current execution point.
+    ///
+    /// This includes:
+    /// - All blocks up to the current program counter
+    /// - All relevant section headers for the current context
+    /// - The START and END blocks when appropriate
     pub fn current_blocks(&self) -> Vec<Block> {
         if !self.running || self.database.blocks.is_empty() {
             Vec::new()
@@ -113,6 +157,12 @@ impl Runtime {
         }
     }
 
+    /// Returns the current block being executed, if any.
+    ///
+    /// # Returns
+    ///
+    /// * `Some(Block)` - The current block if the runtime is running and has blocks
+    /// * `None` - If the runtime is not running or has no blocks
     pub fn current_block(&self) -> Option<Block> {
         if self.running() && !self.database.blocks.is_empty() {
             if self.program_counter >= self.database.blocks.len() {
@@ -166,6 +216,12 @@ impl Runtime {
         }
     }
 
+    /// Advances the runtime to the next block in the execution sequence.
+    ///
+    /// # Returns
+    ///
+    /// `true` if successfully moved to the next block, `false` if no more blocks
+    /// are available or the runtime cannot continue.
     pub fn step(&mut self) -> bool {
         if self.can_continue() {
             if let Some(next_id) = self.find_next_block() {
@@ -178,6 +234,15 @@ impl Runtime {
         false
     }
 
+    /// Skips to the end of the script.
+    ///
+    /// This will:
+    /// - Continue stepping until the END block is reached
+    /// - Update the previous program counter to show all skipped blocks
+    ///
+    /// # Returns
+    ///
+    /// `true` if successfully skipped to the end, `false` otherwise.
     pub fn skip(&mut self) -> bool {
         let previous_program_counter = self.program_counter;
 
@@ -195,8 +260,14 @@ impl Runtime {
     }
 
     /// Returns the current section hierarchy, from root to leaf.
+    ///
     /// For example, if we're in "Chapter 1 > Section 2 > Subsection 3",
     /// this will return [Chapter 1, Section 2, Subsection 3] in that order.
+    ///
+    /// # Returns
+    ///
+    /// A vector of Block objects representing the current section hierarchy,
+    /// ordered from root (outermost) to leaf (innermost).
     pub fn current_section_hierarchy(&self) -> Vec<Block> {
         let mut sections = Vec::new();
         let current_id = self.program_counter;
