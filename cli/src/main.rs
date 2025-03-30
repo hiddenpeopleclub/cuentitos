@@ -115,9 +115,11 @@ fn render_current_blocks(runtime: &cuentitos_runtime::Runtime) {
                 // Show the current section path before each text block if it has changed
                 if current_sections != last_shown_sections {
                     if !current_sections.is_empty() {
-                        let path = current_sections.iter()
+                        let path = current_sections
+                            .iter()
                             .filter_map(|section| {
-                                if let cuentitos_common::BlockType::Section(id) = section.block_type {
+                                if let cuentitos_common::BlockType::Section(id) = section.block_type
+                                {
                                     Some(runtime.database.strings[id].clone())
                                 } else {
                                     None

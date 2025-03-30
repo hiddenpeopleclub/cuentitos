@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod test {
     use crate::parse;
-    use cuentitos_common::{BlockType, test_case::TestCase};
+    use cuentitos_common::{test_case::TestCase, BlockType};
 
     #[test]
     fn block_creation() {
@@ -13,7 +13,9 @@ mod test {
         let database = parse(&test_case.script).unwrap();
         let block = &database.blocks[1]; // After START block
 
-        assert!(matches!(block.block_type, BlockType::Section(id) if database.strings[id] == "First Section"));
+        assert!(
+            matches!(block.block_type, BlockType::Section(id) if database.strings[id] == "First Section")
+        );
         assert_eq!(block.level, 0);
         assert_eq!(block.parent_id, Some(0)); // Parent is START
     }
@@ -28,21 +30,26 @@ mod test {
         let database = parse(&test_case.script).unwrap();
 
         // Find section blocks and verify their titles are in strings table
-        let sections: Vec<_> = database.blocks.iter()
+        let sections: Vec<_> = database
+            .blocks
+            .iter()
             .filter_map(|b| match b.block_type {
                 BlockType::Section(id) => Some(database.strings[id].clone()),
-                _ => None
+                _ => None,
             })
             .collect();
 
-        assert_eq!(sections, vec![
-            "Main Section",
-            "First Sub-section",
-            "Deep Sub-section",
-            "Second Sub-section",
-            "Another Main Section",
-            "Its Sub-section"
-        ]);
+        assert_eq!(
+            sections,
+            vec![
+                "Main Section",
+                "First Sub-section",
+                "Deep Sub-section",
+                "Second Sub-section",
+                "Another Main Section",
+                "Its Sub-section"
+            ]
+        );
     }
 
     #[test]
@@ -55,7 +62,9 @@ mod test {
         let database = parse(&test_case.script).unwrap();
 
         // Get all section blocks
-        let sections: Vec<_> = database.blocks.iter()
+        let sections: Vec<_> = database
+            .blocks
+            .iter()
             .filter(|b| matches!(b.block_type, BlockType::Section(_)))
             .collect();
 
@@ -121,17 +130,49 @@ mod test {
             .unwrap();
 
         // Verify parent relationships
-        assert_eq!(database.blocks[first_sub].parent_id, Some(main_section), "First Sub-section should be child of Main Section");
-        assert_eq!(database.blocks[deep_sub].parent_id, Some(first_sub), "Deep Sub-section should be child of First Sub-section");
-        assert_eq!(database.blocks[second_sub].parent_id, Some(main_section), "Second Sub-section should be child of Main Section");
-        assert_eq!(database.blocks[another_main].parent_id, Some(0), "Another Main Section should be child of START");
-        assert_eq!(database.blocks[its_sub].parent_id, Some(another_main), "Its Sub-section should be child of Another Main Section");
+        assert_eq!(
+            database.blocks[first_sub].parent_id,
+            Some(main_section),
+            "First Sub-section should be child of Main Section"
+        );
+        assert_eq!(
+            database.blocks[deep_sub].parent_id,
+            Some(first_sub),
+            "Deep Sub-section should be child of First Sub-section"
+        );
+        assert_eq!(
+            database.blocks[second_sub].parent_id,
+            Some(main_section),
+            "Second Sub-section should be child of Main Section"
+        );
+        assert_eq!(
+            database.blocks[another_main].parent_id,
+            Some(0),
+            "Another Main Section should be child of START"
+        );
+        assert_eq!(
+            database.blocks[its_sub].parent_id,
+            Some(another_main),
+            "Its Sub-section should be child of Another Main Section"
+        );
 
         // Verify children relationships
-        assert!(database.blocks[main_section].children.contains(&first_sub), "Main Section should have First Sub-section as child");
-        assert!(database.blocks[main_section].children.contains(&second_sub), "Main Section should have Second Sub-section as child");
-        assert!(database.blocks[first_sub].children.contains(&deep_sub), "First Sub-section should have Deep Sub-section as child");
-        assert!(database.blocks[another_main].children.contains(&its_sub), "Another Main Section should have Its Sub-section as child");
+        assert!(
+            database.blocks[main_section].children.contains(&first_sub),
+            "Main Section should have First Sub-section as child"
+        );
+        assert!(
+            database.blocks[main_section].children.contains(&second_sub),
+            "Main Section should have Second Sub-section as child"
+        );
+        assert!(
+            database.blocks[first_sub].children.contains(&deep_sub),
+            "First Sub-section should have Deep Sub-section as child"
+        );
+        assert!(
+            database.blocks[another_main].children.contains(&its_sub),
+            "Another Main Section should have Its Sub-section as child"
+        );
 
         // Verify levels are correct
         assert_eq!(database.blocks[main_section].level, 0);
@@ -175,6 +216,9 @@ mod test {
         assert!(database.blocks[main_section].children.contains(&second_sub));
 
         // Both sub-sections should be at the same level
-        assert_eq!(database.blocks[first_sub].level, database.blocks[second_sub].level);
+        assert_eq!(
+            database.blocks[first_sub].level,
+            database.blocks[second_sub].level
+        );
     }
 }

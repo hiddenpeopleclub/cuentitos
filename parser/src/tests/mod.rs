@@ -1,2 +1,2 @@
-pub mod section;
 pub mod parser;
+pub mod section;
