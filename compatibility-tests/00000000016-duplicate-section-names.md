@@ -22,4 +22,3 @@ s
 ```result
 test.cuentitos:6: ERROR: Duplicate section name: 'Chapter One' already exists at this level under 'Story'. Previously defined at line 2.
 ```
-!!! disabled

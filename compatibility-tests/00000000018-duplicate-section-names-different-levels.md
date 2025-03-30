@@ -22,10 +22,9 @@ s
 START
 -> Chapter One
 This is chapter one
--> Chapter One\Chapter One
+-> Chapter One \ Chapter One
 This is a sub-section with the same name
--> Chapter One\Chapter One\Chapter One
+-> Chapter One \ Chapter One \ Chapter One
 This is a sub-sub-section with the same name
 END
 ```
-!!! disabled
