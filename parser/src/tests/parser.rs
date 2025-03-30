@@ -150,7 +150,9 @@ This is text in another main section
     assert_eq!(database.blocks[its_sub].parent_id, Some(another_main)); // Its Sub-section -> Another Main Section
 
     // Verify text blocks are present with correct content
-    let text_blocks: Vec<_> = database.blocks.iter()
+    let text_blocks: Vec<_> = database
+        .blocks
+        .iter()
         .filter_map(|block| {
             if let BlockType::String(id) = block.block_type {
                 Some((block.level, database.strings[id].as_str()))
@@ -160,14 +162,17 @@ This is text in another main section
         })
         .collect();
 
-    assert_eq!(text_blocks, vec![
-        (0, "This is text in the main section"),
-        (1, "This is text in the first sub-section"),
-        (2, "This is text in a deep sub-section"),
-        (1, "This is text in the second sub-section"),
-        (0, "This is text in another main section"),
-        (1, "This is text in its sub-section"),
-    ]);
+    assert_eq!(
+        text_blocks,
+        vec![
+            (0, "This is text in the main section"),
+            (1, "This is text in the first sub-section"),
+            (2, "This is text in a deep sub-section"),
+            (1, "This is text in the second sub-section"),
+            (0, "This is text in another main section"),
+            (1, "This is text in its sub-section"),
+        ]
+    );
 }
 
 #[test]
@@ -220,7 +225,13 @@ This should also cause an error";
 
     // First error should be duplicate Chapter One under Story
     match &errors[0] {
-        ParseError::DuplicateSectionName { file, line, name, parent, previous_line } => {
+        ParseError::DuplicateSectionName {
+            file,
+            line,
+            name,
+            parent,
+            previous_line,
+        } => {
             assert_eq!(file.to_str().unwrap(), "test.cuentitos");
             assert_eq!(*line, 6);
             assert_eq!(name, "Chapter One");
@@ -232,7 +243,13 @@ This should also cause an error";
 
     // Second error should be duplicate Story at root level
     match &errors[1] {
-        ParseError::DuplicateSectionName { file, line, name, parent, previous_line } => {
+        ParseError::DuplicateSectionName {
+            file,
+            line,
+            name,
+            parent,
+            previous_line,
+        } => {
             assert_eq!(file.to_str().unwrap(), "test.cuentitos");
             assert_eq!(*line, 8);
             assert_eq!(name, "Story");

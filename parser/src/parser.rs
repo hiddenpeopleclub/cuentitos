@@ -1,20 +1,26 @@
-use cuentitos_common::*;
-use std::path::PathBuf;
-use std::collections::HashMap;
-use crate::parsers::{FeatureParser, ParserContext};
 use crate::parsers::line_parser::LineParser;
 use crate::parsers::section_parser::SectionParser;
+use crate::parsers::{FeatureParser, ParserContext};
 use crate::{ParseError, ParseErrors};
+use cuentitos_common::*;
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 pub struct Parser {
     last_block_at_level: Vec<BlockId>,
-    last_section_at_level: Vec<BlockId>,  // Track the last section block at each level
+    last_section_at_level: Vec<BlockId>, // Track the last section block at each level
     current_line: usize,
     file_path: PathBuf,
     section_map: HashMap<(String, usize), (BlockId, usize)>, // (section_name, level) -> (block_id, line_number)
     line_parser: LineParser,
     section_parser: SectionParser,
     in_section_hierarchy: bool, // Track whether we're in a section hierarchy
+}
+
+impl Default for Parser {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Parser {
@@ -70,7 +76,11 @@ impl Parser {
         dbg!("Created START block", start_id);
         self.last_block_at_level.push(start_id);
         self.last_section_at_level.push(start_id);
-        dbg!("Initial tracking arrays", &self.last_block_at_level, &self.last_section_at_level);
+        dbg!(
+            "Initial tracking arrays",
+            &self.last_block_at_level,
+            &self.last_section_at_level
+        );
 
         // Track all errors encountered during parsing
         let mut errors = Vec::new();
@@ -91,7 +101,11 @@ impl Parser {
                 }
             };
             dbg!(self.current_line, &line, level, &content);
-            dbg!("Current tracking state", &self.last_block_at_level, &self.last_section_at_level);
+            dbg!(
+                "Current tracking state",
+                &self.last_block_at_level,
+                &self.last_section_at_level
+            );
             dbg!("Current hierarchy mode", self.in_section_hierarchy);
 
             if content.starts_with('#') {
@@ -99,14 +113,19 @@ impl Parser {
                 self.in_section_hierarchy = true;
                 dbg!("Entering section hierarchy mode");
 
-                if let Some(section_result) = match self.section_parser.parse(content, &mut context) {
+                if let Some(section_result) = match self.section_parser.parse(content, &mut context)
+                {
                     Ok(result) => result,
                     Err(e) => {
                         errors.push(e);
                         continue;
                     }
                 } {
-                    dbg!("Parsing section", &section_result.title, section_result.level);
+                    dbg!(
+                        "Parsing section",
+                        &section_result.title,
+                        section_result.level
+                    );
                     dbg!("Section tracking before", &self.last_section_at_level);
 
                     // Check for orphaned sub-sections
@@ -117,14 +136,26 @@ impl Parser {
 
                         // Ensure we have enough levels tracked
                         while self.last_section_at_level.len() <= parent_level {
-                            dbg!("Extending section tracking to level", self.last_section_at_level.len());
+                            dbg!(
+                                "Extending section tracking to level",
+                                self.last_section_at_level.len()
+                            );
                             self.last_section_at_level.push(start_id);
                         }
 
                         let parent_id = self.last_section_at_level[parent_level];
-                        dbg!("Found parent section", parent_id, &db.blocks[parent_id].block_type);
+                        dbg!(
+                            "Found parent section",
+                            parent_id,
+                            &db.blocks[parent_id].block_type
+                        );
                         if !matches!(db.blocks[parent_id].block_type, BlockType::Section(_)) {
-                            dbg!("No valid parent section found", &section_result.title, section_result.level, &self.last_section_at_level);
+                            dbg!(
+                                "No valid parent section found",
+                                &section_result.title,
+                                section_result.level,
+                                &self.last_section_at_level
+                            );
                             errors.push(ParseError::OrphanedSubSection {
                                 file: self.file_path.clone(),
                                 line: self.current_line,
@@ -147,7 +178,10 @@ impl Parser {
                     };
 
                     // Check for duplicate section names at the same level under the same parent
-                    if let Some((_, previous_line)) = self.section_map.get(&(section_result.title.clone(), section_result.level)) {
+                    if let Some((_, previous_line)) = self
+                        .section_map
+                        .get(&(section_result.title.clone(), section_result.level))
+                    {
                         let parent_name = parent_name.unwrap_or_else(|| "<root>".to_string());
                         errors.push(ParseError::DuplicateSectionName {
                             file: self.file_path.clone(),
@@ -167,16 +201,31 @@ impl Parser {
                         Some(self.last_section_at_level[section_result.level - 1])
                     };
 
-                    let block = Block::new(BlockType::Section(string_id), parent_id, section_result.level);
+                    let block = Block::new(
+                        BlockType::Section(string_id),
+                        parent_id,
+                        section_result.level,
+                    );
                     let block_id = db.add_block(block);
-                    dbg!("Added section block", &section_result.title, block_id, parent_id);
+                    dbg!(
+                        "Added section block",
+                        &section_result.title,
+                        block_id,
+                        parent_id
+                    );
 
                     // Update section map and last block at level
-                    self.section_map.insert((section_result.title, section_result.level), (block_id, self.current_line));
+                    self.section_map.insert(
+                        (section_result.title, section_result.level),
+                        (block_id, self.current_line),
+                    );
 
                     // Extend last_section_at_level if needed and update the current level
                     while self.last_section_at_level.len() <= section_result.level {
-                        dbg!("Extending section tracking array to level", self.last_section_at_level.len());
+                        dbg!(
+                            "Extending section tracking array to level",
+                            self.last_section_at_level.len()
+                        );
                         self.last_section_at_level.push(block_id);
                     }
                     self.last_section_at_level[section_result.level] = block_id;
@@ -184,7 +233,10 @@ impl Parser {
 
                     // Also update last_block_at_level
                     while self.last_block_at_level.len() <= section_result.level {
-                        dbg!("Extending block tracking array to level", self.last_block_at_level.len());
+                        dbg!(
+                            "Extending block tracking array to level",
+                            self.last_block_at_level.len()
+                        );
                         self.last_block_at_level.push(block_id);
                     }
                     self.last_block_at_level[section_result.level] = block_id;
@@ -200,17 +252,30 @@ impl Parser {
                 };
                 dbg!("Parsing text block", &line_result.string, level);
                 let string_id = db.add_string(line_result.string);
-                dbg!("Text block tracking state", &self.last_block_at_level, &self.last_section_at_level);
+                dbg!(
+                    "Text block tracking state",
+                    &self.last_block_at_level,
+                    &self.last_section_at_level
+                );
 
                 // Determine parent based on whether we're in a section hierarchy
                 let parent = if self.in_section_hierarchy {
                     // In section hierarchy, parent to the section at this level
                     while self.last_section_at_level.len() <= level {
-                        dbg!("Extending section tracking array", self.last_section_at_level.len());
-                        self.last_section_at_level.push(self.last_section_at_level[0]);
+                        dbg!(
+                            "Extending section tracking array",
+                            self.last_section_at_level.len()
+                        );
+                        self.last_section_at_level
+                            .push(self.last_section_at_level[0]);
                     }
                     let parent = self.last_section_at_level[level];
-                    dbg!("Found section parent at same level", level, parent, &db.blocks[parent].block_type);
+                    dbg!(
+                        "Found section parent at same level",
+                        level,
+                        parent,
+                        &db.blocks[parent].block_type
+                    );
                     parent
                 } else {
                     // In text block hierarchy, parent to the last block at previous level
@@ -220,7 +285,11 @@ impl Parser {
                     } else {
                         dbg!("Looking for text block parent at level", level - 1);
                         let parent = self.last_block_at_level[level - 1];
-                        dbg!("Found text block parent", parent, &db.blocks[parent].block_type);
+                        dbg!(
+                            "Found text block parent",
+                            parent,
+                            &db.blocks[parent].block_type
+                        );
                         parent
                     }
                 };
@@ -232,7 +301,10 @@ impl Parser {
 
                 // Update last_block_at_level for the current level
                 while self.last_block_at_level.len() <= level {
-                    dbg!("Extending block tracking array", self.last_block_at_level.len());
+                    dbg!(
+                        "Extending block tracking array",
+                        self.last_block_at_level.len()
+                    );
                     self.last_block_at_level.push(block_id);
                 }
                 self.last_block_at_level[level] = block_id;

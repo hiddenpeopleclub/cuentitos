@@ -40,12 +40,18 @@ impl FeatureParser for SectionParser {
         let title = input[level..].trim().to_string();
         if title.is_empty() {
             return Err(ParseError::EmptySectionTitle {
-                file: context.file_path.clone().unwrap_or_else(|| PathBuf::from("<unknown>")),
+                file: context
+                    .file_path
+                    .clone()
+                    .unwrap_or_else(|| PathBuf::from("<unknown>")),
                 line: context.current_line,
             });
         }
 
-        Ok(Some(SectionParseResult { title, level: level - 1 }))
+        Ok(Some(SectionParseResult {
+            title,
+            level: level - 1,
+        }))
     }
 }
 
