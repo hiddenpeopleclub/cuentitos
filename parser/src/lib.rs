@@ -67,7 +67,7 @@ pub enum ParseError {
         /// The file where the error occurred
         file: PathBuf,
         /// The line number where the error occurred
-        line: usize
+        line: usize,
     },
 
     /// A sub-section was found without a parent section
@@ -76,7 +76,7 @@ pub enum ParseError {
         /// The file where the error occurred
         file: PathBuf,
         /// The line number where the error occurred
-        line: usize
+        line: usize,
     },
 
     /// Invalid number of spaces for indentation
