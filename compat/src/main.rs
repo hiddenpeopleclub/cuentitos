@@ -64,11 +64,15 @@ fn main() {
                         }
 
                         match runner.run(test_case.clone()) {
-                            TestResult::Pass => print!("{}", ".".green()),
-                            TestResult::Fail { expected, actual } => {
+                            Ok(TestResult::Pass) => print!("{}", ".".green()),
+                            Ok(TestResult::Fail { expected, actual }) => {
                                 print!("{}", "F".red());
                                 failed_tests
                                     .push((test_case, TestResult::Fail { expected, actual }));
+                            }
+                            Err(err) => {
+                                print!("{}", "E".red());
+                                eprintln!("\nError running test: {:?}", err);
                             }
                         };
                     }

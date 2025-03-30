@@ -1,2 +1,8 @@
 website/public
 target
+
+# Temporary test files
+compat/test.cuentitos
+compat/invalid_utf8.bin
+compat/mock_runtime.sh
+compat/readonly_dir
