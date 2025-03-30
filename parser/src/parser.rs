@@ -6,24 +6,46 @@ use cuentitos_common::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+/// The main parser for cuentitos scripts.
+///
+/// The Parser coordinates the parsing process by:
+/// - Managing block hierarchy and relationships
+/// - Tracking section levels and names
+/// - Validating indentation and structure
+/// - Delegating to specialized parsers for specific features
+#[derive(Debug)]
 pub struct Parser {
+    /// Tracks the last block seen at each indentation level
     last_block_at_level: Vec<BlockId>,
-    last_section_at_level: Vec<BlockId>, // Track the last section block at each level
+    /// Tracks the last section block seen at each level
+    last_section_at_level: Vec<BlockId>,
+    /// The current line number being processed
     current_line: usize,
+    /// The path to the file being parsed
     file_path: PathBuf,
-    section_map: HashMap<(String, usize), (BlockId, usize)>, // (section_name, level) -> (block_id, line_number)
+    /// Maps (section_name, level) to (block_id, line_number) for duplicate detection
+    section_map: HashMap<(String, usize), (BlockId, usize)>,
+    /// Parser for handling regular text lines
     line_parser: LineParser,
+    /// Parser for handling section headers
     section_parser: SectionParser,
-    in_section_hierarchy: bool, // Track whether we're in a section hierarchy
+    /// Whether we're currently in a section hierarchy
+    in_section_hierarchy: bool,
 }
 
 impl Default for Parser {
+    /// Creates a new Parser with default settings.
+    ///
+    /// This is equivalent to calling [`Parser::new()`].
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl Parser {
+    /// Creates a new Parser instance.
+    ///
+    /// The parser will use "<unknown>" as the file path and start with empty tracking state.
     pub fn new() -> Self {
         Parser {
             last_block_at_level: Vec::new(),
@@ -37,6 +59,11 @@ impl Parser {
         }
     }
 
+    /// Creates a new Parser instance that will parse the specified file.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_path` - The path to the file being parsed, used for error reporting
     pub fn with_file<P: Into<PathBuf>>(file_path: P) -> Self {
         Parser {
             last_block_at_level: Vec::new(),
@@ -50,6 +77,16 @@ impl Parser {
         }
     }
 
+    /// Parses indentation at the start of a line.
+    ///
+    /// # Arguments
+    ///
+    /// * `line` - The line to parse
+    ///
+    /// # Returns
+    ///
+    /// * `Ok((level, content))` - The indentation level and remaining content
+    /// * `Err(ParseError)` - If the indentation is invalid
     fn parse_indentation<'a>(&self, line: &'a str) -> Result<(usize, &'a str), ParseError> {
         let spaces = line.chars().take_while(|c| *c == ' ').count();
 
@@ -65,6 +102,23 @@ impl Parser {
         Ok((spaces / 2, &line[spaces..]))
     }
 
+    /// Parses a complete cuentitos script.
+    ///
+    /// This method:
+    /// 1. Creates a new database
+    /// 2. Adds the START block
+    /// 3. Processes each line in the script
+    /// 4. Adds the END block
+    /// 5. Reports any errors encountered
+    ///
+    /// # Arguments
+    ///
+    /// * `script` - The complete script text to parse
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Database)` - The parsed script database
+    /// * `Err(ParseErrors)` - Any errors encountered during parsing
     pub fn parse(&mut self, script: &str) -> Result<Database, ParseErrors> {
         self.current_line = 0;
         let mut db = Database::new();

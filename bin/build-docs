@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# Exit on any error
+set -e
+
+# Default value for open flag
+OPEN_DOCS=false
+
+# Parse arguments
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --open) OPEN_DOCS=true ;;
+        *) echo "Unknown parameter: $1"; exit 1 ;;
+    esac
+    shift
+done
+
+# Build documentation for workspace only, including private items
+cargo doc \
+    --no-deps \
+    --document-private-items \
+    --workspace
+
+# Open the docs if --open was passed
+if [ "$OPEN_DOCS" = true ]; then
+    open target/doc/cuentitos/index.html
+fi

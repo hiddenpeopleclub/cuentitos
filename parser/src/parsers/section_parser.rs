@@ -2,22 +2,43 @@ use super::{FeatureParser, ParserContext};
 use crate::ParseError;
 use std::path::PathBuf;
 
-/// Parser for handling section headers (lines starting with #)
+/// Parser for handling section headers (lines starting with #).
+///
+/// This parser is responsible for:
+/// - Detecting section headers (lines starting with #)
+/// - Determining section levels based on # count
+/// - Extracting section titles
+/// - Validating section header format
 #[derive(Debug, Default)]
 pub struct SectionParser;
 
-/// The result of parsing a section header
+/// The result of parsing a section header.
+///
+/// Contains the extracted title and level information from a section header.
+/// The level is zero-based (# = 0, ## = 1, etc.).
 #[derive(Debug)]
 pub struct SectionParseResult {
+    /// The title of the section, with leading/trailing whitespace removed
     pub title: String,
+    /// The zero-based level of the section (# = 0, ## = 1, etc.)
     pub level: usize,
 }
 
 impl SectionParser {
+    /// Creates a new instance of the section parser.
     pub fn new() -> Self {
         Self
     }
 
+    /// Counts the number of consecutive '#' characters at the start of a line.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - The line of text to analyze
+    ///
+    /// # Returns
+    ///
+    /// The number of consecutive '#' characters at the start of the line
     fn count_section_level(&self, input: &str) -> usize {
         input.chars().take_while(|c| *c == '#').count()
     }
@@ -27,6 +48,18 @@ impl FeatureParser for SectionParser {
     type Output = Option<SectionParseResult>;
     type Error = ParseError;
 
+    /// Parses a line of text to determine if it's a section header and extract its information.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - The line of text to parse
+    /// * `context` - The current parsing context
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(SectionParseResult))` - If the line is a valid section header
+    /// * `Ok(None)` - If the line is not a section header
+    /// * `Err(ParseError)` - If the line is an invalid section header (e.g., empty title)
     fn parse(&self, input: &str, context: &mut ParserContext) -> Result<Self::Output, Self::Error> {
         // Check if line starts with #
         if !input.starts_with('#') {
