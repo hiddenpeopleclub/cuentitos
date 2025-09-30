@@ -33,4 +33,66 @@ First line
    Invalid indentation  # Error: 3 spaces instead of 2
 ```
 
-Nesting will be useful later when discussing flow (Sections, Choices, etc.)
+Nesting creates parent-child relationships between blocks, which affects navigation and flow control.
+
+## Sections
+
+Sections organize content into navigable segments using markdown-style headers with custom IDs:
+
+```cuentitos
+# section_1: First Section
+  Content within the first section
+
+## subsection_1: First Subsection
+  Content within a subsection
+
+### deep_section: Deeply Nested Section
+  Content at the third level
+
+## subsection_2: Second Subsection
+  More content here
+
+# section_2: Second Section
+  Content in the second section
+```
+
+### Section Syntax Rules
+
+1. **Format**: `# section_id: Display Name`
+   - The `section_id` is used for programmatic reference (navigation, jumps)
+   - The `Display Name` is shown to users
+
+2. **Hierarchy Levels**:
+   - `#` = Top-level section (level 0)
+   - `##` = Subsection (level 1)
+   - `###` = Sub-subsection (level 2)
+   - And so on...
+
+3. **Content Indentation**:
+   - Content following a section header **must** be indented with at least 2 spaces
+   - Sections can follow other sections without additional indentation
+
+4. **Section Nesting**:
+   - Sections automatically nest based on their header level
+   - A `##` section becomes a child of the nearest preceding `#` section
+   - A `###` section becomes a child of the nearest preceding `##` section
+
+Example with error:
+```cuentitos
+# section_1: First Section
+Some content without indentation  # ERROR: Content must be indented under its section
+```
+
+Correct version:
+```cuentitos
+# section_1: First Section
+  Some content with proper indentation  # OK: Content is indented
+```
+
+### Runtime Behavior
+
+When navigating through sections, the runtime displays:
+- Section entry messages showing the hierarchy path
+- Example: `Entered Section: First Section > Subsection (section_1/subsection_1)`
+
+Sections will be essential for future navigation features like "Go To Section" and menu systems

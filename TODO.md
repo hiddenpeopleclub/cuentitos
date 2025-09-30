@@ -7,7 +7,7 @@
   - [ ] I18n for Strings
   - [ ] Docs for how the engine reads lines
   - [x] Block Parenting (Docs & Implementation)
-  - [ ] Sections & Sub-sections (Docs & Implementation)
+  - [x] Sections & Sub-sections (Docs & Implementation)
   - [ ] Support comments
   - [ ] Go To Section (Docs & Implementation)
   - [ ] Go To Section and Back (Docs & Implementation)
