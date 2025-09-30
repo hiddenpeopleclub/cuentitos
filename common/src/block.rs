@@ -6,6 +6,10 @@ pub type BlockId = usize;
 pub enum BlockType {
     Start,
     String(StringId),
+    Section {
+        id: String,
+        display_name: String,
+    },
     End,
 }
 
@@ -68,5 +72,22 @@ mod tests {
     fn test_is_leaf() {
         let block = Block::new(BlockType::String(0), None, 0);
         assert!(block.is_leaf());
+    }
+
+    #[test]
+    fn test_section_block() {
+        let section_id = "section_1".to_string();
+        let display_name = "My Section".to_string();
+        let block = Block::new(BlockType::Section { id: section_id.clone(), display_name: display_name.clone() }, None, 1);
+
+        match &block.block_type {
+            BlockType::Section { id, display_name: name } => {
+                assert_eq!(id, "section_1");
+                assert_eq!(name, "My Section");
+            }
+            _ => panic!("Expected Section block type"),
+        }
+
+        assert_eq!(block.level, 1);
     }
 }

@@ -20,7 +20,7 @@ fn parse_name(content: &str) -> String {
         .to_string()
 }
 
-fn parse_markdown_blog(content: &str, language: &str) -> String {
+fn parse_markdown_block(content: &str, language: &str) -> String {
     content
         .split(&format!("```{}\n", language))
         .collect::<Vec<&str>>()[1]
@@ -37,9 +37,9 @@ impl TestCase {
         B: AsRef<Path>,
     {
         let name = parse_name(content.as_ref());
-        let script = parse_markdown_blog(content.as_ref(), "cuentitos");
-        let input = parse_markdown_blog(content.as_ref(), "input");
-        let result = parse_markdown_blog(content.as_ref(), "result");
+        let script = parse_markdown_block(content.as_ref(), "cuentitos");
+        let input = parse_markdown_block(content.as_ref(), "input");
+        let result = parse_markdown_block(content.as_ref(), "result");
 
         TestCase {
             name,

@@ -106,10 +106,39 @@ fn process_input(input: &str, runtime: &mut cuentitos_runtime::Runtime) -> bool 
 
 fn render_current_blocks(runtime: &cuentitos_runtime::Runtime) {
     for block in runtime.current_blocks() {
-        match block.block_type {
+        match &block.block_type {
             cuentitos_common::BlockType::Start => println!("START"),
-            cuentitos_common::BlockType::String(id) => println!("{}", runtime.database.strings[id]),
+            cuentitos_common::BlockType::String(id) => println!("{}", runtime.database.strings[*id]),
             cuentitos_common::BlockType::End => println!("END"),
+            cuentitos_common::BlockType::Section { id: _, display_name: _ } => {
+                // Build the section paths by traversing up the hierarchy
+                let (name_path, id_path) = build_section_paths(runtime, &block);
+                println!("Entered Section: {} ({})", name_path, id_path);
+            },
         }
     }
+}
+
+fn build_section_paths(runtime: &cuentitos_runtime::Runtime, current_block: &cuentitos_common::Block) -> (String, String) {
+    let mut name_parts = Vec::new();
+    let mut id_parts = Vec::new();
+
+    // Add current section's display name and ID
+    if let cuentitos_common::BlockType::Section { id, display_name } = &current_block.block_type {
+        name_parts.push(display_name.clone());
+        id_parts.push(id.clone());
+    }
+
+    // Traverse up the hierarchy to find parent sections
+    let mut current_id = current_block.parent_id;
+    while let Some(parent_id) = current_id {
+        let parent_block = &runtime.database.blocks[parent_id];
+        if let cuentitos_common::BlockType::Section { id, display_name } = &parent_block.block_type {
+            name_parts.insert(0, display_name.clone());
+            id_parts.insert(0, id.clone());
+        }
+        current_id = parent_block.parent_id;
+    }
+
+    (name_parts.join(" > "), id_parts.join("/"))
 }

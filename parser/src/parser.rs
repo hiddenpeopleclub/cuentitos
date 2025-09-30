@@ -1,4 +1,5 @@
 use crate::line_parser;
+use crate::block_parsers;
 use cuentitos_common::*;
 use std::fmt;
 use std::path::PathBuf;
@@ -6,8 +7,10 @@ use std::path::PathBuf;
 #[derive(Debug, Default)]
 pub struct Parser {
     last_block_at_level: Vec<BlockId>, // Stack to track last block at each level
+    last_section_at_level: Vec<BlockId>, // Stack to track last section at each level (for section hierarchy)
     file_path: Option<PathBuf>,
     current_line: usize,
+    last_section: Option<(String, String, usize, usize)>, // (section_id, display_name, section_level, line_indent) - tracks if we need to validate indentation
 }
 
 #[derive(Debug, Clone)]
@@ -21,6 +24,11 @@ pub enum ParseError {
         line: usize,
     },
     InvalidIndentation {
+        message: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    SectionContentError {
         message: String,
         file: Option<PathBuf>,
         line: usize,
@@ -43,6 +51,13 @@ impl fmt::Display for ParseError {
             } => {
                 write!(f, "{}: ERROR: Invalid indentation: {}", line, message)
             }
+            ParseError::SectionContentError {
+                message,
+                file: _,
+                line,
+            } => {
+                write!(f, "{}: ERROR: {}", line, message)
+            }
         }
     }
 }
@@ -59,6 +74,108 @@ impl Parser {
         }
     }
 
+    fn process_blocks(
+        &mut self,
+        blocks: Vec<Block>,
+        strings: Vec<std::string::String>,
+        database: &mut Database,
+        start_id: BlockId,
+        raw_text: &str,
+    ) -> Result<(), ParseError> {
+        // Add all strings first to get their IDs
+        let string_ids: Vec<_> = strings.into_iter()
+            .map(|s| database.add_string(s))
+            .collect();
+
+        // Process each block
+        for (block_idx, mut block) in blocks.into_iter().enumerate() {
+            // If it's a string block, update its ID to match the actual string ID
+            if let BlockType::String(_) = block.block_type {
+                block.block_type = BlockType::String(string_ids[block_idx]);
+            }
+
+            // Find parent block
+            let is_section = matches!(block.block_type, BlockType::Section { .. });
+
+            let parent_id = if block.level == 0 {
+                Some(start_id)
+            } else if is_section {
+                // Sections use the section stack to find parents
+                if block.level <= self.last_section_at_level.len() {
+                    // Pop section levels until we reach the parent level
+                    while self.last_section_at_level.len() > block.level {
+                        self.last_section_at_level.pop();
+                    }
+                    self.last_section_at_level.last().copied()
+                } else {
+                    // No parent section at the right level, use start
+                    Some(start_id)
+                }
+            } else {
+                // Regular blocks use the normal stack
+                if block.level <= self.last_block_at_level.len() {
+                    // Pop levels until we reach the parent level
+                    while self.last_block_at_level.len() > block.level {
+                        self.last_block_at_level.pop();
+                    }
+                    self.last_block_at_level.last().copied()
+                } else {
+                    return Err(ParseError::InvalidIndentation {
+                        message: format!("found {} spaces in: {}", block.level * 2, raw_text),
+                        file: self.file_path.clone(),
+                        line: self.current_line,
+                    });
+                }
+            };
+
+            // Set the parent and add the block
+            block.parent_id = parent_id;
+            let block_id = database.add_block(block.clone());
+
+            // Update stacks
+            // Always update the general block stack
+            if block.level >= self.last_block_at_level.len() {
+                // Grow the stack to accommodate this level
+                while self.last_block_at_level.len() <= block.level {
+                    self.last_block_at_level.push(block_id);
+                }
+            } else {
+                // Update existing level
+                self.last_block_at_level[block.level] = block_id;
+            }
+
+            // If this is a section, also update the section stack
+            if is_section {
+                if block.level >= self.last_section_at_level.len() {
+                    // Grow the section stack
+                    while self.last_section_at_level.len() <= block.level {
+                        self.last_section_at_level.push(block_id);
+                    }
+                } else {
+                    // Update existing level
+                    self.last_section_at_level[block.level] = block_id;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn try_parse_line(&self, line: line_parser::Line, level: usize) -> Option<(Vec<Block>, Vec<std::string::String>)> {
+        // Try section parser first
+        let result = block_parsers::SectionParser::parse(line.clone(), level);
+        if result.is_some() {
+            return result;
+        }
+
+        // Try string parser
+        let result = block_parsers::StringParser::parse(line, level);
+        if result.is_some() {
+            return result;
+        }
+
+        None
+    }
+
     pub fn parse<A>(&mut self, script: A) -> Result<Database, ParseError>
     where
         A: AsRef<str>,
@@ -73,47 +190,69 @@ impl Parser {
         let start_block = Block::new(BlockType::Start, None, 0);
         let start_id = database.add_block(start_block);
         self.last_block_at_level.push(start_id);
+        self.last_section_at_level.push(start_id); // Start can be parent of top-level sections
 
         // Iterate through each line
-        for line in script.lines() {
-            let (level, content) = self.parse_indentation(line)?;
-            if content.trim().is_empty() {
+        for raw_text in script.lines() {
+            let line = line_parser::Line {
+                raw_text,
+                file_path: self.file_path.clone(),
+                line_number: self.current_line,
+            };
+
+            // Parse the line to get indentation level
+            let line_result = line_parser::parse(line.clone())?;
+
+            // Skip empty lines
+            if line_result.string.is_empty() {
                 self.current_line += 1;
-                continue; // Skip empty lines
+                continue;
             }
 
-            let line = line_parser::Line {
-                text: content.trim(),
-            };
-            let result = line_parser::parse(line)?;
+            // Try to parse the line with available parsers, passing the actual indentation level
+            let parse_result = self.try_parse_line(line, line_result.indentation_level);
 
-            // Find parent block
-            let parent_id = if level == 0 {
-                Some(start_id)
-            } else if level <= self.last_block_at_level.len() {
-                // Pop levels until we reach the parent level
-                while self.last_block_at_level.len() > level {
-                    self.last_block_at_level.pop();
+            match parse_result {
+                Some((blocks, strings)) => {
+                    // Check if we have a pending section that needs indentation validation
+                    if let Some((section_id, display_name, _section_level, line_indent)) = &self.last_section {
+                        // Check if this is a section block
+                        let is_section = blocks.iter().any(|b| matches!(b.block_type, BlockType::Section { .. }));
+
+                        if !is_section {
+                            // This is content after a section - it must be MORE indented than the section line itself
+                            if line_result.indentation_level <= *line_indent {
+                                return Err(ParseError::SectionContentError {
+                                    message: format!("Content must be indented under its section (# {}: {})", section_id, display_name),
+                                    file: self.file_path.clone(),
+                                    line: self.current_line,
+                                });
+                            }
+                            // Validation passed, clear the pending section
+                            self.last_section = None;
+                        } else {
+                            // Found another section, clear the validation requirement
+                            self.last_section = None;
+                        }
+                    }
+
+                    // Check if we just parsed a section - if so, track it for next line validation
+                    for block in &blocks {
+                        if let BlockType::Section { id, display_name } = &block.block_type {
+                            // Store both the section level (from hash count) and the line's indentation
+                            self.last_section = Some((id.clone(), display_name.clone(), block.level, line_result.indentation_level));
+                        }
+                    }
+
+                    self.process_blocks(blocks, strings, &mut database, start_id, raw_text)?;
                 }
-                self.last_block_at_level.last().copied()
-            } else {
-                return Err(ParseError::InvalidIndentation {
-                    message: format!("found {} spaces in: {}", level * 2, content),
-                    file: self.file_path.clone(),
-                    line: self.current_line,
-                });
-            };
-
-            // Create new block
-            let string_id = database.add_string(result.string);
-            let block = Block::new(BlockType::String(string_id), parent_id, level);
-            let block_id = database.add_block(block);
-
-            // Update last block at this level
-            if level >= self.last_block_at_level.len() {
-                self.last_block_at_level.push(block_id);
-            } else {
-                self.last_block_at_level[level] = block_id;
+                None => {
+                    // No parser succeeded
+                    return Err(ParseError::UnexpectedToken {
+                        file: self.file_path.clone(),
+                        line: self.current_line,
+                    });
+                }
             }
 
             self.current_line += 1;
@@ -124,21 +263,6 @@ impl Parser {
         database.add_block(end_block);
 
         Ok(database)
-    }
-
-    fn parse_indentation<'a>(&self, line: &'a str) -> Result<(usize, &'a str), ParseError> {
-        let spaces = line.chars().take_while(|c| *c == ' ').count();
-
-        // Check if indentation is valid (multiple of 2)
-        if spaces % 2 != 0 {
-            return Err(ParseError::InvalidIndentation {
-                message: format!("found {} spaces.", spaces),
-                file: self.file_path.clone(),
-                line: self.current_line,
-            });
-        }
-
-        Ok((spaces / 2, &line[spaces..]))
     }
 }
 
