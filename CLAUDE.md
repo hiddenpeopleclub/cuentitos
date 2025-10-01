@@ -133,6 +133,7 @@ The test runner compares CLI output against the Result section.
 - **Follow Rust naming conventions**: snake_case for functions/variables, PascalCase for types
 - **Embrace ownership and the type system**
 - **Avoid code duplication**
+- **Write Rust unit tests for parser logic and validation rules** - Don't rely solely on compatibility tests
 - **Refer to ADRs in `docs/architecture/`** for design rationale
 
 ## Important Notes

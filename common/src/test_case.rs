@@ -21,13 +21,14 @@ fn parse_name(content: &str) -> String {
 }
 
 fn parse_markdown_block(content: &str, language: &str) -> String {
-    content
+    let block = content
         .split(&format!("```{}\n", language))
         .collect::<Vec<&str>>()[1]
         .split("```")
-        .collect::<Vec<&str>>()[0]
-        .trim()
-        .to_string()
+        .collect::<Vec<&str>>()[0];
+
+    // Trim only trailing whitespace, preserve leading whitespace on each line
+    block.trim_end().to_string()
 }
 
 impl TestCase {

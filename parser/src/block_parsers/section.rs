@@ -1,5 +1,7 @@
 use crate::line_parser;
+use crate::ParseError;
 use cuentitos_common::*;
+use std::path::PathBuf;
 
 pub struct SectionParser;
 
@@ -7,18 +9,20 @@ impl SectionParser {
     pub fn parse(
         line: line_parser::Line,
         _level: usize,
-    ) -> Option<(Vec<Block>, Vec<std::string::String>)> {
+        file_path: Option<PathBuf>,
+        line_number: usize,
+    ) -> Result<Option<(Vec<Block>, Vec<std::string::String>, usize)>, ParseError> {
         // For sections, we need to check the raw text, not the parsed result
         // because sections can be indented and we need to preserve that
         let raw_trimmed = line.raw_text.trim();
 
         // Check if the trimmed text starts with '#'
         if !raw_trimmed.starts_with('#') {
-            return None;
+            return Ok(None);
         }
 
         // Now parse to get the indentation level
-        let result = line_parser::parse(line).ok()?;
+        let result = line_parser::parse(line).map_err(|e| e)?;
 
         // Count the number of '#' symbols
         let hash_count = result.string.chars().take_while(|&c| c == '#').count();
@@ -32,7 +36,7 @@ impl SectionParser {
         let (section_id, display_name) = if rest.contains(':') {
             let parts: Vec<&str> = rest.splitn(2, ':').collect();
             if parts.len() != 2 {
-                return None;
+                return Ok(None);
             }
             (parts[0].trim().to_string(), parts[1].trim().to_string())
         } else if !rest.is_empty() {
@@ -40,8 +44,14 @@ impl SectionParser {
             (rest.to_string(), rest.to_string())
         } else {
             // Section without title is an error
-            return None;
+            return Err(ParseError::SectionWithoutTitle {
+                file: file_path,
+                line: line_number,
+            });
         };
+
+        // Note: Orphaned sub-section validation needs to be done at the parser level
+        // where we have context about previous sections
 
         // Section depth is determined by both indentation AND the number of '#' symbols
         // The actual level is the indentation level from the line
@@ -56,7 +66,8 @@ impl SectionParser {
             section_level,
         );
 
-        Some((vec![block], vec![]))
+        // Return block, strings, and hash_count
+        Ok(Some((vec![block], vec![], hash_count)))
     }
 }
 
@@ -73,11 +84,12 @@ mod tests {
             line_number: 1,
         };
 
-        let result = SectionParser::parse(line, 0).unwrap();
-        let (blocks, strings) = result;
+        let result = SectionParser::parse(line, 0, None, 1).unwrap().unwrap();
+        let (blocks, strings, hash_count) = result;
 
         assert_eq!(blocks.len(), 1);
         assert_eq!(strings.len(), 0);
+        assert_eq!(hash_count, 1);
 
         match &blocks[0].block_type {
             BlockType::Section { id, display_name } => {
@@ -97,9 +109,10 @@ mod tests {
             line_number: 1,
         };
 
-        let result = SectionParser::parse(line, 0).unwrap();
-        let (blocks, _) = result;
+        let result = SectionParser::parse(line, 0, None, 1).unwrap().unwrap();
+        let (blocks, _, hash_count) = result;
 
+        assert_eq!(hash_count, 2);
         match &blocks[0].block_type {
             BlockType::Section { id, display_name } => {
                 assert_eq!(id, "subsection_1");
@@ -107,7 +120,7 @@ mod tests {
             }
             _ => panic!("Expected Section block type"),
         }
-        assert_eq!(blocks[0].level, 1);
+        assert_eq!(blocks[0].level, 0);
     }
 
     #[test]
@@ -118,9 +131,10 @@ mod tests {
             line_number: 1,
         };
 
-        let result = SectionParser::parse(line, 0).unwrap();
-        let (blocks, _) = result;
+        let result = SectionParser::parse(line, 0, None, 1).unwrap().unwrap();
+        let (blocks, _, hash_count) = result;
 
+        assert_eq!(hash_count, 3);
         match &blocks[0].block_type {
             BlockType::Section { id, display_name } => {
                 assert_eq!(id, "subsubsection_1");
@@ -128,7 +142,7 @@ mod tests {
             }
             _ => panic!("Expected Section block type"),
         }
-        assert_eq!(blocks[0].level, 2);
+        assert_eq!(blocks[0].level, 0);
     }
 
     #[test]
@@ -139,7 +153,7 @@ mod tests {
             line_number: 1,
         };
 
-        let result = SectionParser::parse(line, 0);
+        let result = SectionParser::parse(line, 0, None, 1).unwrap();
         assert!(result.is_none());
     }
 
@@ -151,9 +165,10 @@ mod tests {
             line_number: 1,
         };
 
-        let result = SectionParser::parse(line, 0).unwrap();
-        let (blocks, _) = result;
+        let result = SectionParser::parse(line, 0, None, 1).unwrap().unwrap();
+        let (blocks, _, hash_count) = result;
 
+        assert_eq!(hash_count, 1);
         match &blocks[0].block_type {
             BlockType::Section { id, display_name } => {
                 // When no colon, the title is used as both ID and display name
@@ -172,11 +187,26 @@ mod tests {
             line_number: 1,
         };
 
-        let result = SectionParser::parse(line, 1).unwrap();
-        let (blocks, _) = result;
+        let result = SectionParser::parse(line, 1, None, 1).unwrap().unwrap();
+        let (blocks, _, hash_count) = result;
 
-        // Section level is determined by hash count, not indentation
-        // So a '#' section is always level 0 regardless of indentation
-        assert_eq!(blocks[0].level, 0);
+        assert_eq!(hash_count, 1);
+        // Section level is determined by indentation
+        assert_eq!(blocks[0].level, 1);
+    }
+
+    #[test]
+    fn test_parse_empty_section_title() {
+        let line = line_parser::Line {
+            raw_text: "#",
+            file_path: None,
+            line_number: 4,
+        };
+
+        let result = SectionParser::parse(line, 0, None, 4);
+        match result {
+            Err(ParseError::SectionWithoutTitle { .. }) => {},
+            _ => panic!("Expected SectionWithoutTitle error"),
+        }
     }
 }

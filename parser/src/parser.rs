@@ -1,6 +1,7 @@
 use crate::line_parser;
 use crate::block_parsers;
 use cuentitos_common::*;
+use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 
@@ -10,6 +11,12 @@ pub struct Parser {
     last_section_at_level: Vec<BlockId>, // Stack to track last section at each level (for section hierarchy)
     file_path: Option<PathBuf>,
     current_line: usize,
+    // Track section names by parent_id -> (name -> first_line_number)
+    section_names_by_parent: HashMap<Option<BlockId>, HashMap<String, usize>>,
+    // Track hash count for each block_id (for section hierarchy validation)
+    section_hash_counts: HashMap<BlockId, usize>,
+    // Collect errors instead of returning immediately
+    errors: Vec<ParseError>,
 }
 
 #[derive(Debug, Clone)]
@@ -26,6 +33,25 @@ pub enum ParseError {
         message: String,
         file: Option<PathBuf>,
         line: usize,
+    },
+    SectionWithoutTitle {
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    InvalidSectionHierarchy {
+        message: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    DuplicateSectionName {
+        name: String,
+        parent_name: String,
+        file: Option<PathBuf>,
+        line: usize,
+        previous_line: usize,
+    },
+    MultipleErrors {
+        errors: Vec<ParseError>,
     },
 }
 
@@ -57,6 +83,38 @@ impl fmt::Display for ParseError {
                     .unwrap_or("test.cuentitos");
                 write!(f, "{}:{}: ERROR: Invalid indentation: {}", prefix, line, message)
             }
+            ParseError::SectionWithoutTitle { file, line } => {
+                let prefix = file.as_ref()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("test.cuentitos");
+                write!(f, "{}:{}: ERROR: Section without title: found empty section title.", prefix, line)
+            }
+            ParseError::InvalidSectionHierarchy { message, file, line } => {
+                let prefix = file.as_ref()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("test.cuentitos");
+                write!(f, "{}:{}: ERROR: Invalid section hierarchy: {}", prefix, line, message)
+            }
+            ParseError::DuplicateSectionName { name, parent_name, file, line, previous_line } => {
+                let prefix = file.as_ref()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("test.cuentitos");
+                write!(f, "{}:{}: ERROR: Duplicate section name: '{}' already exists at this level under '{}'. Previously defined at line {}.",
+                    prefix, line, name, parent_name, previous_line)
+            }
+            ParseError::MultipleErrors { errors } => {
+                for (i, error) in errors.iter().enumerate() {
+                    write!(f, "{}", error)?;
+                    if i < errors.len() - 1 {
+                        writeln!(f)?;
+                        writeln!(f)?;
+                    }
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -77,6 +135,7 @@ impl Parser {
         &mut self,
         blocks: Vec<Block>,
         strings: Vec<std::string::String>,
+        hash_count: Option<usize>,
         database: &mut Database,
         start_id: BlockId,
         raw_text: &str,
@@ -100,7 +159,7 @@ impl Parser {
                 Some(start_id)
             } else if is_section {
                 // Sections use the section stack to find parents
-                if block.level <= self.last_section_at_level.len() {
+                let potential_parent = if block.level <= self.last_section_at_level.len() {
                     // Pop section levels until we reach the parent level
                     while self.last_section_at_level.len() > block.level {
                         self.last_section_at_level.pop();
@@ -109,7 +168,20 @@ impl Parser {
                 } else {
                     // No parent section at the right level, use start
                     Some(start_id)
+                };
+
+                // Validate orphaned subsections: if hash_count > 1 (subsection) and parent is start_id, that's an error
+                if let Some(hc) = hash_count {
+                    if hc > 1 && potential_parent == Some(start_id) {
+                        return Err(ParseError::InvalidSectionHierarchy {
+                            message: "found sub-section without parent section.".to_string(),
+                            file: self.file_path.clone(),
+                            line: self.current_line,
+                        });
+                    }
                 }
+
+                potential_parent
             } else {
                 // Regular blocks use the normal stack
                 if block.level <= self.last_block_at_level.len() {
@@ -129,6 +201,45 @@ impl Parser {
 
             // Set the parent and add the block
             block.parent_id = parent_id;
+
+            // Check for duplicate section names
+            if let BlockType::Section { id: _, display_name } = &block.block_type {
+                // Get the map for this parent (or create it)
+                let names_map = self.section_names_by_parent.entry(parent_id).or_insert_with(HashMap::new);
+
+                // Check if this name already exists
+                if let Some(&previous_line) = names_map.get(display_name) {
+                    // Get parent's display name for error message
+                    let parent_name = if let Some(pid) = parent_id {
+                        if pid == start_id {
+                            "<root>".to_string()
+                        } else {
+                            match &database.blocks[pid].block_type {
+                                BlockType::Section { id: _, display_name: parent_display } => parent_display.clone(),
+                                _ => "<root>".to_string(),
+                            }
+                        }
+                    } else {
+                        "<root>".to_string()
+                    };
+
+                    // Collect error instead of returning
+                    self.errors.push(ParseError::DuplicateSectionName {
+                        name: display_name.clone(),
+                        parent_name,
+                        file: self.file_path.clone(),
+                        line: self.current_line,
+                        previous_line,
+                    });
+
+                    // Skip adding this block since it's a duplicate
+                    continue;
+                }
+
+                // Record this section name
+                names_map.insert(display_name.clone(), self.current_line);
+            }
+
             let block_id = database.add_block(block.clone());
 
             // Update stacks
@@ -159,20 +270,21 @@ impl Parser {
         Ok(())
     }
 
-    fn try_parse_line(&self, line: line_parser::Line, level: usize) -> Option<(Vec<Block>, Vec<std::string::String>)> {
+    fn try_parse_line(&self, line: line_parser::Line, level: usize) -> Result<Option<(Vec<Block>, Vec<std::string::String>, Option<usize>)>, ParseError> {
         // Try section parser first
-        let result = block_parsers::SectionParser::parse(line.clone(), level);
-        if result.is_some() {
-            return result;
+        match block_parsers::SectionParser::parse(line.clone(), level, self.file_path.clone(), self.current_line) {
+            Ok(Some((blocks, strings, hash_count))) => return Ok(Some((blocks, strings, Some(hash_count)))),
+            Ok(None) => {}, // Not a section, try next parser
+            Err(e) => return Err(e), // Section parsing error
         }
 
         // Try string parser
         let result = block_parsers::StringParser::parse(line, level);
-        if result.is_some() {
-            return result;
+        if let Some((blocks, strings)) = result {
+            return Ok(Some((blocks, strings, None)));
         }
 
-        None
+        Ok(None)
     }
 
     pub fn parse<A>(&mut self, script: A) -> Result<Database, ParseError>
@@ -200,7 +312,15 @@ impl Parser {
             };
 
             // Parse the line to get indentation level
-            let line_result = line_parser::parse(line.clone())?;
+            let line_result = match line_parser::parse(line.clone()) {
+                Ok(result) => result,
+                Err(e) => {
+                    // Collect error and skip this line
+                    self.errors.push(e);
+                    self.current_line += 1;
+                    continue;
+                }
+            };
 
             // Skip empty lines
             if line_result.string.is_empty() {
@@ -209,18 +329,29 @@ impl Parser {
             }
 
             // Try to parse the line with available parsers, passing the actual indentation level
-            let parse_result = self.try_parse_line(line, line_result.indentation_level);
+            let parse_result = match self.try_parse_line(line, line_result.indentation_level) {
+                Ok(result) => result,
+                Err(e) => {
+                    // Collect error and skip this line
+                    self.errors.push(e);
+                    self.current_line += 1;
+                    continue;
+                }
+            };
 
             match parse_result {
-                Some((blocks, strings)) => {
+                Some((blocks, strings, hash_count)) => {
                     // Disable section content validation for now - main's tests don't require it
                     // Sections in main's implementation don't enforce content indentation
 
-                    self.process_blocks(blocks, strings, &mut database, start_id, raw_text)?;
+                    if let Err(e) = self.process_blocks(blocks, strings, hash_count, &mut database, start_id, raw_text) {
+                        // Collect error and continue
+                        self.errors.push(e);
+                    }
                 }
                 None => {
-                    // No parser succeeded
-                    return Err(ParseError::UnexpectedToken {
+                    // No parser succeeded - collect error
+                    self.errors.push(ParseError::UnexpectedToken {
                         file: self.file_path.clone(),
                         line: self.current_line,
                     });
@@ -233,6 +364,17 @@ impl Parser {
         // Add End block (with no parent)
         let end_block = Block::new(BlockType::End, None, 0);
         database.add_block(end_block);
+
+        // Check if we collected any errors
+        if !self.errors.is_empty() {
+            if self.errors.len() == 1 {
+                return Err(self.errors.remove(0));
+            } else {
+                return Err(ParseError::MultipleErrors {
+                    errors: self.errors.clone(),
+                });
+            }
+        }
 
         Ok(database)
     }
@@ -345,5 +487,31 @@ mod test {
             }
             _ => panic!("Expected InvalidIndentation error with file path"),
         }
+    }
+
+    #[test]
+    fn test_orphaned_subsection() {
+        let script = "  ## Orphaned Sub-section\n  This should cause an error";
+        let mut parser = Parser::with_file(PathBuf::from("test.cuentitos"));
+        let result = parser.parse(script);
+
+        match result {
+            Err(ParseError::InvalidSectionHierarchy { message, file, line }) => {
+                assert_eq!(message, "found sub-section without parent section");
+                assert_eq!(file, Some(PathBuf::from("test.cuentitos")));
+                assert_eq!(line, 1);
+            }
+            Ok(_) => panic!("Expected InvalidSectionHierarchy error but parsing succeeded"),
+            Err(e) => panic!("Expected InvalidSectionHierarchy error but got: {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_valid_subsection_with_parent() {
+        let script = "# Valid Section\nThis is text\n  ## Valid Sub-section\n  This is valid";
+        let mut parser = Parser::default();
+        let result = parser.parse(script);
+
+        assert!(result.is_ok(), "Valid subsection with parent should parse successfully");
     }
 }
