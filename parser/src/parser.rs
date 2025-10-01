@@ -1,5 +1,6 @@
 use crate::parsers::{FeatureParser, ParserContext, line_parser::LineParser, section_parser::SectionParser};
 use cuentitos_common::*;
+use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 
@@ -10,6 +11,10 @@ pub struct Parser {
     file_path: Option<PathBuf>,
     line_parser: LineParser,
     section_parser: SectionParser,
+    // Track section names by parent_id -> (name -> first_line_number)
+    section_names_by_parent: HashMap<Option<BlockId>, HashMap<String, usize>>,
+    // Collect errors instead of returning immediately
+    errors: Vec<ParseError>,
 }
 
 #[derive(Debug, Clone)]
@@ -35,6 +40,16 @@ pub enum ParseError {
         message: String,
         file: Option<PathBuf>,
         line: usize,
+    },
+    DuplicateSectionName {
+        name: String,
+        parent_name: String,
+        file: Option<PathBuf>,
+        line: usize,
+        previous_line: usize,
+    },
+    MultipleErrors {
+        errors: Vec<ParseError>,
     },
 }
 
@@ -80,6 +95,24 @@ impl fmt::Display for ParseError {
                     .unwrap_or("test.cuentitos");
                 write!(f, "{}:{}: ERROR: Invalid section hierarchy: {}", prefix, line, message)
             }
+            ParseError::DuplicateSectionName { name, parent_name, file, line, previous_line } => {
+                let prefix = file.as_ref()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("test.cuentitos");
+                write!(f, "{}:{}: ERROR: Duplicate section name: '{}' already exists at this level under '{}'. Previously defined at line {}.",
+                    prefix, line, name, parent_name, previous_line)
+            }
+            ParseError::MultipleErrors { errors } => {
+                for (i, error) in errors.iter().enumerate() {
+                    write!(f, "{}", error)?;
+                    if i < errors.len() - 1 {
+                        writeln!(f)?;
+                        writeln!(f)?;
+                    }
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -120,14 +153,33 @@ impl Parser {
 
         // Iterate through each line
         for line in script.as_ref().lines() {
-            let (level, content) = self.parse_indentation(line, &context)?;
+            let (level, content) = match self.parse_indentation(line, &context) {
+                Ok(result) => result,
+                Err(e) => {
+                    // Collect error and skip this line
+                    self.errors.push(e);
+                    context.current_line += 1;
+                    continue;
+                }
+            };
+
             if content.trim().is_empty() {
                 context.current_line += 1;
                 continue; // Skip empty lines
             }
 
             // Try to parse as section first
-            if let Some(section_result) = self.section_parser.parse(content.trim(), &mut context)? {
+            let section_result = match self.section_parser.parse(content.trim(), &mut context) {
+                Ok(result) => result,
+                Err(e) => {
+                    // Collect error and skip this line
+                    self.errors.push(e);
+                    context.current_line += 1;
+                    continue;
+                }
+            };
+
+            if let Some(section_result) = section_result {
                 // This is a section
                 let parent_id = if level == 0 {
                     Some(start_id)
@@ -143,12 +195,47 @@ impl Parser {
 
                 // Validate orphaned subsections: if hash_count > 1 (subsection) and parent is start_id, that's an error
                 if section_result.hash_count > 1 && parent_id == Some(start_id) {
-                    return Err(ParseError::InvalidSectionHierarchy {
+                    self.errors.push(ParseError::InvalidSectionHierarchy {
                         message: "found sub-section without parent section.".to_string(),
                         file: self.file_path.clone(),
                         line: context.current_line,
                     });
+                    context.current_line += 1;
+                    continue;
                 }
+
+                // Check for duplicate section names
+                let names_map = self.section_names_by_parent.entry(parent_id).or_insert_with(HashMap::new);
+
+                if let Some(&previous_line) = names_map.get(&section_result.display_name) {
+                    // Get parent's display name for error message
+                    let parent_name = if let Some(pid) = parent_id {
+                        if pid == start_id {
+                            "<root>".to_string()
+                        } else {
+                            match &context.database.blocks[pid].block_type {
+                                BlockType::Section { display_name: parent_display, .. } => parent_display.clone(),
+                                _ => "<root>".to_string(),
+                            }
+                        }
+                    } else {
+                        "<root>".to_string()
+                    };
+
+                    // Collect error and skip adding this block
+                    self.errors.push(ParseError::DuplicateSectionName {
+                        name: section_result.display_name.clone(),
+                        parent_name,
+                        file: self.file_path.clone(),
+                        line: context.current_line,
+                        previous_line,
+                    });
+                    context.current_line += 1;
+                    continue;
+                }
+
+                // Record this section name
+                names_map.insert(section_result.display_name.clone(), context.current_line);
 
                 let block = Block::new(
                     BlockType::Section {
@@ -213,6 +300,17 @@ impl Parser {
         // Add End block (with no parent)
         let end_block = Block::new(BlockType::End, None, 0);
         context.database.add_block(end_block);
+
+        // Check if we collected any errors
+        if !self.errors.is_empty() {
+            if self.errors.len() == 1 {
+                return Err(self.errors.remove(0));
+            } else {
+                return Err(ParseError::MultipleErrors {
+                    errors: self.errors.clone(),
+                });
+            }
+        }
 
         Ok(context.database)
     }
