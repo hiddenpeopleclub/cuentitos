@@ -6,8 +6,9 @@
 # Language
   - [ ] I18n for Strings
   - [ ] Docs for how the engine reads lines
-  - [ ] Block Parenting (Docs & Implementation)
-  - [ ] Sections & Sub-sections (Docs & Implementation)
+  - [x] Block Parenting (Docs & Implementation)
+  - [x] Sections & Sub-sections (Docs & Implementation)
+  - [ ] Support comments
   - [ ] Go To Section (Docs & Implementation)
   - [ ] Go To Section and Back (Docs & Implementation)
   - [ ] Go To End

@@ -1,3 +1,8 @@
 #!/bin/bash
 cargo build
-cargo run -- ./target/debug/cuentitos ./compatibility-tests/**/*.md
+# If an argument is provided, run that specific test, otherwise run all tests
+if [ -z "$1" ]; then
+  cargo run --bin cuentitos-compat -- ./target/debug/cuentitos ./compatibility-tests/**/*.md
+else
+  cargo run --bin cuentitos-compat -- ./target/debug/cuentitos "$1"
+fi
