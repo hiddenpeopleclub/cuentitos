@@ -1,4 +1,4 @@
-use crate::parsers::{FeatureParser, ParserContext, line_parser::LineParser};
+use crate::parsers::{FeatureParser, ParserContext, line_parser::LineParser, section_parser::SectionParser};
 use cuentitos_common::*;
 use std::fmt;
 use std::path::PathBuf;
@@ -6,8 +6,10 @@ use std::path::PathBuf;
 #[derive(Debug, Default)]
 pub struct Parser {
     last_block_at_level: Vec<BlockId>, // Stack to track last block at each level
+    last_section_at_level: Vec<BlockId>, // Stack to track last section at each level (for section hierarchy)
     file_path: Option<PathBuf>,
     line_parser: LineParser,
+    section_parser: SectionParser,
 }
 
 #[derive(Debug, Clone)]
@@ -25,23 +27,58 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    SectionWithoutTitle {
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    InvalidSectionHierarchy {
+        message: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
 }
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ParseError::UnexpectedToken { file: _, line } => {
-                write!(f, "{}: ERROR: Unexpected token", line)
+            ParseError::UnexpectedToken { file, line } => {
+                let prefix = file.as_ref()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("test.cuentitos");
+                write!(f, "{}:{}: ERROR: Unexpected token", prefix, line)
             }
-            ParseError::UnexpectedEndOfFile { file: _, line } => {
-                write!(f, "{}: ERROR: Unexpected end of file", line)
+            ParseError::UnexpectedEndOfFile { file, line } => {
+                let prefix = file.as_ref()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("test.cuentitos");
+                write!(f, "{}:{}: ERROR: Unexpected end of file", prefix, line)
             }
             ParseError::InvalidIndentation {
                 message,
-                file: _,
+                file,
                 line,
             } => {
-                write!(f, "{}: ERROR: Invalid indentation: {}", line, message)
+                let prefix = file.as_ref()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("test.cuentitos");
+                write!(f, "{}:{}: ERROR: Invalid indentation: {}", prefix, line, message)
+            }
+            ParseError::SectionWithoutTitle { file, line } => {
+                let prefix = file.as_ref()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("test.cuentitos");
+                write!(f, "{}:{}: ERROR: Section without title: found empty section title.", prefix, line)
+            }
+            ParseError::InvalidSectionHierarchy { message, file, line } => {
+                let prefix = file.as_ref()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("test.cuentitos");
+                write!(f, "{}:{}: ERROR: Invalid section hierarchy: {}", prefix, line, message)
             }
         }
     }
@@ -51,6 +88,7 @@ impl Parser {
     pub fn new() -> Self {
         Self {
             line_parser: LineParser::new(),
+            section_parser: SectionParser::new(),
             ..Self::default()
         }
     }
@@ -59,6 +97,7 @@ impl Parser {
         Self {
             file_path: Some(file_path),
             line_parser: LineParser::new(),
+            section_parser: SectionParser::new(),
             ..Self::default()
         }
     }
@@ -77,6 +116,7 @@ impl Parser {
         let start_block = Block::new(BlockType::Start, None, 0);
         let start_id = context.database.add_block(start_block);
         self.last_block_at_level.push(start_id);
+        self.last_section_at_level.push(start_id); // Start can be parent of top-level sections
 
         // Iterate through each line
         for line in script.as_ref().lines() {
@@ -86,37 +126,88 @@ impl Parser {
                 continue; // Skip empty lines
             }
 
-            // Parse the line using the line parser
-            let result = self.line_parser.parse(content.trim(), &mut context)?;
+            // Try to parse as section first
+            if let Some(section_result) = self.section_parser.parse(content.trim(), &mut context)? {
+                // This is a section
+                let parent_id = if level == 0 {
+                    Some(start_id)
+                } else if level <= self.last_section_at_level.len() {
+                    // Pop section levels until we reach the parent level
+                    while self.last_section_at_level.len() > level {
+                        self.last_section_at_level.pop();
+                    }
+                    self.last_section_at_level.last().copied()
+                } else {
+                    Some(start_id)
+                };
 
-            // Find parent block
-            let parent_id = if level == 0 {
-                Some(start_id)
-            } else if level <= self.last_block_at_level.len() {
-                // Pop levels until we reach the parent level
-                while self.last_block_at_level.len() > level {
-                    self.last_block_at_level.pop();
+                // Validate orphaned subsections: if hash_count > 1 (subsection) and parent is start_id, that's an error
+                if section_result.hash_count > 1 && parent_id == Some(start_id) {
+                    return Err(ParseError::InvalidSectionHierarchy {
+                        message: "found sub-section without parent section.".to_string(),
+                        file: self.file_path.clone(),
+                        line: context.current_line,
+                    });
                 }
-                self.last_block_at_level.last().copied()
-            } else {
-                return Err(ParseError::InvalidIndentation {
-                    message: format!("found {} spaces in: {}", level * 2, content),
-                    file: self.file_path.clone(),
-                    line: context.current_line,
-                });
-            };
 
-            // Create new block
-            let string_id = context.database.add_string(result.string);
-            let block = Block::new(BlockType::String(string_id), parent_id, level);
-            let block_id = context.database.add_block(block);
+                let block = Block::new(
+                    BlockType::Section {
+                        id: section_result.id,
+                        display_name: section_result.display_name,
+                    },
+                    parent_id,
+                    level,
+                );
+                let block_id = context.database.add_block(block);
 
-            // Update last block at this level
-            if level >= self.last_block_at_level.len() {
-                self.last_block_at_level.push(block_id);
+                // Update both stacks
+                if level >= self.last_block_at_level.len() {
+                    self.last_block_at_level.push(block_id);
+                } else {
+                    self.last_block_at_level[level] = block_id;
+                }
+
+                if level >= self.last_section_at_level.len() {
+                    self.last_section_at_level.push(block_id);
+                } else {
+                    self.last_section_at_level[level] = block_id;
+                }
             } else {
-                self.last_block_at_level[level] = block_id;
+                // Parse as regular string
+                let result = self.line_parser.parse(content.trim(), &mut context)?;
+
+                // Find parent block
+                let parent_id = if level == 0 {
+                    Some(start_id)
+                } else if level <= self.last_block_at_level.len() {
+                    // Pop levels until we reach the parent level
+                    while self.last_block_at_level.len() > level {
+                        self.last_block_at_level.pop();
+                    }
+                    self.last_block_at_level.last().copied()
+                } else {
+                    return Err(ParseError::InvalidIndentation {
+                        message: format!("found {} spaces in: {}", level * 2, content),
+                        file: self.file_path.clone(),
+                        line: context.current_line,
+                    });
+                };
+
+                // Create new block
+                let string_id = context.database.add_string(result.string);
+                let block = Block::new(BlockType::String(string_id), parent_id, level);
+                let block_id = context.database.add_block(block);
+
+                // Update last block at this level
+                if level >= self.last_block_at_level.len() {
+                    self.last_block_at_level.push(block_id);
+                } else {
+                    self.last_block_at_level[level] = block_id;
+                }
             }
+
+            // Increment line counter after processing each non-empty line
+            context.current_line += 1;
         }
 
         // Add End block (with no parent)

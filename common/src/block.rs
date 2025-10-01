@@ -6,6 +6,7 @@ pub type BlockId = usize;
 pub enum BlockType {
     Start,
     String(StringId),
+    Section { id: String, display_name: String },
     End,
 }
 

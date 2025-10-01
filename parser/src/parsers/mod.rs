@@ -1,6 +1,7 @@
 use cuentitos_common::*;
 
 pub mod line_parser;
+pub mod section_parser;
 
 /// Represents the shared context between different parsers
 #[derive(Debug)]
