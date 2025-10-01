@@ -8,12 +8,17 @@ impl SectionParser {
         line: line_parser::Line,
         _level: usize,
     ) -> Option<(Vec<Block>, Vec<std::string::String>)> {
-        let result = line_parser::parse(line).ok()?;
+        // For sections, we need to check the raw text, not the parsed result
+        // because sections can be indented and we need to preserve that
+        let raw_trimmed = line.raw_text.trim();
 
         // Check if the trimmed text starts with '#'
-        if !result.string.starts_with('#') {
+        if !raw_trimmed.starts_with('#') {
             return None;
         }
+
+        // Now parse to get the indentation level
+        let result = line_parser::parse(line).ok()?;
 
         // Count the number of '#' symbols
         let hash_count = result.string.chars().take_while(|&c| c == '#').count();
@@ -21,19 +26,26 @@ impl SectionParser {
         // The rest of the text after the '#' symbols
         let rest = result.string[hash_count..].trim();
 
-        // Parse the format: "section_id: Display Name"
-        let parts: Vec<&str> = rest.splitn(2, ':').collect();
-        if parts.len() != 2 {
+        // Parse the format - can be either:
+        // "section_id: Display Name" (with ID)
+        // "Display Name" (without ID)
+        let (section_id, display_name) = if rest.contains(':') {
+            let parts: Vec<&str> = rest.splitn(2, ':').collect();
+            if parts.len() != 2 {
+                return None;
+            }
+            (parts[0].trim().to_string(), parts[1].trim().to_string())
+        } else if !rest.is_empty() {
+            // Use the display name as the ID when no ID is provided
+            (rest.to_string(), rest.to_string())
+        } else {
+            // Section without title is an error
             return None;
-        }
+        };
 
-        let section_id = parts[0].trim().to_string();
-        let display_name = parts[1].trim().to_string();
-
-        // Section depth is determined by the number of '#' symbols
-        // 1 '#' = level 0, 2 '#' = level 1, 3 '#' = level 2, etc.
-        // The indentation of the line itself is ignored for sections
-        let section_level = hash_count - 1;
+        // Section depth is determined by both indentation AND the number of '#' symbols
+        // The actual level is the indentation level from the line
+        let section_level = result.indentation_level;
 
         let block = Block::new(
             BlockType::Section {
@@ -139,8 +151,17 @@ mod tests {
             line_number: 1,
         };
 
-        let result = SectionParser::parse(line, 0);
-        assert!(result.is_none());
+        let result = SectionParser::parse(line, 0).unwrap();
+        let (blocks, _) = result;
+
+        match &blocks[0].block_type {
+            BlockType::Section { id, display_name } => {
+                // When no colon, the title is used as both ID and display name
+                assert_eq!(id, "section without colon");
+                assert_eq!(display_name, "section without colon");
+            }
+            _ => panic!("Expected Section block type"),
+        }
     }
 
     #[test]

@@ -111,34 +111,32 @@ fn render_current_blocks(runtime: &cuentitos_runtime::Runtime) {
             cuentitos_common::BlockType::String(id) => println!("{}", runtime.database.strings[*id]),
             cuentitos_common::BlockType::End => println!("END"),
             cuentitos_common::BlockType::Section { id: _, display_name: _ } => {
-                // Build the section paths by traversing up the hierarchy
-                let (name_path, id_path) = build_section_paths(runtime, &block);
-                println!("Entered Section: {} ({})", name_path, id_path);
+                // Build the section path by traversing up the hierarchy
+                let path = build_section_path(runtime, &block);
+                println!("-> {}", path);
             },
         }
     }
 }
 
-fn build_section_paths(runtime: &cuentitos_runtime::Runtime, current_block: &cuentitos_common::Block) -> (String, String) {
-    let mut name_parts = Vec::new();
-    let mut id_parts = Vec::new();
+fn build_section_path(runtime: &cuentitos_runtime::Runtime, current_block: &cuentitos_common::Block) -> String {
+    let mut path_parts = Vec::new();
 
-    // Add current section's display name and ID
-    if let cuentitos_common::BlockType::Section { id, display_name } = &current_block.block_type {
-        name_parts.push(display_name.clone());
-        id_parts.push(id.clone());
+    // Add current section's display name
+    if let cuentitos_common::BlockType::Section { display_name, .. } = &current_block.block_type {
+        path_parts.push(display_name.clone());
     }
 
     // Traverse up the hierarchy to find parent sections
     let mut current_id = current_block.parent_id;
     while let Some(parent_id) = current_id {
         let parent_block = &runtime.database.blocks[parent_id];
-        if let cuentitos_common::BlockType::Section { id, display_name } = &parent_block.block_type {
-            name_parts.insert(0, display_name.clone());
-            id_parts.insert(0, id.clone());
+        if let cuentitos_common::BlockType::Section { display_name, .. } = &parent_block.block_type {
+            path_parts.insert(0, display_name.clone());
         }
         current_id = parent_block.parent_id;
     }
 
-    (name_parts.join(" > "), id_parts.join("/"))
+    // Join with " \ " as separator (backslash with spaces)
+    path_parts.join(" \\ ")
 }
