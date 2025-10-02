@@ -28,7 +28,11 @@ impl FeatureParser for SectionParser {
     type Output = Option<SectionParseResult>;
     type Error = ParseError;
 
-    fn parse(&self, input: &str, _context: &mut ParserContext) -> Result<Self::Output, Self::Error> {
+    fn parse(
+        &self,
+        input: &str,
+        _context: &mut ParserContext,
+    ) -> Result<Self::Output, Self::Error> {
         let trimmed = input.trim_start();
 
         // Check if this is a section header
@@ -81,7 +85,10 @@ mod tests {
         let parser = SectionParser::new();
         let mut context = ParserContext::new();
 
-        let result = parser.parse("# First Section", &mut context).unwrap().unwrap();
+        let result = parser
+            .parse("# First Section", &mut context)
+            .unwrap()
+            .unwrap();
         assert_eq!(result.id, "First Section");
         assert_eq!(result.display_name, "First Section");
         assert_eq!(result.hash_count, 1);
@@ -92,7 +99,10 @@ mod tests {
         let parser = SectionParser::new();
         let mut context = ParserContext::new();
 
-        let result = parser.parse("# section_1: First Section", &mut context).unwrap().unwrap();
+        let result = parser
+            .parse("# section_1: First Section", &mut context)
+            .unwrap()
+            .unwrap();
         assert_eq!(result.id, "section_1");
         assert_eq!(result.display_name, "First Section");
         assert_eq!(result.hash_count, 1);
@@ -103,7 +113,10 @@ mod tests {
         let parser = SectionParser::new();
         let mut context = ParserContext::new();
 
-        let result = parser.parse("## Subsection", &mut context).unwrap().unwrap();
+        let result = parser
+            .parse("## Subsection", &mut context)
+            .unwrap()
+            .unwrap();
         assert_eq!(result.hash_count, 2);
     }
 
