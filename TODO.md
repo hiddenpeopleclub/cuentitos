@@ -6,7 +6,7 @@
 # Language
   - [x] Block Parenting (Docs & Implementation)
   - [x] Sections & Sub-sections (Docs & Implementation)
-  - [ ] Support comments
+  - [x] Support comments
   - [ ] Go To Section (Docs & Implementation)
   - [ ] Go To Section and Back (Docs & Implementation)
   - [ ] Go To End
