@@ -1,4 +1,6 @@
-use crate::parsers::{FeatureParser, ParserContext, line_parser::LineParser, section_parser::SectionParser};
+use crate::parsers::{
+    line_parser::LineParser, section_parser::SectionParser, FeatureParser, ParserContext,
+};
 use cuentitos_common::*;
 use std::collections::HashMap;
 use std::fmt;
@@ -57,14 +59,16 @@ impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ParseError::UnexpectedToken { file, line } => {
-                let prefix = file.as_ref()
+                let prefix = file
+                    .as_ref()
                     .and_then(|p| p.file_name())
                     .and_then(|n| n.to_str())
                     .unwrap_or("test.cuentitos");
                 write!(f, "{}:{}: ERROR: Unexpected token", prefix, line)
             }
             ParseError::UnexpectedEndOfFile { file, line } => {
-                let prefix = file.as_ref()
+                let prefix = file
+                    .as_ref()
                     .and_then(|p| p.file_name())
                     .and_then(|n| n.to_str())
                     .unwrap_or("test.cuentitos");
@@ -75,28 +79,54 @@ impl fmt::Display for ParseError {
                 file,
                 line,
             } => {
-                let prefix = file.as_ref()
+                let prefix = file
+                    .as_ref()
                     .and_then(|p| p.file_name())
                     .and_then(|n| n.to_str())
                     .unwrap_or("test.cuentitos");
-                write!(f, "{}:{}: ERROR: Invalid indentation: {}", prefix, line, message)
+                write!(
+                    f,
+                    "{}:{}: ERROR: Invalid indentation: {}",
+                    prefix, line, message
+                )
             }
             ParseError::SectionWithoutTitle { file, line } => {
-                let prefix = file.as_ref()
+                let prefix = file
+                    .as_ref()
                     .and_then(|p| p.file_name())
                     .and_then(|n| n.to_str())
                     .unwrap_or("test.cuentitos");
-                write!(f, "{}:{}: ERROR: Section without title: found empty section title.", prefix, line)
+                write!(
+                    f,
+                    "{}:{}: ERROR: Section without title: found empty section title.",
+                    prefix, line
+                )
             }
-            ParseError::InvalidSectionHierarchy { message, file, line } => {
-                let prefix = file.as_ref()
+            ParseError::InvalidSectionHierarchy {
+                message,
+                file,
+                line,
+            } => {
+                let prefix = file
+                    .as_ref()
                     .and_then(|p| p.file_name())
                     .and_then(|n| n.to_str())
                     .unwrap_or("test.cuentitos");
-                write!(f, "{}:{}: ERROR: Invalid section hierarchy: {}", prefix, line, message)
+                write!(
+                    f,
+                    "{}:{}: ERROR: Invalid section hierarchy: {}",
+                    prefix, line, message
+                )
             }
-            ParseError::DuplicateSectionName { name, parent_name, file, line, previous_line } => {
-                let prefix = file.as_ref()
+            ParseError::DuplicateSectionName {
+                name,
+                parent_name,
+                file,
+                line,
+                previous_line,
+            } => {
+                let prefix = file
+                    .as_ref()
                     .and_then(|p| p.file_name())
                     .and_then(|n| n.to_str())
                     .unwrap_or("test.cuentitos");
@@ -209,7 +239,10 @@ impl Parser {
                 }
 
                 // Check for duplicate section names
-                let names_map = self.section_names_by_parent.entry(parent_id).or_insert_with(HashMap::new);
+                let names_map = self
+                    .section_names_by_parent
+                    .entry(parent_id)
+                    .or_default();
 
                 if let Some(&previous_line) = names_map.get(&section_result.display_name) {
                     // Get parent's display name for error message
@@ -218,7 +251,10 @@ impl Parser {
                             "<root>".to_string()
                         } else {
                             match &context.database.blocks[pid].block_type {
-                                BlockType::Section { display_name: parent_display, .. } => parent_display.clone(),
+                                BlockType::Section {
+                                    display_name: parent_display,
+                                    ..
+                                } => parent_display.clone(),
                                 _ => "<root>".to_string(),
                             }
                         }
@@ -321,7 +357,11 @@ impl Parser {
         Ok(context.database)
     }
 
-    fn parse_indentation<'a>(&self, line: &'a str, context: &ParserContext) -> Result<(usize, &'a str), ParseError> {
+    fn parse_indentation<'a>(
+        &self,
+        line: &'a str,
+        context: &ParserContext,
+    ) -> Result<(usize, &'a str), ParseError> {
         let spaces = line.chars().take_while(|c| *c == ' ').count();
 
         // Check if indentation is valid (multiple of 2)

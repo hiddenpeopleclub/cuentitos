@@ -21,7 +21,11 @@ impl FeatureParser for LineParser {
     type Output = LineParseResult;
     type Error = ParseError;
 
-    fn parse(&self, input: &str, _context: &mut ParserContext) -> Result<Self::Output, Self::Error> {
+    fn parse(
+        &self,
+        input: &str,
+        _context: &mut ParserContext,
+    ) -> Result<Self::Output, Self::Error> {
         Ok(LineParseResult {
             string: input.to_string(),
         })
