@@ -1,0 +1,89 @@
+#!/bin/bash
+
+set -e
+
+# Colors for output
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+TODO_FILE="TODO.md"
+
+# Check if TODO.md exists
+if [ ! -f "$TODO_FILE" ]; then
+  echo "Error: TODO.md not found"
+  exit 1
+fi
+
+# Extract unchecked items from TODO.md with their section
+items=()
+current_section=""
+
+while IFS= read -r line; do
+  # Check if line is a section header
+  if [[ $line =~ ^#[[:space:]](.+)$ ]]; then
+    current_section="${BASH_REMATCH[1]}"
+  # Check if line is an unchecked item
+  elif [[ $line =~ ^[[:space:]]*-[[:space:]]\[[[:space:]]\][[:space:]](.+)$ ]]; then
+    item_text="${BASH_REMATCH[1]}"
+    items+=("[$current_section] $item_text")
+  fi
+done < "$TODO_FILE"
+
+# Check if there are any unchecked items
+if [ ${#items[@]} -eq 0 ]; then
+  echo "No unchecked items found in TODO.md"
+  exit 0
+fi
+
+echo -e "${BLUE}Select a feature to start working on:${NC}\n"
+
+# Use fzf if available, otherwise use select
+if command -v fzf &> /dev/null; then
+  selected=$(printf "%s\n" "${items[@]}" | fzf --height=20 --reverse \
+    --prompt="Feature: " --header="Use arrow keys to navigate, Enter to select")
+else
+  # Fallback to bash select
+  PS3=$'\nEnter number: '
+  select selected in "${items[@]}"; do
+    if [ -n "$selected" ]; then
+      break
+    fi
+  done
+fi
+
+# Check if user cancelled selection
+if [ -z "$selected" ]; then
+  echo "Selection cancelled"
+  exit 0
+fi
+
+echo -e "\n${GREEN}Selected:${NC} $selected"
+
+# Extract just the feature name (remove section prefix and any trailing info)
+# Remove the [Section] prefix
+feature_name=$(echo "$selected" | sed 's/^\[.*\][[:space:]]*//')
+# Remove any text in parentheses at the end
+feature_name=$(echo "$feature_name" | sed 's/[[:space:]]*(.*)[[:space:]]*$//')
+# Convert to lowercase and replace spaces with hyphens
+branch_name=$(echo "$feature_name" | tr '[:upper:]' '[:lower:]' | \
+  tr ' ' '-' | sed 's/[^a-z0-9-]//g')
+branch_name="v3-${branch_name}"
+
+echo -e "${YELLOW}Creating branch:${NC} $branch_name"
+
+# Check if branch already exists
+if git show-ref --verify --quiet "refs/heads/$branch_name"; then
+  echo -e "${YELLOW}Branch already exists. Checking it out...${NC}"
+  git checkout "$branch_name"
+else
+  # Create and checkout new branch
+  git checkout -b "$branch_name"
+fi
+
+echo -e "\n${GREEN}✓ Ready to start working on: $feature_name${NC}"
+echo -e "${BLUE}Next steps:${NC}"
+echo "  1. Follow the development flow in DEV.md"
+echo "  2. Start with the Feature Plan phase"
+echo "  3. Create a PR after the Feature Plan phase"
