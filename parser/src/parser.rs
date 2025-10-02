@@ -508,7 +508,8 @@ mod test {
 
     #[test]
     fn test_comment_parsing() {
-        let script = "// Comment at start\nFirst line\n// Comment in middle\nSecond line\n// Comment at end";
+        let script =
+            "// Comment at start\nFirst line\n// Comment in middle\nSecond line\n// Comment at end";
         let mut parser = Parser::new();
         let database = parser.parse(script).unwrap();
 
