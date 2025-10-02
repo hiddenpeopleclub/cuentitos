@@ -135,6 +135,12 @@ impl Parser {
         }
     }
 
+    /// Helper to collect an error and skip the current line
+    fn collect_error_and_skip(&mut self, error: ParseError, context: &mut ParserContext) {
+        self.errors.push(error);
+        context.current_line += 1;
+    }
+
     pub fn parse<A>(&mut self, script: A) -> Result<Database, ParseError>
     where
         A: AsRef<str>,
@@ -156,9 +162,7 @@ impl Parser {
             let (level, content) = match self.parse_indentation(line, &context) {
                 Ok(result) => result,
                 Err(e) => {
-                    // Collect error and skip this line
-                    self.errors.push(e);
-                    context.current_line += 1;
+                    self.collect_error_and_skip(e, &mut context);
                     continue;
                 }
             };
@@ -172,9 +176,7 @@ impl Parser {
             let section_result = match self.section_parser.parse(content.trim(), &mut context) {
                 Ok(result) => result,
                 Err(e) => {
-                    // Collect error and skip this line
-                    self.errors.push(e);
-                    context.current_line += 1;
+                    self.collect_error_and_skip(e, &mut context);
                     continue;
                 }
             };
@@ -195,12 +197,14 @@ impl Parser {
 
                 // Validate orphaned subsections: if hash_count > 1 (subsection) and parent is start_id, that's an error
                 if section_result.hash_count > 1 && parent_id == Some(start_id) {
-                    self.errors.push(ParseError::InvalidSectionHierarchy {
-                        message: "found sub-section without parent section.".to_string(),
-                        file: self.file_path.clone(),
-                        line: context.current_line,
-                    });
-                    context.current_line += 1;
+                    self.collect_error_and_skip(
+                        ParseError::InvalidSectionHierarchy {
+                            message: "found sub-section without parent section.".to_string(),
+                            file: self.file_path.clone(),
+                            line: context.current_line,
+                        },
+                        &mut context,
+                    );
                     continue;
                 }
 
@@ -223,14 +227,16 @@ impl Parser {
                     };
 
                     // Collect error and skip adding this block
-                    self.errors.push(ParseError::DuplicateSectionName {
-                        name: section_result.display_name.clone(),
-                        parent_name,
-                        file: self.file_path.clone(),
-                        line: context.current_line,
-                        previous_line,
-                    });
-                    context.current_line += 1;
+                    self.collect_error_and_skip(
+                        ParseError::DuplicateSectionName {
+                            name: section_result.display_name.clone(),
+                            parent_name,
+                            file: self.file_path.clone(),
+                            line: context.current_line,
+                            previous_line,
+                        },
+                        &mut context,
+                    );
                     continue;
                 }
 
