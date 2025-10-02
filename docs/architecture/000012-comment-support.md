@@ -6,7 +6,7 @@
 
 ## Change Log
 
-- [pending] 2025-10-02 - Draft ADR for comment support feature
+- [approved] 2025-10-02 - Comment support feature implemented and tested
 
 ## Referenced Use Case(s)
 

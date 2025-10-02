@@ -360,6 +360,10 @@ impl Parser {
         Ok(context.database)
     }
 
+    /// Returns true if the line is a comment (starts with // after optional whitespace).
+    ///
+    /// Comments can appear at any indentation level and are completely ignored by the parser.
+    /// Only line-level comments are supported; inline comments (// after content) are not detected.
     fn is_comment(line: &str) -> bool {
         line.trim_start().starts_with("//")
     }
