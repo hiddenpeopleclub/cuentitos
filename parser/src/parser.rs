@@ -239,10 +239,7 @@ impl Parser {
                 }
 
                 // Check for duplicate section names
-                let names_map = self
-                    .section_names_by_parent
-                    .entry(parent_id)
-                    .or_default();
+                let names_map = self.section_names_by_parent.entry(parent_id).or_default();
 
                 if let Some(&previous_line) = names_map.get(&section_result.display_name) {
                     // Get parent's display name for error message
