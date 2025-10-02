@@ -189,6 +189,12 @@ impl Parser {
 
         // Iterate through each line
         for line in script.as_ref().lines() {
+            // Skip comment lines
+            if Self::is_comment(line) {
+                context.current_line += 1;
+                continue;
+            }
+
             let (level, content) = match self.parse_indentation(line, &context) {
                 Ok(result) => result,
                 Err(e) => {
@@ -354,6 +360,14 @@ impl Parser {
         Ok(context.database)
     }
 
+    /// Returns true if the line is a comment (starts with // after optional whitespace).
+    ///
+    /// Comments can appear at any indentation level and are completely ignored by the parser.
+    /// Only line-level comments are supported; inline comments (// after content) are not detected.
+    fn is_comment(line: &str) -> bool {
+        line.trim_start().starts_with("//")
+    }
+
     fn parse_indentation<'a>(
         &self,
         line: &'a str,
@@ -481,5 +495,45 @@ mod test {
             }
             _ => panic!("Expected InvalidIndentation error with file path"),
         }
+    }
+
+    #[test]
+    fn test_is_comment() {
+        assert!(Parser::is_comment("// This is a comment"));
+        assert!(Parser::is_comment("  // Indented comment"));
+        assert!(Parser::is_comment("    // More indentation"));
+        assert!(Parser::is_comment("//"));
+        assert!(Parser::is_comment("/// Triple slash"));
+        assert!(Parser::is_comment("//// Quadruple slash"));
+        assert!(!Parser::is_comment("Not a comment"));
+        assert!(!Parser::is_comment("# Section"));
+        assert!(!Parser::is_comment("Text with // in middle"));
+    }
+
+    #[test]
+    fn test_comment_parsing() {
+        let script =
+            "// Comment at start\nFirst line\n// Comment in middle\nSecond line\n// Comment at end";
+        let mut parser = Parser::new();
+        let database = parser.parse(script).unwrap();
+
+        // Should have Start, two string blocks, and End
+        assert_eq!(database.blocks.len(), 4);
+        assert_eq!(database.strings.len(), 2);
+        assert_eq!(database.strings[0], "First line");
+        assert_eq!(database.strings[1], "Second line");
+    }
+
+    #[test]
+    fn test_comment_with_arbitrary_indentation() {
+        let script = "First line\n      // Comment with weird indentation\nSecond line";
+        let mut parser = Parser::new();
+        let database = parser.parse(script).unwrap();
+
+        // Should have Start, two string blocks, and End (comment ignored)
+        assert_eq!(database.blocks.len(), 4);
+        assert_eq!(database.strings.len(), 2);
+        assert_eq!(database.strings[0], "First line");
+        assert_eq!(database.strings[1], "Second line");
     }
 }
