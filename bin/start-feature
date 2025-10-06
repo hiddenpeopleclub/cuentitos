@@ -37,26 +37,78 @@ if [ ${#items[@]} -eq 0 ]; then
   exit 0
 fi
 
-echo -e "${BLUE}Select a feature to start working on:${NC}\n"
+echo -e "${BLUE}Select a feature to start working on:${NC}"
+echo -e "${YELLOW}Use ↑/↓ arrow keys to navigate, Enter to select, q to quit${NC}\n"
 
-# Use fzf if available, otherwise use select
+# Use fzf if available, otherwise use custom arrow key navigation
 if command -v fzf &> /dev/null; then
   selected=$(printf "%s\n" "${items[@]}" | fzf --height=20 --reverse \
-    --prompt="Feature: " --header="Use arrow keys to navigate, Enter to select")
+    --prompt="Feature: ")
+
+  # Check if user cancelled selection
+  if [ -z "$selected" ]; then
+    echo "Selection cancelled"
+    exit 0
+  fi
 else
-  # Fallback to bash select
-  PS3=$'\nEnter number: '
-  select selected in "${items[@]}"; do
-    if [ -n "$selected" ]; then
+  # Custom arrow key navigation
+  selected_index=0
+  total=${#items[@]}
+
+  # Hide cursor
+  tput civis
+
+  # Function to draw menu
+  draw_menu() {
+    tput cup 3 0
+    for i in "${!items[@]}"; do
+      if [ $i -eq $selected_index ]; then
+        echo -e "${GREEN}▶ ${items[$i]}${NC}"
+      else
+        echo "  ${items[$i]}"
+      fi
+    done
+  }
+
+  # Initial draw
+  draw_menu
+
+  # Read arrow keys
+  while true; do
+    read -rsn1 key
+
+    if [[ $key == $'\x1b' ]]; then
+      read -rsn2 key
+      case $key in
+        '[A') # Up arrow
+          ((selected_index--))
+          if [ $selected_index -lt 0 ]; then
+            selected_index=$((total - 1))
+          fi
+          draw_menu
+          ;;
+        '[B') # Down arrow
+          ((selected_index++))
+          if [ $selected_index -ge $total ]; then
+            selected_index=0
+          fi
+          draw_menu
+          ;;
+      esac
+    elif [[ $key == "" ]]; then # Enter
       break
+    elif [[ $key == "q" ]]; then
+      tput cnorm
+      echo -e "\n\nSelection cancelled"
+      exit 0
     fi
   done
-fi
 
-# Check if user cancelled selection
-if [ -z "$selected" ]; then
-  echo "Selection cancelled"
-  exit 0
+  # Show cursor again
+  tput cnorm
+
+  selected="${items[$selected_index]}"
+  echo -e "\n"
 fi
 
 echo -e "\n${GREEN}Selected:${NC} $selected"
@@ -71,19 +123,27 @@ branch_name=$(echo "$feature_name" | tr '[:upper:]' '[:lower:]' | \
   tr ' ' '-' | sed 's/[^a-z0-9-]//g')
 branch_name="v3-${branch_name}"
 
-echo -e "${YELLOW}Creating branch:${NC} $branch_name"
+worktree_path="../${branch_name}"
 
-# Check if branch already exists
-if git show-ref --verify --quiet "refs/heads/$branch_name"; then
-  echo -e "${YELLOW}Branch already exists. Checking it out...${NC}"
-  git checkout "$branch_name"
+echo -e "${YELLOW}Creating worktree:${NC} $worktree_path"
+
+# Check if worktree already exists
+if [ -d "$worktree_path" ]; then
+  echo -e "${YELLOW}Worktree already exists at $worktree_path${NC}"
 else
-  # Create and checkout new branch
-  git checkout -b "$branch_name"
+  # Check if branch already exists
+  if git show-ref --verify --quiet "refs/heads/$branch_name"; then
+    # Branch exists, create worktree for existing branch
+    git worktree add "$worktree_path" "$branch_name"
+  else
+    # Create new branch with worktree
+    git worktree add -b "$branch_name" "$worktree_path"
+  fi
 fi
 
 echo -e "\n${GREEN}✓ Ready to start working on: $feature_name${NC}"
 echo -e "${BLUE}Next steps:${NC}"
-echo "  1. Follow the development flow in DEV.md"
-echo "  2. Start with the Feature Plan phase"
-echo "  3. Create a PR after the Feature Plan phase"
+echo -e "  1. ${YELLOW}cd $worktree_path${NC}"
+echo "  2. Follow the development flow in DEV.md"
+echo "  3. Start with the Feature Plan phase"
+echo "  4. Create a PR after the Feature Plan phase"
