@@ -1,8 +1,3 @@
-# Compat
-  - [ ] Add a `--verbose` option that shows more information about the test
-        execution.
-  - [ ] Fix all unwraps in `TestRunner#run` to do proper error handling
-
 # Language
   - [x] Block Parenting (Docs & Implementation)
   - [x] Sections & Sub-sections (Docs & Implementation)
@@ -30,6 +25,12 @@
   - [ ] I18n for Strings
   - [ ] Docs for how the engine reads lines
 
+# Compat
+  - [ ] Add a `--verbose` option that shows more information about the test
+        execution.
+  - [ ] Fix all unwraps in `TestRunner#run` to do proper error handling
+
+
 # Compiler
   - [ ] Script to JSON (Docs & Implementation)
   - [ ] Script to Binary (Docs & Implementation)
@@ -43,6 +44,3 @@
 
 # Documentation
   - [ ] User Manual (Create comprehensive user-facing documentation for the language)
-
-# Tooling
-  - [ ] Create `./bin/start-feature` TUI script to select and start working on TODO items
