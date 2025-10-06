@@ -402,7 +402,7 @@ impl Parser {
                     // Find parent block
                     let parent_id = if level == 0 {
                         // At level 0, parent is the last block at level 0 (could be Start or a Section)
-                        self.last_block_at_level.get(0).copied()
+                        self.last_block_at_level.first().copied()
                     } else if level <= self.last_block_at_level.len() {
                         // Pop levels until we reach the parent level
                         while self.last_block_at_level.len() > level {
@@ -446,7 +446,7 @@ impl Parser {
                     // Find parent block
                     let parent_id = if level == 0 {
                         // At level 0, parent is the last block at level 0 (could be Start or a Section)
-                        self.last_block_at_level.get(0).copied()
+                        self.last_block_at_level.first().copied()
                     } else if level <= self.last_block_at_level.len() {
                         // Pop levels until we reach the parent level
                         while self.last_block_at_level.len() > level {
@@ -546,7 +546,7 @@ impl Parser {
                 let containing_section = self.find_containing_section(&context.database, block_id);
 
                 // Resolve the path
-                match self.resolve_path(&path, containing_section, &section_registry, &context.database) {
+                match self.resolve_path(path, containing_section, &section_registry, &context.database) {
                     Ok(target_block_id) => {
                         // Update the block with the resolved target
                         context.database.blocks[block_id].block_type = BlockType::GoToSection {
