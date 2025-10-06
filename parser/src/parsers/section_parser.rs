@@ -43,11 +43,14 @@ impl FeatureParser for SectionParser {
         // Count the number of '#' symbols
         let hash_count = trimmed.chars().take_while(|&c| c == '#').count();
 
-        // Get the rest of the text after the '#' symbols
-        let rest = trimmed[hash_count..].trim();
+        // Get the rest of the text after the '#' symbols - preserve whitespace for validation
+        let rest = &trimmed[hash_count..];
+
+        // Skip only the single space after the # if present (markdown convention)
+        let rest = rest.strip_prefix(' ').unwrap_or(rest);
 
         // Check for empty section title
-        if rest.is_empty() {
+        if rest.trim().is_empty() {
             return Err(ParseError::SectionWithoutTitle {
                 file: _context.file_path.clone(),
                 line: _context.current_line,
@@ -64,7 +67,7 @@ impl FeatureParser for SectionParser {
                 (rest.to_string(), rest.to_string())
             }
         } else {
-            // Use the display name as the ID when no ID is provided
+            // Use the display name as the ID when no ID is provided (preserve whitespace for validation)
             (rest.to_string(), rest.to_string())
         };
 

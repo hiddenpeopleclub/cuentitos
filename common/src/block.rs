@@ -6,8 +6,14 @@ pub type BlockId = usize;
 pub enum BlockType {
     Start,
     String(StringId),
-    Section { id: String, display_name: String },
-    GoToSection { path: String, target_block_id: BlockId },
+    Section {
+        id: String,
+        display_name: String,
+    },
+    GoToSection {
+        path: String,
+        target_block_id: BlockId,
+    },
     End,
 }
 
@@ -17,6 +23,7 @@ pub struct Block {
     pub parent_id: Option<BlockId>,
     pub children: Vec<BlockId>,
     pub level: usize,
+    pub line: usize, // Line number in the source file (0 for generated blocks)
 }
 
 impl Block {
@@ -26,6 +33,22 @@ impl Block {
             parent_id,
             children: Vec::new(),
             level,
+            line: 0,
+        }
+    }
+
+    pub fn with_line(
+        block_type: BlockType,
+        parent_id: Option<BlockId>,
+        level: usize,
+        line: usize,
+    ) -> Self {
+        Self {
+            block_type,
+            parent_id,
+            children: Vec::new(),
+            level,
+            line,
         }
     }
 

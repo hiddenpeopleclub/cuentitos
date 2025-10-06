@@ -26,11 +26,7 @@ impl FeatureParser for GoToSectionParser {
     type Output = Option<GoToSectionParseResult>;
     type Error = ParseError;
 
-    fn parse(
-        &self,
-        input: &str,
-        context: &mut ParserContext,
-    ) -> Result<Self::Output, Self::Error> {
+    fn parse(&self, input: &str, context: &mut ParserContext) -> Result<Self::Output, Self::Error> {
         let trimmed = input.trim_start();
 
         // Check if this is a go-to-section command
@@ -38,7 +34,7 @@ impl FeatureParser for GoToSectionParser {
             return Ok(None);
         }
 
-        // Must have exactly one space after ->
+        // Must have at least one space after ->
         if !trimmed.starts_with("-> ") {
             return Err(ParseError::InvalidGoToSection {
                 message: "Expected section name after '->'".to_string(),
@@ -47,7 +43,7 @@ impl FeatureParser for GoToSectionParser {
             });
         }
 
-        // Get the path after "-> "
+        // Get the path after "-> " (including any extra spaces)
         let path = &trimmed[3..]; // Skip "-> "
 
         // Check if path is empty or whitespace only
@@ -116,10 +112,7 @@ mod tests {
         let parser = GoToSectionParser::new();
         let mut context = ParserContext::new();
 
-        let result = parser
-            .parse("-> Section B", &mut context)
-            .unwrap()
-            .unwrap();
+        let result = parser.parse("-> Section B", &mut context).unwrap().unwrap();
         assert_eq!(result.path, "Section B");
     }
 

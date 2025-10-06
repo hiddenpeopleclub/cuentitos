@@ -43,15 +43,35 @@ fn main() {
 
             // Parse it
             match parser.parse(&script) {
-                Ok(database) => {
+                Ok((database, warnings)) => {
+                    // Print warnings before running
+                    for warning in warnings {
+                        let file_name = warning
+                            .file
+                            .as_ref()
+                            .and_then(|p| p.file_name())
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("test.cuentitos");
+                        println!(
+                            "{}:{}: WARNING: {}",
+                            file_name, warning.line, warning.message
+                        );
+                    }
+
                     // Run in runtime
                     let mut runtime = cuentitos_runtime::Runtime::new(database);
                     runtime.run();
 
                     // Process inputs
+                    let mut quit_requested = false;
                     if !input_string.is_empty() {
                         for input in input_string.split(',') {
-                            if !process_input(input.trim(), &mut runtime) {
+                            let trimmed = input.trim();
+                            if trimmed == "q" {
+                                quit_requested = true;
+                                break;
+                            }
+                            if !process_input(trimmed, &mut runtime) {
                                 break;
                             }
                         }
@@ -59,6 +79,10 @@ fn main() {
 
                     // Final render
                     render_current_blocks(&runtime);
+
+                    if quit_requested {
+                        println!("QUIT");
+                    }
 
                     if runtime.has_ended() {
                         runtime.stop();

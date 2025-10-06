@@ -137,6 +137,20 @@ implementation.
   proceeding
 - Run both compatibility tests and unit tests frequently
 
+**Bug Fixing Protocol:**
+When you encounter a bug (either from failing compatibility tests or other sources):
+1. **STOP** - Do not try to fix it immediately with compatibility tests
+2. **Write a Rust unit test** in the specific module (parser, runtime, etc.) that reproduces the bug
+3. **Verify the test fails** for the right reason
+4. **Fix the bug** to make the test pass
+5. **Verify compatibility tests** now pass as well
+
+This approach:
+- Creates focused, fast-running tests for the specific bug
+- Makes debugging easier (targeted tests vs. full integration tests)
+- Prevents regressions with module-specific test coverage
+- Speeds up the development feedback loop
+
 **Commit Messages:**
 - Use clear, descriptive messages
 - **Do NOT include Claude Code branding** or co-author tags

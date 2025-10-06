@@ -53,11 +53,17 @@ impl Runtime {
         if !self.running || self.database.blocks.is_empty() {
             Vec::new()
         } else if self.has_ended() {
-            // When we've reached the end, show all blocks up to and including END
-            self.database.blocks.to_vec()
+            // When we've reached the end, return only blocks in the execution path
+            self.current_path
+                .iter()
+                .map(|&id| self.database.blocks[id].clone())
+                .collect()
         } else {
-            // Otherwise show blocks up to current position
-            self.database.blocks[0..=self.program_counter].to_vec()
+            // Return only blocks that were visited in the execution path
+            self.current_path
+                .iter()
+                .map(|&id| self.database.blocks[id].clone())
+                .collect()
         }
     }
 
@@ -82,7 +88,10 @@ impl Runtime {
         let current_block = &self.database.blocks[self.program_counter];
 
         // Check if current block is a GoToSection command
-        if let BlockType::GoToSection { target_block_id, .. } = current_block.block_type {
+        if let BlockType::GoToSection {
+            target_block_id, ..
+        } = current_block.block_type
+        {
             return Some(target_block_id);
         }
 
@@ -165,11 +174,11 @@ mod test {
         let database = cuentitos_common::Database::default();
         let mut runtime = Runtime::new(database.clone());
 
-        assert_eq!(runtime.running(), false);
+        assert!(!runtime.running());
 
         runtime.run();
 
-        assert_eq!(runtime.running(), true);
+        assert!(runtime.running());
     }
 
     #[test]
@@ -179,7 +188,7 @@ mod test {
             "00000000002-two-lines-and-end.md",
         );
 
-        let database = cuentitos_parser::parse(&test_case.script).unwrap();
+        let (database, _warnings) = cuentitos_parser::parse(&test_case.script).unwrap();
 
         let mut runtime = Runtime::new(database);
 
@@ -234,7 +243,7 @@ mod test {
             "00000000002-two-lines-and-end.md",
         );
 
-        let database = cuentitos_parser::parse(&test_case.script).unwrap();
+        let (database, _warnings) = cuentitos_parser::parse(&test_case.script).unwrap();
 
         let mut runtime = Runtime::new(database);
 
@@ -265,7 +274,7 @@ mod test {
             "00000000003-two-lines-and-skip.md",
         );
 
-        let database = cuentitos_parser::parse(&test_case.script).unwrap();
+        let (database, _warnings) = cuentitos_parser::parse(&test_case.script).unwrap();
 
         let mut runtime = Runtime::new(database);
 
@@ -273,7 +282,7 @@ mod test {
 
         runtime.skip();
 
-        assert_eq!(runtime.can_continue(), false);
+        assert!(!runtime.can_continue());
 
         assert!(matches!(
             runtime.current_block().map(|b| b.block_type),
@@ -288,13 +297,13 @@ mod test {
             "00000000003-two-lines-and-skip.md",
         );
 
-        let database = cuentitos_parser::parse(&test_case.script).unwrap();
+        let (database, _warnings) = cuentitos_parser::parse(&test_case.script).unwrap();
         let mut runtime = Runtime::new(database);
         runtime.run();
 
         runtime.skip();
 
-        assert_eq!(runtime.can_continue(), false);
+        assert!(!runtime.can_continue());
 
         // After skip, current_blocks shows all blocks that were skipped
         let blocks = runtime.current_blocks();
@@ -333,31 +342,31 @@ mod test {
             "00000000002-two-lines-and-end.md",
         );
 
-        let database = cuentitos_parser::parse(&test_case.script).unwrap();
+        let (database, _warnings) = cuentitos_parser::parse(&test_case.script).unwrap();
 
         let mut runtime = Runtime::new(database);
 
         // Should not be able to continue if the runtime is not running.
-        assert_eq!(runtime.can_continue(), false);
+        assert!(!runtime.can_continue());
 
         runtime.run();
 
         // Should be able to continue if the runtime is running and has not reached
         // the end of the script.
-        assert_eq!(runtime.can_continue(), true);
+        assert!(runtime.can_continue());
 
         runtime.step(); // step to first string
-        assert_eq!(runtime.can_continue(), true);
+        assert!(runtime.can_continue());
 
         runtime.step(); // step to second string
-        assert_eq!(runtime.can_continue(), true);
+        assert!(runtime.can_continue());
 
         runtime.step(); // step to end
 
         // Should not be able to continue if the runtime is running and has reached
         // the end of the script.
-        assert_eq!(runtime.has_ended(), true);
-        assert_eq!(runtime.can_continue(), false);
+        assert!(runtime.has_ended());
+        assert!(!runtime.can_continue());
     }
 
     #[test]
@@ -365,7 +374,7 @@ mod test {
         let database = cuentitos_common::Database::default();
         let mut runtime = Runtime::new(database.clone());
 
-        assert_eq!(runtime.running(), false);
+        assert!(!runtime.running());
 
         runtime.run();
 
@@ -373,7 +382,7 @@ mod test {
 
         runtime.stop();
 
-        assert_eq!(runtime.running(), false);
+        assert!(!runtime.running());
     }
 
     #[test]
@@ -383,7 +392,7 @@ mod test {
             "nested-strings.md",
         );
 
-        let database = cuentitos_parser::parse(&test_case.script).unwrap();
+        let (database, _warnings) = cuentitos_parser::parse(&test_case.script).unwrap();
         let mut runtime = Runtime::new(database);
         runtime.run();
 
@@ -428,7 +437,7 @@ mod test {
     #[test]
     fn test_path_tracking() {
         let script = "Parent\n  Child1\n  Child2\n    Grandchild\n  Child3";
-        let database = cuentitos_parser::parse(script).unwrap();
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
         let mut runtime = Runtime::new(database);
         runtime.run();
 
@@ -463,7 +472,7 @@ mod test {
     #[test]
     fn test_block_levels() {
         let script = "Parent\n  Child1\n  Child2\n    Grandchild\n  Child3";
-        let database = cuentitos_parser::parse(script).unwrap();
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
         let mut runtime = Runtime::new(database);
         runtime.run();
 
@@ -509,7 +518,7 @@ mod test {
     #[test]
     fn test_skip_nested_blocks() {
         let script = "Parent\n  Child1\n  Child2\n    Grandchild\n  Child3";
-        let database = cuentitos_parser::parse(script).unwrap();
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
         let mut runtime = Runtime::new(database);
         runtime.run();
 
@@ -565,5 +574,51 @@ mod test {
         assert_eq!(runtime.find_next_block(), Some(1));
         runtime.step();
         assert_eq!(runtime.find_next_block(), Some(2));
+    }
+
+    #[test]
+    fn test_jump_backward_loop() {
+        // Test that jumping backward creates a proper loop
+        let script =
+            "# Section A\nText in A\n\n# Section B\nText in B\n\n# Section C\n-> Section A";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        // Should loop: Start -> A -> Text -> B -> Text -> C -> A -> Text -> B -> Text -> C -> A ...
+        // Execute 20 steps to verify looping works
+        for _i in 0..20 {
+            assert!(runtime.can_continue(), "Runtime should continue looping");
+            runtime.step();
+        }
+    }
+
+    #[test]
+    fn test_jump_to_parent_loop() {
+        // Test that jumping to parent using .. creates a proper loop
+        // This is test 038 from compatibility tests
+        let script = "# Parent\nText in parent\n  ## Child\n  Text in child\n  -> ..";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        // Test 038 has 20 'n' commands, so we should be able to step 20 times
+        for i in 0..20 {
+            assert!(
+                runtime.can_continue(),
+                "Runtime should continue looping at step {}",
+                i
+            );
+            let stepped = runtime.step();
+            assert!(stepped, "Step should succeed at iteration {}", i);
+        }
+
+        // After 20 steps, current_path should have 21 blocks (START + 20 steps)
+        assert_eq!(
+            runtime.current_blocks().len(),
+            21,
+            "Should have 21 blocks in path after 20 steps"
+        );
     }
 }

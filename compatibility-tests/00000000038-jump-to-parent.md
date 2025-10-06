@@ -56,14 +56,5 @@ Text in child
 Text in parent
 -> Parent \ Child
 Text in child
--> Parent
-Text in parent
--> Parent \ Child
-Text in child
--> Parent
-Text in parent
--> Parent \ Child
-Text in child
--> Parent
 QUIT
 ```

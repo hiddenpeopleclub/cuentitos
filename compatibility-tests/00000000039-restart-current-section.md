@@ -27,6 +27,7 @@ q
 
 ## Result
 ```result
+test.cuentitos:4: WARNING: Unreachable code after section jump
 START
 -> Section A
 Text in A
@@ -35,8 +36,5 @@ Text in A
 -> Section A
 Text in A
 -> Section A
-Text in A
--> Section A
-Text in A
 QUIT
 ```
