@@ -30,6 +30,8 @@
         execution.
   - [ ] Fix all unwraps in `TestRunner#run` to do proper error handling
 
+# CLI
+  - [ ] Add a `--strict` mode that treats warnings as errors
 
 # Compiler
   - [ ] Script to JSON (Docs & Implementation)
