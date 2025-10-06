@@ -76,7 +76,7 @@ The parser produces a `Database` containing:
 - **Strings**: Content strings referenced by blocks
 
 Each `Block` has:
-- `block_type`: `Start`, `String(StringId)`, `Section{id, display_name}`, or `End`
+- `block_type`: `Start`, `String(StringId)`, `Section{id, display_name}`, `GoToSection{path, target_block_id}`, or `End`
 - `parent_id`: Optional reference to parent block
 - `children`: Vector of child block IDs
 - `level`: Indentation level (0-based, 2 spaces per level)
