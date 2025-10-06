@@ -63,12 +63,5 @@ Text in root
 Text in level 1
 -> Root \ Level 1 \ Level 2
 Text in level 2
--> Root
-Text in root
--> Root \ Level 1
-Text in level 1
--> Root \ Level 1 \ Level 2
-Text in level 2
--> Root
 QUIT
 ```

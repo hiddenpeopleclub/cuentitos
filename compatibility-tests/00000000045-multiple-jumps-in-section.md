@@ -22,6 +22,7 @@ s
 
 ## Result
 ```result
+test.cuentitos:3: WARNING: Unreachable code after section jump
 START
 -> Section A
 -> Section B
