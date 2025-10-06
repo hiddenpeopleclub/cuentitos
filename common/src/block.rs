@@ -7,6 +7,7 @@ pub enum BlockType {
     Start,
     String(StringId),
     Section { id: String, display_name: String },
+    GoToSection { path: String, target_block_id: BlockId },
     End,
 }
 

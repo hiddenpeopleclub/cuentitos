@@ -81,6 +81,11 @@ impl Runtime {
 
         let current_block = &self.database.blocks[self.program_counter];
 
+        // Check if current block is a GoToSection command
+        if let BlockType::GoToSection { target_block_id, .. } = current_block.block_type {
+            return Some(target_block_id);
+        }
+
         // First, try to find a child
         if !current_block.children.is_empty() {
             return Some(current_block.children[0]);

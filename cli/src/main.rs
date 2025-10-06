@@ -119,6 +119,10 @@ fn render_current_blocks(runtime: &cuentitos_runtime::Runtime) {
                 let path = build_section_path(runtime, &block);
                 println!("-> {}", path);
             }
+            cuentitos_common::BlockType::GoToSection { .. } => {
+                // GoToSection blocks are not rendered - they're navigation commands
+                // that are executed by the runtime
+            }
             cuentitos_common::BlockType::End => println!("END"),
         }
     }
