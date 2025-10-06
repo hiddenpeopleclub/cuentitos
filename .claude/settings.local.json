@@ -4,7 +4,12 @@
       "Bash(gh pr view:*)",
       "Bash(gh pr diff:*)",
       "Bash(git fetch:*)",
-      "Bash(cargo clippy:*)"
+      "Bash(cargo clippy:*)",
+      "Bash(cargo build:*)",
+      "Bash(./bin/run-compat:*)",
+      "Bash(cargo test:*)",
+      "Bash(timeout:*)",
+      "Bash(cargo run:*)"
     ],
     "deny": [],
     "ask": []
