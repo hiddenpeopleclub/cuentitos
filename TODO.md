@@ -6,6 +6,7 @@
   - [ ] Go To Section and Back (Docs & Implementation)
   - [ ] Go To End
   - [ ] Go To Start (Reset Variables, Keep Variables)
+  - [ ] Go To's in CLI (support using go to as an input method in CLI)
   - [ ] Options (Docs & Implementation)
   - [ ] Definition of Integer Variables
   - [ ] Set Integer Variables (Script & Runtime)
