@@ -9,7 +9,9 @@
       "Bash(./bin/run-compat:*)",
       "Bash(cargo test:*)",
       "Bash(timeout:*)",
-      "Bash(cargo run:*)"
+      "Bash(cargo run:*)",
+      "Bash(gh run view:*)",
+      "Bash(cargo fmt:*)"
     ],
     "deny": [],
     "ask": []

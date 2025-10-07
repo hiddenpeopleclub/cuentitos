@@ -112,7 +112,10 @@ mod tests {
         let parser = GoToSectionAndBackParser::new();
         let mut context = ParserContext::new();
 
-        let result = parser.parse("<-> Section B", &mut context).unwrap().unwrap();
+        let result = parser
+            .parse("<-> Section B", &mut context)
+            .unwrap()
+            .unwrap();
         assert_eq!(result.path, "Section B");
     }
 
@@ -205,10 +208,20 @@ mod tests {
 
     #[test]
     fn test_is_go_to_section_and_back() {
-        assert!(GoToSectionAndBackParser::is_go_to_section_and_back("<-> Section"));
-        assert!(GoToSectionAndBackParser::is_go_to_section_and_back("  <-> Section"));
-        assert!(!GoToSectionAndBackParser::is_go_to_section_and_back("Regular text"));
-        assert!(!GoToSectionAndBackParser::is_go_to_section_and_back("# Section"));
-        assert!(!GoToSectionAndBackParser::is_go_to_section_and_back("-> Section"));
+        assert!(GoToSectionAndBackParser::is_go_to_section_and_back(
+            "<-> Section"
+        ));
+        assert!(GoToSectionAndBackParser::is_go_to_section_and_back(
+            "  <-> Section"
+        ));
+        assert!(!GoToSectionAndBackParser::is_go_to_section_and_back(
+            "Regular text"
+        ));
+        assert!(!GoToSectionAndBackParser::is_go_to_section_and_back(
+            "# Section"
+        ));
+        assert!(!GoToSectionAndBackParser::is_go_to_section_and_back(
+            "-> Section"
+        ));
     }
 }

@@ -13,7 +13,7 @@ pub struct Runtime {
     program_counter: usize,
     previous_program_counter: usize,
     current_path: Vec<BlockId>, // Track the current execution path
-    call_stack: Vec<CallFrame>,  // Stack for handling <-> (call and return)
+    call_stack: Vec<CallFrame>, // Stack for handling <-> (call and return)
 }
 
 impl Runtime {
@@ -112,15 +112,12 @@ impl Runtime {
                 if line > 0 {
                     eprintln!(
                         "Maximum call stack depth exceeded ({} calls) due to script:{} <-> {}",
-                        MAX_CALL_DEPTH,
-                        line,
-                        path
+                        MAX_CALL_DEPTH, line, path
                     );
                 } else {
                     eprintln!(
                         "Maximum call stack depth exceeded ({} calls) due to <-> {}",
-                        MAX_CALL_DEPTH,
-                        path
+                        MAX_CALL_DEPTH, path
                     );
                 }
                 // Jump to END to terminate execution
@@ -739,6 +736,7 @@ mod test {
 
     #[test]
     fn test_recursive_call_with_skip() {
+        // Test that recursive calls hit MAX_CALL_DEPTH and end
         let script = "# Loop\nIteration text\n<-> .";
         let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
 
@@ -748,36 +746,25 @@ mod test {
         // First step: START -> Loop
         runtime.step();
 
-        // First skip: should do one iteration (Loop, text, <->, Loop)
+        // Skip should hit MAX_CALL_DEPTH and jump to END
         runtime.skip();
-        let blocks = runtime.current_blocks();
-        println!("After first skip - Blocks: {}", blocks.len());
-        for (i, block) in blocks.iter().enumerate() {
-            match &block.block_type {
-                BlockType::Section { display_name, .. } => println!("{}: Section {}", i, display_name),
-                BlockType::String(id) => println!("{}: String '{}'", i, runtime.database.strings[*id]),
-                other => println!("{}: {:?}", i, other),
-            }
-        }
 
-        // Should be at the Loop section again (second iteration entry)
+        // Should be at END after hitting the depth limit
         if let Some(block) = runtime.current_block() {
-            assert!(matches!(block.block_type, BlockType::Section { .. }));
+            assert!(
+                matches!(block.block_type, BlockType::End),
+                "Should be at END after hitting MAX_CALL_DEPTH"
+            );
         }
 
-        // Second skip: should do another iteration
-        runtime.skip();
-        println!("\nAfter second skip - Blocks: {}", runtime.current_blocks().len());
-
-        // Should still be at Loop (third iteration entry)
-        if let Some(block) = runtime.current_block() {
-            assert!(matches!(block.block_type, BlockType::Section { .. }));
-        }
+        // Verify runtime has ended
+        assert!(runtime.has_ended(), "Runtime should have ended");
     }
 
     #[test]
     fn test_basic_call_and_return_with_skip() {
-        let script = "# Section A\nText in A\n<-> Section B\nText after call in A\n\n# Section B\nText in B";
+        let script =
+            "# Section A\nText in A\n<-> Section B\nText after call in A\n\n# Section B\nText in B";
         let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
 
         let mut runtime = Runtime::new(database);
@@ -799,7 +786,8 @@ mod test {
 
     #[test]
     fn test_basic_call_and_return() {
-        let script = "# Section A\nText in A\n<-> Section B\nText after call in A\n\n# Section B\nText in B";
+        let script =
+            "# Section A\nText in A\n<-> Section B\nText after call in A\n\n# Section B\nText in B";
         let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
 
         let mut runtime = Runtime::new(database);
@@ -831,7 +819,10 @@ mod test {
         runtime.step();
         // Should now be AT the GoToSectionAndBack block
         if let Some(block) = runtime.current_block() {
-            assert!(matches!(block.block_type, BlockType::GoToSectionAndBack { .. }));
+            assert!(matches!(
+                block.block_type,
+                BlockType::GoToSectionAndBack { .. }
+            ));
         }
 
         // Step again to jump to Section B
@@ -863,7 +854,10 @@ mod test {
             if let BlockType::String(id) = block.block_type {
                 assert_eq!(runtime.database.strings[id], "Text after call in A");
             } else {
-                panic!("Expected 'Text after call in A', got {:?}", block.block_type);
+                panic!(
+                    "Expected 'Text after call in A', got {:?}",
+                    block.block_type
+                );
             }
         } else {
             panic!("Expected block after return");
