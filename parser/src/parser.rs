@@ -503,19 +503,19 @@ impl Parser {
                     let go_to_result = match self
                         .go_to_section_parser
                         .parse(content.trim(), &mut context)
-                {
-                    Ok(result) => result,
-                    Err(e) => {
-                        self.collect_error_and_skip(e, &mut context);
-                        continue;
-                    }
-                };
+                    {
+                        Ok(result) => result,
+                        Err(e) => {
+                            self.collect_error_and_skip(e, &mut context);
+                            continue;
+                        }
+                    };
 
-                if let Some(go_to_result) = go_to_result {
-                    // Check for leading/trailing whitespace in goto path
-                    let trimmed_path = go_to_result.path.trim();
-                    let final_path = if trimmed_path != go_to_result.path {
-                        self.warnings.push(Warning {
+                    if let Some(go_to_result) = go_to_result {
+                        // Check for leading/trailing whitespace in goto path
+                        let trimmed_path = go_to_result.path.trim();
+                        let final_path = if trimmed_path != go_to_result.path {
+                            self.warnings.push(Warning {
                             message: format!(
                                 "Section name has leading/trailing whitespace: '{}'. Trimmed to '{}'",
                                 go_to_result.path, trimmed_path
@@ -523,97 +523,97 @@ impl Parser {
                             file: self.file_path.clone(),
                             line: context.current_line,
                         });
-                        trimmed_path.to_string()
-                    } else {
-                        go_to_result.path
-                    };
+                            trimmed_path.to_string()
+                        } else {
+                            go_to_result.path
+                        };
 
-                    // This is a go-to-section command
-                    // Find parent block: check if there's a section at this level first
-                    let parent_id = if level < self.last_section_at_level.len() {
-                        // There's a section at this level, use it as parent
-                        Some(self.last_section_at_level[level])
-                    } else if level == 0 {
-                        // At level 0 with no section, use first block (Start or a Section)
-                        self.last_block_at_level.first().copied()
-                    } else if level <= self.last_block_at_level.len() {
-                        // No section at this level, pop back to find parent
-                        while self.last_block_at_level.len() > level {
-                            self.last_block_at_level.pop();
+                        // This is a go-to-section command
+                        // Find parent block: check if there's a section at this level first
+                        let parent_id = if level < self.last_section_at_level.len() {
+                            // There's a section at this level, use it as parent
+                            Some(self.last_section_at_level[level])
+                        } else if level == 0 {
+                            // At level 0 with no section, use first block (Start or a Section)
+                            self.last_block_at_level.first().copied()
+                        } else if level <= self.last_block_at_level.len() {
+                            // No section at this level, pop back to find parent
+                            while self.last_block_at_level.len() > level {
+                                self.last_block_at_level.pop();
+                            }
+                            self.last_block_at_level.last().copied()
+                        } else {
+                            self.collect_error_and_skip(
+                                ParseError::InvalidIndentation {
+                                    message: format!("found {} spaces in: {}", level * 2, content),
+                                    file: self.file_path.clone(),
+                                    line: context.current_line,
+                                },
+                                &mut context,
+                            );
+                            continue;
+                        };
+
+                        // Create GoToSection block with placeholder target_block_id
+                        // This will be resolved in the validation pass
+                        let block = Block::with_line(
+                            BlockType::GoToSection {
+                                path: final_path,
+                                target_block_id: 0, // Placeholder, will be resolved
+                            },
+                            parent_id,
+                            level,
+                            context.current_line,
+                        );
+                        let block_id = context.database.add_block(block);
+
+                        // Update last block at this level
+                        if level >= self.last_block_at_level.len() {
+                            self.last_block_at_level.push(block_id);
+                        } else {
+                            self.last_block_at_level[level] = block_id;
                         }
-                        self.last_block_at_level.last().copied()
                     } else {
-                        self.collect_error_and_skip(
-                            ParseError::InvalidIndentation {
+                        // Parse as regular string
+                        let result = self.line_parser.parse(content.trim(), &mut context)?;
+
+                        // Find parent block: check if there's a section at this level first
+                        let parent_id = if level < self.last_section_at_level.len() {
+                            // There's a section at this level, use it as parent
+                            Some(self.last_section_at_level[level])
+                        } else if level == 0 {
+                            // At level 0 with no section, use first block (Start or a Section)
+                            self.last_block_at_level.first().copied()
+                        } else if level <= self.last_block_at_level.len() {
+                            // No section at this level, pop back to find parent
+                            while self.last_block_at_level.len() > level {
+                                self.last_block_at_level.pop();
+                            }
+                            self.last_block_at_level.last().copied()
+                        } else {
+                            return Err(ParseError::InvalidIndentation {
                                 message: format!("found {} spaces in: {}", level * 2, content),
                                 file: self.file_path.clone(),
                                 line: context.current_line,
-                            },
-                            &mut context,
+                            });
+                        };
+
+                        // Create new block
+                        let string_id = context.database.add_string(result.string);
+                        let block = Block::with_line(
+                            BlockType::String(string_id),
+                            parent_id,
+                            level,
+                            context.current_line,
                         );
-                        continue;
-                    };
+                        let block_id = context.database.add_block(block);
 
-                    // Create GoToSection block with placeholder target_block_id
-                    // This will be resolved in the validation pass
-                    let block = Block::with_line(
-                        BlockType::GoToSection {
-                            path: final_path,
-                            target_block_id: 0, // Placeholder, will be resolved
-                        },
-                        parent_id,
-                        level,
-                        context.current_line,
-                    );
-                    let block_id = context.database.add_block(block);
-
-                    // Update last block at this level
-                    if level >= self.last_block_at_level.len() {
-                        self.last_block_at_level.push(block_id);
-                    } else {
-                        self.last_block_at_level[level] = block_id;
-                    }
-                    } else {
-                        // Parse as regular string
-                    let result = self.line_parser.parse(content.trim(), &mut context)?;
-
-                    // Find parent block: check if there's a section at this level first
-                    let parent_id = if level < self.last_section_at_level.len() {
-                        // There's a section at this level, use it as parent
-                        Some(self.last_section_at_level[level])
-                    } else if level == 0 {
-                        // At level 0 with no section, use first block (Start or a Section)
-                        self.last_block_at_level.first().copied()
-                    } else if level <= self.last_block_at_level.len() {
-                        // No section at this level, pop back to find parent
-                        while self.last_block_at_level.len() > level {
-                            self.last_block_at_level.pop();
+                        // Update last block at this level
+                        if level >= self.last_block_at_level.len() {
+                            self.last_block_at_level.push(block_id);
+                        } else {
+                            self.last_block_at_level[level] = block_id;
                         }
-                        self.last_block_at_level.last().copied()
-                    } else {
-                        return Err(ParseError::InvalidIndentation {
-                            message: format!("found {} spaces in: {}", level * 2, content),
-                            file: self.file_path.clone(),
-                            line: context.current_line,
-                        });
-                    };
-
-                    // Create new block
-                    let string_id = context.database.add_string(result.string);
-                    let block = Block::with_line(
-                        BlockType::String(string_id),
-                        parent_id,
-                        level,
-                        context.current_line,
-                    );
-                    let block_id = context.database.add_block(block);
-
-                    // Update last block at this level
-                    if level >= self.last_block_at_level.len() {
-                        self.last_block_at_level.push(block_id);
-                    } else {
-                        self.last_block_at_level[level] = block_id;
-                    }
                     }
                 }
             }
@@ -691,16 +691,14 @@ impl Parser {
             .blocks
             .iter()
             .enumerate()
-            .filter_map(|(block_id, block)| {
-                match &block.block_type {
-                    BlockType::GoToSection { path, .. } => {
-                        Some((block_id, path.clone(), block.line, false))
-                    }
-                    BlockType::GoToSectionAndBack { path, .. } => {
-                        Some((block_id, path.clone(), block.line, true))
-                    }
-                    _ => None,
+            .filter_map(|(block_id, block)| match &block.block_type {
+                BlockType::GoToSection { path, .. } => {
+                    Some((block_id, path.clone(), block.line, false))
                 }
+                BlockType::GoToSectionAndBack { path, .. } => {
+                    Some((block_id, path.clone(), block.line, true))
+                }
+                _ => None,
             })
             .collect();
 
