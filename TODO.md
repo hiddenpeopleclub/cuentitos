@@ -3,8 +3,8 @@
   - [x] Sections & Sub-sections (Docs & Implementation)
   - [x] Support comments
   - [x] Go To Section (Docs & Implementation)
-  - [ ] Go To Section and Back (Docs & Implementation)
-  - [ ] Go To End
+  - [x] Go To Section and Back (Docs & Implementation)
+  - [x] Go To End
   - [ ] Go To Start (Reset Variables, Keep Variables)
   - [ ] Go To's in CLI (support using go to as an input method in CLI)
   - [ ] Options (Docs & Implementation)
