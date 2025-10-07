@@ -1,11 +1,19 @@
 use cuentitos_common::*;
 
+/// Represents a call frame for <-> (call and return) commands
+#[derive(Debug, Clone)]
+struct CallFrame {
+    return_block_id: BlockId,   // Block to return to after call completes
+    called_section_id: BlockId, // The section that was called
+}
+
 pub struct Runtime {
     pub database: Database,
     running: bool,
     program_counter: usize,
     previous_program_counter: usize,
     current_path: Vec<BlockId>, // Track the current execution path
+    call_stack: Vec<CallFrame>,  // Stack for handling <-> (call and return)
 }
 
 impl Runtime {
@@ -16,6 +24,7 @@ impl Runtime {
             program_counter: 0,
             previous_program_counter: 0,
             current_path: Vec::new(),
+            call_stack: Vec::new(),
         }
     }
 
@@ -23,6 +32,7 @@ impl Runtime {
         self.running = true;
         self.program_counter = 0;
         self.current_path.clear();
+        self.call_stack.clear();
         if !self.database.blocks.is_empty() {
             self.current_path.push(0); // Start block
         }
@@ -32,6 +42,7 @@ impl Runtime {
         self.running = false;
         self.program_counter = 0;
         self.current_path.clear();
+        self.call_stack.clear();
     }
 
     pub fn running(&self) -> bool {
@@ -80,20 +91,81 @@ impl Runtime {
     }
 
     // Find the next block to visit in a depth-first traversal
-    fn find_next_block(&self) -> Option<usize> {
+    fn find_next_block(&mut self) -> Option<usize> {
         if self.program_counter >= self.database.blocks.len() - 1 {
             return None;
         }
 
         let current_block = &self.database.blocks[self.program_counter];
 
-        // Check if current block is a GoToSection command
+        // Handle GoToSectionAndBack: push to call stack and jump
+        if let BlockType::GoToSectionAndBack {
+            target_block_id,
+            path,
+        } = &current_block.block_type
+        {
+            // Check maximum call stack depth to prevent infinite loops
+            const MAX_CALL_DEPTH: usize = 200;
+            if self.call_stack.len() >= MAX_CALL_DEPTH {
+                // Print error message and terminate
+                let line = current_block.line;
+                if line > 0 {
+                    eprintln!(
+                        "Maximum call stack depth exceeded ({} calls) due to script:{} <-> {}",
+                        MAX_CALL_DEPTH,
+                        line,
+                        path
+                    );
+                } else {
+                    eprintln!(
+                        "Maximum call stack depth exceeded ({} calls) due to <-> {}",
+                        MAX_CALL_DEPTH,
+                        path
+                    );
+                }
+                // Jump to END to terminate execution
+                return Some(self.database.blocks.len() - 1);
+            }
+
+            // Compute the return point (where we'd go in normal traversal)
+            let return_block_id = self.compute_natural_next_block()?;
+
+            // Push call frame
+            self.call_stack.push(CallFrame {
+                return_block_id,
+                called_section_id: *target_block_id,
+            });
+
+            return Some(*target_block_id);
+        }
+
+        // Handle GoToSection: just jump
         if let BlockType::GoToSection {
             target_block_id, ..
         } = current_block.block_type
         {
             return Some(target_block_id);
         }
+
+        // Compute natural next block (existing traversal logic)
+        let natural_next = self.compute_natural_next_block()?;
+
+        // Check if we should return from a call
+        if let Some(frame) = self.call_stack.last() {
+            // If natural_next is outside the called section's subtree, return instead
+            if self.is_outside_section(natural_next, frame.called_section_id) {
+                let return_id = frame.return_block_id;
+                self.call_stack.pop();
+                return Some(return_id);
+            }
+        }
+
+        Some(natural_next)
+    }
+
+    // Compute the natural next block according to depth-first traversal rules
+    fn compute_natural_next_block(&self) -> Option<usize> {
+        let current_block = &self.database.blocks[self.program_counter];
 
         // First, try to find a child
         if !current_block.children.is_empty() {
@@ -128,6 +200,22 @@ impl Runtime {
         }
     }
 
+    // Check if a block is outside a section's subtree
+    // A block is outside a section if the section is NOT in the block's parent chain
+    fn is_outside_section(&self, block_id: BlockId, section_id: BlockId) -> bool {
+        let mut current = block_id;
+        loop {
+            if current == section_id {
+                return false; // Inside the section
+            }
+
+            match self.database.blocks[current].parent_id {
+                Some(parent_id) => current = parent_id,
+                None => return true, // Reached root, we're outside
+            }
+        }
+    }
+
     pub fn step(&mut self) -> bool {
         if self.can_continue() {
             if let Some(next_id) = self.find_next_block() {
@@ -141,11 +229,17 @@ impl Runtime {
     }
 
     pub fn skip(&mut self) -> bool {
+        let initial_stack_depth = self.call_stack.len();
         let previous_program_counter = self.program_counter;
 
-        // Keep stepping until we reach the END block
+        // Keep stepping until we reach END or return from current call
         while !self.has_ended() && self.can_continue() {
             self.step();
+
+            // If we started in a call, stop when we return from it
+            if initial_stack_depth > 0 && self.call_stack.len() < initial_stack_depth {
+                break;
+            }
         }
 
         // Set previous_program_counter to show all blocks that were skipped
@@ -234,6 +328,27 @@ mod test {
             runtime.current_block().map(|b| b.block_type),
             Some(BlockType::End)
         ));
+    }
+
+    #[test]
+    fn test_skip_basic() {
+        let test_case = TestCase::from_string(
+            include_str!("../../compatibility-tests/00000000003-two-lines-and-skip.md"),
+            "00000000003-two-lines-and-skip.md",
+        );
+
+        let (database, _warnings) = cuentitos_parser::parse(&test_case.script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        // Skip should go all the way to END
+        runtime.skip();
+
+        if let Some(block) = runtime.current_block() {
+            assert!(matches!(block.block_type, BlockType::End));
+        } else {
+            panic!("Expected to be at END block");
+        }
     }
 
     #[test]
@@ -620,5 +735,138 @@ mod test {
             21,
             "Should have 21 blocks in path after 20 steps"
         );
+    }
+
+    #[test]
+    fn test_recursive_call_with_skip() {
+        let script = "# Loop\nIteration text\n<-> .";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        // First step: START -> Loop
+        runtime.step();
+
+        // First skip: should do one iteration (Loop, text, <->, Loop)
+        runtime.skip();
+        let blocks = runtime.current_blocks();
+        println!("After first skip - Blocks: {}", blocks.len());
+        for (i, block) in blocks.iter().enumerate() {
+            match &block.block_type {
+                BlockType::Section { display_name, .. } => println!("{}: Section {}", i, display_name),
+                BlockType::String(id) => println!("{}: String '{}'", i, runtime.database.strings[*id]),
+                other => println!("{}: {:?}", i, other),
+            }
+        }
+
+        // Should be at the Loop section again (second iteration entry)
+        if let Some(block) = runtime.current_block() {
+            assert!(matches!(block.block_type, BlockType::Section { .. }));
+        }
+
+        // Second skip: should do another iteration
+        runtime.skip();
+        println!("\nAfter second skip - Blocks: {}", runtime.current_blocks().len());
+
+        // Should still be at Loop (third iteration entry)
+        if let Some(block) = runtime.current_block() {
+            assert!(matches!(block.block_type, BlockType::Section { .. }));
+        }
+    }
+
+    #[test]
+    fn test_basic_call_and_return_with_skip() {
+        let script = "# Section A\nText in A\n<-> Section B\nText after call in A\n\n# Section B\nText in B";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        // Skip should execute everything
+        runtime.skip();
+
+        // Should have visited: START, Section A, Text in A, <->, Section B, Text in B, Text after call, END
+        let blocks = runtime.current_blocks();
+        println!("Blocks visited: {}", blocks.len());
+        for (i, block) in blocks.iter().enumerate() {
+            println!("{}: {:?}", i, block.block_type);
+        }
+
+        // Should be at END
+        assert!(runtime.has_ended());
+    }
+
+    #[test]
+    fn test_basic_call_and_return() {
+        let script = "# Section A\nText in A\n<-> Section B\nText after call in A\n\n# Section B\nText in B";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        // START
+        assert!(matches!(
+            runtime.current_block().map(|b| b.block_type),
+            Some(BlockType::Start)
+        ));
+
+        // Step to Section A
+        runtime.step();
+        if let Some(block) = runtime.current_block() {
+            assert!(matches!(block.block_type, BlockType::Section { .. }));
+        }
+
+        // Step to "Text in A"
+        runtime.step();
+        if let Some(block) = runtime.current_block() {
+            if let BlockType::String(id) = block.block_type {
+                assert_eq!(runtime.database.strings[id], "Text in A");
+            } else {
+                panic!("Expected String block");
+            }
+        }
+
+        // Step to <-> Section B block
+        runtime.step();
+        // Should now be AT the GoToSectionAndBack block
+        if let Some(block) = runtime.current_block() {
+            assert!(matches!(block.block_type, BlockType::GoToSectionAndBack { .. }));
+        }
+
+        // Step again to jump to Section B
+        runtime.step();
+        // Should now be at Section B
+        if let Some(block) = runtime.current_block() {
+            if let BlockType::Section { display_name, .. } = &block.block_type {
+                assert_eq!(display_name, "Section B");
+            } else {
+                panic!("Expected Section B, got {:?}", block.block_type);
+            }
+        } else {
+            panic!("Expected block");
+        }
+
+        // Step to "Text in B"
+        runtime.step();
+        if let Some(block) = runtime.current_block() {
+            if let BlockType::String(id) = block.block_type {
+                assert_eq!(runtime.database.strings[id], "Text in B");
+            } else {
+                panic!("Expected String block");
+            }
+        }
+
+        // Step - should return to "Text after call in A"
+        runtime.step();
+        if let Some(block) = runtime.current_block() {
+            if let BlockType::String(id) = block.block_type {
+                assert_eq!(runtime.database.strings[id], "Text after call in A");
+            } else {
+                panic!("Expected 'Text after call in A', got {:?}", block.block_type);
+            }
+        } else {
+            panic!("Expected block after return");
+        }
     }
 }

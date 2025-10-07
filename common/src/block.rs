@@ -14,6 +14,10 @@ pub enum BlockType {
         path: String,
         target_block_id: BlockId,
     },
+    GoToSectionAndBack {
+        path: String,
+        target_block_id: BlockId,
+    },
     End,
 }
 

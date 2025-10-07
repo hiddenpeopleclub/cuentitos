@@ -147,6 +147,10 @@ fn render_current_blocks(runtime: &cuentitos_runtime::Runtime) {
                 // GoToSection blocks are not rendered - they're navigation commands
                 // that are executed by the runtime
             }
+            cuentitos_common::BlockType::GoToSectionAndBack { .. } => {
+                // GoToSectionAndBack blocks are not rendered - they're navigation commands
+                // that are executed by the runtime
+            }
             cuentitos_common::BlockType::End => println!("END"),
         }
     }

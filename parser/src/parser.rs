@@ -1,4 +1,5 @@
 use crate::parsers::{
+    go_to_section_and_back_parser::GoToSectionAndBackParser,
     go_to_section_parser::GoToSectionParser, line_parser::LineParser,
     section_parser::SectionParser, FeatureParser, ParserContext,
 };
@@ -21,6 +22,7 @@ pub struct Parser {
     file_path: Option<PathBuf>,
     line_parser: LineParser,
     section_parser: SectionParser,
+    go_to_section_and_back_parser: GoToSectionAndBackParser,
     go_to_section_parser: GoToSectionParser,
     // Track section names by parent_id -> (name -> first_line_number)
     section_names_by_parent: HashMap<Option<BlockId>, HashMap<String, usize>>,
@@ -255,6 +257,7 @@ impl Parser {
             file_path: Some(file_path),
             line_parser: LineParser::new(),
             section_parser: SectionParser::new(),
+            go_to_section_and_back_parser: GoToSectionAndBackParser::new(),
             go_to_section_parser: GoToSectionParser::new(),
             ..Self::default()
         }
@@ -421,10 +424,85 @@ impl Parser {
                     self.last_section_at_level[level] = block_id;
                 }
             } else {
-                // Try to parse as go-to-section
-                let go_to_result = match self
-                    .go_to_section_parser
+                // Try to parse as go-to-section-and-back first (before go-to-section)
+                let go_to_and_back_result = match self
+                    .go_to_section_and_back_parser
                     .parse(content.trim(), &mut context)
+                {
+                    Ok(result) => result,
+                    Err(e) => {
+                        self.collect_error_and_skip(e, &mut context);
+                        continue;
+                    }
+                };
+
+                if let Some(go_to_and_back_result) = go_to_and_back_result {
+                    // Check for leading/trailing whitespace in goto path
+                    let trimmed_path = go_to_and_back_result.path.trim();
+                    let final_path = if trimmed_path != go_to_and_back_result.path {
+                        self.warnings.push(Warning {
+                            message: format!(
+                                "Section name has leading/trailing whitespace: '{}'. Trimmed to '{}'",
+                                go_to_and_back_result.path, trimmed_path
+                            ),
+                            file: self.file_path.clone(),
+                            line: context.current_line,
+                        });
+                        trimmed_path.to_string()
+                    } else {
+                        go_to_and_back_result.path
+                    };
+
+                    // This is a go-to-section-and-back command
+                    // Find parent block: check if there's a section at this level first
+                    let parent_id = if level < self.last_section_at_level.len() {
+                        // There's a section at this level, use it as parent
+                        Some(self.last_section_at_level[level])
+                    } else if level == 0 {
+                        // At level 0 with no section, use first block (Start or a Section)
+                        self.last_block_at_level.first().copied()
+                    } else if level <= self.last_block_at_level.len() {
+                        // No section at this level, pop back to find parent
+                        while self.last_block_at_level.len() > level {
+                            self.last_block_at_level.pop();
+                        }
+                        self.last_block_at_level.last().copied()
+                    } else {
+                        self.collect_error_and_skip(
+                            ParseError::InvalidIndentation {
+                                message: format!("found {} spaces in: {}", level * 2, content),
+                                file: self.file_path.clone(),
+                                line: context.current_line,
+                            },
+                            &mut context,
+                        );
+                        continue;
+                    };
+
+                    // Create GoToSectionAndBack block with placeholder target_block_id
+                    // This will be resolved in the validation pass
+                    let block = Block::with_line(
+                        BlockType::GoToSectionAndBack {
+                            path: final_path,
+                            target_block_id: 0, // Placeholder, will be resolved
+                        },
+                        parent_id,
+                        level,
+                        context.current_line,
+                    );
+                    let block_id = context.database.add_block(block);
+
+                    // Update last block at this level
+                    if level >= self.last_block_at_level.len() {
+                        self.last_block_at_level.push(block_id);
+                    } else {
+                        self.last_block_at_level[level] = block_id;
+                    }
+                } else {
+                    // Try to parse as go-to-section
+                    let go_to_result = match self
+                        .go_to_section_parser
+                        .parse(content.trim(), &mut context)
                 {
                     Ok(result) => result,
                     Err(e) => {
@@ -495,8 +573,8 @@ impl Parser {
                     } else {
                         self.last_block_at_level[level] = block_id;
                     }
-                } else {
-                    // Parse as regular string
+                    } else {
+                        // Parse as regular string
                     let result = self.line_parser.parse(content.trim(), &mut context)?;
 
                     // Find parent block: check if there's a section at this level first
@@ -535,6 +613,7 @@ impl Parser {
                         self.last_block_at_level.push(block_id);
                     } else {
                         self.last_block_at_level[level] = block_id;
+                    }
                     }
                 }
             }
@@ -606,23 +685,27 @@ impl Parser {
             self.detect_empty_sections(&context.database)?;
         }
 
-        // Collect GoToSection blocks first to avoid borrow checker issues
-        let goto_blocks: Vec<(BlockId, String, usize)> = context
+        // Collect GoToSection and GoToSectionAndBack blocks first to avoid borrow checker issues
+        let goto_blocks: Vec<(BlockId, String, usize, bool)> = context
             .database
             .blocks
             .iter()
             .enumerate()
             .filter_map(|(block_id, block)| {
-                if let BlockType::GoToSection { path, .. } = &block.block_type {
-                    Some((block_id, path.clone(), block.line))
-                } else {
-                    None
+                match &block.block_type {
+                    BlockType::GoToSection { path, .. } => {
+                        Some((block_id, path.clone(), block.line, false))
+                    }
+                    BlockType::GoToSectionAndBack { path, .. } => {
+                        Some((block_id, path.clone(), block.line, true))
+                    }
+                    _ => None,
                 }
             })
             .collect();
 
-        // Resolve and validate all GoToSection blocks
-        for (block_id, path, line) in goto_blocks {
+        // Resolve and validate all GoToSection and GoToSectionAndBack blocks
+        for (block_id, path, line, is_call_and_back) in goto_blocks {
             // Find the containing section for this block
             let containing_section = self.find_containing_section(&context.database, block_id);
 
@@ -636,10 +719,27 @@ impl Parser {
             ) {
                 Ok(target_block_id) => {
                     // Update the block with the resolved target
-                    context.database.blocks[block_id].block_type = BlockType::GoToSection {
-                        path: path.clone(),
-                        target_block_id,
-                    };
+                    if is_call_and_back {
+                        context.database.blocks[block_id].block_type =
+                            BlockType::GoToSectionAndBack {
+                                path: path.clone(),
+                                target_block_id,
+                            };
+
+                        // Warn if calling END (it will not return)
+                        if path.trim() == "END" {
+                            self.warnings.push(Warning {
+                                message: "<-> END will not return (just end execution)".to_string(),
+                                file: self.file_path.clone(),
+                                line,
+                            });
+                        }
+                    } else {
+                        context.database.blocks[block_id].block_type = BlockType::GoToSection {
+                            path: path.clone(),
+                            target_block_id,
+                        };
+                    }
                 }
                 Err(e) => {
                     // Collect the error
@@ -648,7 +748,10 @@ impl Parser {
             }
 
             // Check for unreachable code after this block
-            self.detect_unreachable_code(&context.database, block_id);
+            // Only for GoToSection (->), not GoToSectionAndBack (<->)
+            if !is_call_and_back {
+                self.detect_unreachable_code(&context.database, block_id);
+            }
         }
 
         Ok(())
@@ -739,6 +842,12 @@ impl Parser {
         line: usize,
     ) -> Result<BlockId, ParseError> {
         let path = path.trim();
+
+        // Handle "END" (jump to end)
+        if path == "END" {
+            // END block is always the last block in the database
+            return Ok(database.blocks.len() - 1);
+        }
 
         // Handle "." (current section)
         if path == "." {
@@ -924,10 +1033,21 @@ impl Parser {
         None
     }
 
-    /// Validate that section names don't contain backslash
+    /// Validate that section names don't contain backslash and aren't reserved words
     fn validate_section_names(&mut self, database: &Database) -> Result<(), ParseError> {
         for block in database.blocks.iter() {
             if let BlockType::Section { display_name, .. } = &block.block_type {
+                // Check for reserved word "END"
+                if display_name == "END" {
+                    self.errors.push(ParseError::InvalidSectionName {
+                        message: "Section name \"END\" is reserved".to_string(),
+                        name: display_name.clone(),
+                        file: self.file_path.clone(),
+                        line: block.line,
+                    });
+                }
+
+                // Check for backslash
                 if display_name.contains('\\') {
                     self.errors.push(ParseError::InvalidSectionName {
                         message: "Section names cannot contain '\\' character".to_string(),
