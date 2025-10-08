@@ -137,7 +137,7 @@ fn render_current_blocks(runtime: &cuentitos_runtime::Runtime) {
             }
             cuentitos_common::BlockType::Section(section_id) => {
                 // Build the section path by traversing up the hierarchy
-                let path = build_section_path(runtime, &block, *section_id);
+                let path = build_section_path(runtime, *section_id);
                 println!("-> {}", path);
             }
             cuentitos_common::BlockType::GoTo(_)
@@ -155,7 +155,6 @@ fn render_current_blocks(runtime: &cuentitos_runtime::Runtime) {
 
 fn build_section_path(
     runtime: &cuentitos_runtime::Runtime,
-    _current_block: &cuentitos_common::Block,
     section_id: cuentitos_common::SectionId,
 ) -> String {
     // Simply get the path from the section metadata

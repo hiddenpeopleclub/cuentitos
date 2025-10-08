@@ -5,7 +5,7 @@
   - [x] Go To Section (Docs & Implementation)
   - [x] Go To Section and Back (Docs & Implementation)
   - [x] Go To End
-  - [ ] Go To Start (Reset Variables, Keep Variables)
+  - [x] Go To Start (-> START / -> RESTART)
   - [ ] Go To's in CLI (support using go to as an input method in CLI)
   - [ ] Options (Docs & Implementation)
   - [ ] Definition of Integer Variables
