@@ -17,6 +17,8 @@ struct RuntimeState {
     previous_program_counter: usize,
     current_path: Vec<BlockId>,
     call_stack: Vec<CallFrame>,
+    waiting_for_option_selection: bool,
+    current_options: Vec<BlockId>, // IDs of available option blocks
 }
 
 impl RuntimeState {
@@ -26,6 +28,8 @@ impl RuntimeState {
             previous_program_counter: 0,
             current_path: Vec::new(),
             call_stack: Vec::new(),
+            waiting_for_option_selection: false,
+            current_options: Vec::new(),
         }
     }
 
@@ -151,6 +155,54 @@ impl Runtime {
         } else {
             None
         }
+    }
+
+    /// Returns true if the runtime is waiting for user to select an option
+    pub fn is_waiting_for_option(&self) -> bool {
+        self.state.waiting_for_option_selection
+    }
+
+    /// Returns the current available options as (option_number, string_id) pairs
+    /// Option numbers start at 1
+    pub fn get_current_options(&self) -> Vec<(usize, StringId)> {
+        self.state.current_options
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &block_id)| {
+                if let BlockType::Option(string_id) = self.database.blocks[block_id].block_type {
+                    Some((i + 1, string_id)) // Numbers start at 1
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Select an option by its number (1-based)
+    /// Returns Ok(()) if successful, Err(message) if invalid choice
+    pub fn select_option(&mut self, choice: usize) -> Result<(), String> {
+        if !self.state.waiting_for_option_selection {
+            return Err("Not waiting for option selection".to_string());
+        }
+
+        if choice == 0 || choice > self.state.current_options.len() {
+            return Err(format!("Invalid option: {}", choice));
+        }
+
+        // Get the selected option block ID (choice is 1-based, vec is 0-based)
+        let selected_option_id = self.state.current_options[choice - 1];
+
+        // Add selected option to execution path
+        self.state.current_path.push(selected_option_id);
+
+        // Move program counter to the selected option
+        self.state.program_counter = selected_option_id;
+
+        // Clear option selection state
+        self.state.waiting_for_option_selection = false;
+        self.state.current_options.clear();
+
+        Ok(())
     }
 
     // Find the next block to visit in a depth-first traversal
@@ -304,6 +356,13 @@ impl Runtime {
     pub fn step(&mut self) -> bool {
         if self.can_continue() {
             if let Some(next_id) = self.find_next_block() {
+                // Check if the next block is an option
+                if matches!(self.database.blocks[next_id].block_type, BlockType::Option(_)) {
+                    // Collect all option siblings
+                    self.collect_options_at(next_id);
+                    return false; // Stop stepping, wait for user choice
+                }
+
                 self.state.previous_program_counter = self.state.program_counter;
                 self.state.program_counter = next_id;
                 self.state.current_path.push(next_id);
@@ -313,16 +372,42 @@ impl Runtime {
         false
     }
 
+    /// Collect all option siblings starting from the first option
+    fn collect_options_at(&mut self, first_option_id: BlockId) {
+        self.state.current_options.clear();
+        self.state.waiting_for_option_selection = true;
+
+        // Get parent to find all option siblings
+        if let Some(parent_id) = self.database.blocks[first_option_id].parent_id {
+            let parent = &self.database.blocks[parent_id];
+
+            // Find all consecutive option children
+            for &child_id in &parent.children {
+                if matches!(self.database.blocks[child_id].block_type, BlockType::Option(_)) {
+                    self.state.current_options.push(child_id);
+                } else if !self.state.current_options.is_empty() {
+                    // Stop when we hit a non-option after options have started
+                    break;
+                }
+            }
+        }
+    }
+
     pub fn skip(&mut self) -> bool {
         let initial_stack_depth = self.state.call_stack.len();
         let previous_program_counter = self.state.program_counter;
 
-        // Keep stepping until we reach END or return from current call
-        while !self.has_ended() && self.can_continue() {
+        // Keep stepping until we reach END, return from current call, or hit options
+        while !self.has_ended() && self.can_continue() && !self.state.waiting_for_option_selection {
             self.step();
 
             // If we started in a call, stop when we return from it
             if initial_stack_depth > 0 && self.state.call_stack.len() < initial_stack_depth {
+                break;
+            }
+
+            // Stop if we're now waiting for option selection
+            if self.state.waiting_for_option_selection {
                 break;
             }
         }
