@@ -62,12 +62,53 @@ fn main() {
                     let mut runtime = cuentitos_runtime::Runtime::new(database);
                     runtime.run();
 
+                    // Track what we've rendered to avoid duplicates
+                    let mut last_rendered_idx = 0;
+
                     // Process inputs
                     let mut quit_requested = false;
                     if !input_string.is_empty() {
                         for input in input_string.split(',') {
                             let trimmed = input.trim();
+
+                            // Auto-step before processing to check for options
+                            // This allows tests to use "1,s" instead of "n,1,s"
+                            // Auto-step if: input is a number OR (we haven't stepped yet AND input is q or not a command)
+                            let is_option_number = trimmed.parse::<usize>().is_ok();
+                            let is_step_or_skip = matches!(trimmed, "n" | "s");
+                            let need_initial_step = last_rendered_idx == 0 && !is_step_or_skip;
+                            let should_auto_step = (is_option_number || need_initial_step)
+                                && !runtime.is_waiting_for_option()
+                                && !runtime.has_ended();
+
+                            if should_auto_step {
+                                // Keep stepping until we hit options or can't continue
+                                while !runtime.is_waiting_for_option()
+                                    && !runtime.has_ended()
+                                    && runtime.step()
+                                {
+                                    // If we hit options after stepping, break
+                                    if runtime.is_waiting_for_option() {
+                                        break;
+                                    }
+                                }
+
+                                // Render new blocks that were stepped over
+                                render_path_from(&runtime, last_rendered_idx);
+                                last_rendered_idx = runtime.current_path().len();
+
+                                // If we hit options, display them
+                                if runtime.is_waiting_for_option() {
+                                    display_options(&runtime);
+                                }
+                            }
+
+                            // Check for quit after rendering current state
                             if trimmed == "q" {
+                                // If we're at an option prompt, add newline after >
+                                if runtime.is_waiting_for_option() {
+                                    println!();
+                                }
                                 quit_requested = true;
                                 break;
                             }
@@ -76,23 +117,27 @@ fn main() {
                                 break;
                             }
 
-                            // After processing, check if we're waiting for options
+                            // Render any new blocks after processing input
+                            render_path_from(&runtime, last_rendered_idx);
+                            last_rendered_idx = runtime.current_path().len();
+
+                            // After processing option selection, check for more options
                             if runtime.is_waiting_for_option() {
-                                render_current_blocks(&runtime);
                                 display_options(&runtime);
                             }
                         }
                     }
 
-                    // Final render
-                    render_current_blocks(&runtime);
+                    // Final render - show any remaining blocks
+                    render_path_from(&runtime, last_rendered_idx);
 
-                    // If still waiting for options, display them
-                    if runtime.is_waiting_for_option() {
+                    // If still waiting for options and we didn't quit, display them
+                    if runtime.is_waiting_for_option() && !quit_requested {
                         display_options(&runtime);
                     }
 
-                    if quit_requested {
+                    // Print QUIT only if not at an option prompt
+                    if quit_requested && !runtime.is_waiting_for_option() {
                         println!("QUIT");
                     }
 
@@ -127,14 +172,14 @@ fn process_input(input: &str, runtime: &mut cuentitos_runtime::Runtime) -> bool 
 
             match runtime.select_option(choice) {
                 Ok(()) => {
-                    // Display the selected option
+                    // Display the selected option (with space before to continue from >)
                     if let Some(text) = option_text {
-                        println!("Selected: {}", text);
+                        println!(" Selected: {}", text);
                     }
                     return true;
                 }
                 Err(_) => {
-                    println!("Invalid option: {}", trimmed);
+                    println!(" Invalid option: {}", input);
                     return true; // Continue, will re-display options
                 }
             }
@@ -146,14 +191,14 @@ fn process_input(input: &str, runtime: &mut cuentitos_runtime::Runtime) -> bool 
             "n" | "s" => {
                 let num_options = runtime.get_current_options().len();
                 println!(
-                    "Use option numbers (1-{}) to choose (plus q to quit)",
+                    " Use option numbers (1-{}) to choose (plus q to quit)",
                     num_options
                 );
                 return true;
             }
             "" => return true, // Ignore empty input
             _ => {
-                println!("Invalid option: {}", trimmed);
+                println!(" Invalid option: {}", input);
                 return true;
             }
         }
@@ -273,6 +318,36 @@ fn handle_goto_command(
     }
 }
 
+fn render_path_from(runtime: &cuentitos_runtime::Runtime, start_idx: usize) {
+    // Render all blocks from start_idx onwards in current_path
+    for &block_id in &runtime.current_path()[start_idx..] {
+        let block = &runtime.database.blocks[block_id];
+        match &block.block_type {
+            cuentitos_common::BlockType::Start => println!("START"),
+            cuentitos_common::BlockType::String(id) => {
+                println!("{}", runtime.database.strings[*id])
+            }
+            cuentitos_common::BlockType::Section(section_id) => {
+                // Build the section path
+                let path = build_section_path(runtime, *section_id);
+                println!("-> {}", path);
+            }
+            cuentitos_common::BlockType::GoTo(_)
+            | cuentitos_common::BlockType::GoToAndBack(_)
+            | cuentitos_common::BlockType::GoToStart
+            | cuentitos_common::BlockType::GoToRestart
+            | cuentitos_common::BlockType::GoToEnd => {
+                // Goto blocks are not rendered - they're navigation commands
+            }
+            cuentitos_common::BlockType::Option(_) => {
+                // Option blocks are not rendered in normal flow
+                // They are displayed via display_options() when waiting for selection
+            }
+            cuentitos_common::BlockType::End => println!("END"),
+        }
+    }
+}
+
 fn render_current_blocks(runtime: &cuentitos_runtime::Runtime) {
     for block in runtime.current_blocks() {
         match &block.block_type {
@@ -307,7 +382,8 @@ fn display_options(runtime: &cuentitos_runtime::Runtime) {
     for (num, string_id) in options {
         println!("  {}. {}", num, runtime.database.strings[string_id]);
     }
-    println!(">"); // Just print > on its own line
+    print!(">"); // Print > without newline, caller decides what comes next
+    std::io::Write::flush(&mut std::io::stdout()).ok();
 }
 
 fn build_section_path(

@@ -310,6 +310,7 @@ impl Runtime {
         }
 
         // If no children, try to find the next sibling
+        // Special handling: if we're inside an option, skip all sibling options when exiting
         let mut current_id = self.state.program_counter;
         while let Some(parent_id) = self.database.blocks[current_id].parent_id {
             let parent = &self.database.blocks[parent_id];
@@ -319,22 +320,69 @@ impl Runtime {
                 .position(|&id| id == current_id)
                 .unwrap();
 
-            // If there's a next sibling, return it
-            if current_index + 1 < parent.children.len() {
-                return Some(parent.children[current_index + 1]);
+            // Look for next sibling
+            for sibling_index in (current_index + 1)..parent.children.len() {
+                let sibling_id = parent.children[sibling_index];
+                let sibling_is_option = matches!(
+                    self.database.blocks[sibling_id].block_type,
+                    BlockType::Option(_)
+                );
+
+                // Check if we're inside an option's subtree (recalculate for current_id)
+                let inside_option = self.is_inside_option_subtree(current_id);
+
+                // If we're exiting an option and this sibling is an option, skip it
+                if inside_option && sibling_is_option {
+                    continue;
+                }
+
+                // Found a valid next sibling
+                return Some(sibling_id);
             }
 
-            // Otherwise, move up to the parent and try again
+            // No valid sibling found, move up to parent
             current_id = parent_id;
         }
 
-        // For disconnected blocks or when we've exhausted all siblings and parents,
-        // just move to the next sequential block if it exists
-        if self.state.program_counter + 1 < self.database.blocks.len() {
-            Some(self.state.program_counter + 1)
-        } else {
-            None
+        // Fallback: if we've exhausted the tree, try sequential next block
+        // But skip over option blocks AND their subtrees if we're coming from inside an option
+        let inside_option = self.is_inside_option_subtree(self.state.program_counter);
+        let mut next_id = self.state.program_counter + 1;
+        while next_id < self.database.blocks.len() {
+            // If we're inside an option and the next block is an option or inside an option, skip it
+            if inside_option && self.is_inside_option_subtree(next_id) {
+                next_id += 1;
+                continue;
+            }
+            return Some(next_id);
         }
+        None
+    }
+
+    // Check if we're currently inside an option's subtree (including the option itself)
+    fn is_inside_option_subtree(&self, block_id: BlockId) -> bool {
+        let mut current_id = block_id;
+        loop {
+            if matches!(self.database.blocks[current_id].block_type, BlockType::Option(_)) {
+                return true;
+            }
+            match self.database.blocks[current_id].parent_id {
+                Some(parent_id) => current_id = parent_id,
+                None => return false,
+            }
+        }
+    }
+
+    // Check if a block is a descendant of an Option block
+    fn is_descendant_of_option(&self, block_id: BlockId) -> bool {
+        let mut current_id = block_id;
+        while let Some(parent_id) = self.database.blocks[current_id].parent_id {
+            if matches!(self.database.blocks[parent_id].block_type, BlockType::Option(_)) {
+                return true;
+            }
+            current_id = parent_id;
+        }
+        false
     }
 
     // Check if a block is outside a section's subtree
@@ -1197,5 +1245,30 @@ mod test {
         } else {
             panic!("Expected block after return");
         }
+    }
+
+    #[test]
+    fn test_option_skip_doesnt_reencounter_options() {
+        // Test that after selecting an option and skipping, we don't encounter sibling options
+        let script = "Question\n  * Option 1\n    Content 1\n  * Option 2\n    Content 2";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        // Step to "Question"
+        runtime.step();
+
+        // Step should hit options
+        runtime.step();
+        assert!(runtime.is_waiting_for_option());
+
+        // Select first option
+        runtime.select_option(1).unwrap();
+        assert!(!runtime.is_waiting_for_option());
+
+        // Skip should go to END without re-encountering options
+        runtime.skip();
+        assert!(!runtime.is_waiting_for_option(), "Should not be waiting for options after skip");
+        assert!(runtime.has_ended(), "Should have reached END");
     }
 }
