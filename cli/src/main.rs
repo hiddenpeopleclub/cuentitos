@@ -71,14 +71,26 @@ fn main() {
                                 quit_requested = true;
                                 break;
                             }
+
                             if !process_input(trimmed, &mut runtime) {
                                 break;
+                            }
+
+                            // After processing, check if we're waiting for options
+                            if runtime.is_waiting_for_option() {
+                                render_current_blocks(&runtime);
+                                display_options(&runtime);
                             }
                         }
                     }
 
                     // Final render
                     render_current_blocks(&runtime);
+
+                    // If still waiting for options, display them
+                    if runtime.is_waiting_for_option() {
+                        display_options(&runtime);
+                    }
 
                     if quit_requested {
                         println!("QUIT");
@@ -102,6 +114,51 @@ fn main() {
 fn process_input(input: &str, runtime: &mut cuentitos_runtime::Runtime) -> bool {
     let trimmed = input.trim();
 
+    // Check if waiting for option selection
+    if runtime.is_waiting_for_option() {
+        // Try to parse as option number
+        if let Ok(choice) = trimmed.parse::<usize>() {
+            // Get option text before selecting (selection clears current_options)
+            let option_text = runtime
+                .get_current_options()
+                .iter()
+                .find(|(num, _)| *num == choice)
+                .map(|(_, string_id)| runtime.database.strings[*string_id].clone());
+
+            match runtime.select_option(choice) {
+                Ok(()) => {
+                    // Display the selected option
+                    if let Some(text) = option_text {
+                        println!("Selected: {}", text);
+                    }
+                    return true;
+                }
+                Err(_) => {
+                    println!("Invalid option: {}", trimmed);
+                    return true; // Continue, will re-display options
+                }
+            }
+        }
+
+        // Handle special commands at option prompt
+        match trimmed {
+            "q" => return false,
+            "n" | "s" => {
+                let num_options = runtime.get_current_options().len();
+                println!(
+                    "Use option numbers (1-{}) to choose (plus q to quit)",
+                    num_options
+                );
+                return true;
+            }
+            "" => return true, // Ignore empty input
+            _ => {
+                println!("Invalid option: {}", trimmed);
+                return true;
+            }
+        }
+    }
+
     // Check for GoTo commands
     if trimmed.starts_with("<->") {
         return handle_goto_and_back(trimmed, runtime);
@@ -109,7 +166,7 @@ fn process_input(input: &str, runtime: &mut cuentitos_runtime::Runtime) -> bool 
         return handle_goto(trimmed, runtime);
     }
 
-    // Handle standard commands
+    // Normal (non-option) input processing
     match trimmed {
         "n" => {
             if runtime.can_continue() {
@@ -236,9 +293,21 @@ fn render_current_blocks(runtime: &cuentitos_runtime::Runtime) {
                 // Goto blocks are not rendered - they're navigation commands
                 // that are executed by the runtime
             }
+            cuentitos_common::BlockType::Option(_) => {
+                // Option blocks are not rendered in normal flow
+                // They are displayed via display_options() when waiting for selection
+            }
             cuentitos_common::BlockType::End => println!("END"),
         }
     }
+}
+
+fn display_options(runtime: &cuentitos_runtime::Runtime) {
+    let options = runtime.get_current_options();
+    for (num, string_id) in options {
+        println!("  {}. {}", num, runtime.database.strings[string_id]);
+    }
+    println!(">"); // Just print > on its own line
 }
 
 fn build_section_path(
