@@ -26,6 +26,8 @@ pub struct Parser {
     go_to_section_parser: GoToSectionParser,
     // Track section names by parent_id -> (name -> first_line_number)
     section_names_by_parent: HashMap<Option<BlockId>, HashMap<String, usize>>,
+    // Track goto paths temporarily during parsing (BlockId -> path)
+    goto_paths: HashMap<BlockId, String>,
     // Collect errors instead of returning immediately
     errors: Vec<ParseError>,
     // Collect warnings
@@ -372,10 +374,10 @@ impl Parser {
                             "<root>".to_string()
                         } else {
                             match &context.database.blocks[pid].block_type {
-                                BlockType::Section {
-                                    display_name: parent_display,
-                                    ..
-                                } => parent_display.clone(),
+                                BlockType::Section(section_id) => {
+                                    let section = &context.database.sections[*section_id];
+                                    context.database.strings[section.name].clone()
+                                }
                                 _ => "<root>".to_string(),
                             }
                         }
@@ -400,16 +402,32 @@ impl Parser {
                 // Record this section name
                 names_map.insert(section_result.display_name.clone(), context.current_line);
 
+                // Build the full path for this section
+                let path_string = self.build_section_path_during_parse(
+                    &context.database,
+                    &section_result.display_name,
+                    level,
+                );
+
+                // Add name and path to strings database
+                let name_string_id = context.database.add_string(section_result.display_name.clone());
+                let path_string_id = context.database.add_string(path_string);
+
+                // Create a placeholder block first to get the block_id
                 let block = Block::with_line(
-                    BlockType::Section {
-                        id: section_result.id,
-                        display_name: section_result.display_name,
-                    },
+                    BlockType::Section(0), // Temporary, will be updated
                     parent_id,
                     level,
                     context.current_line,
                 );
                 let block_id = context.database.add_block(block);
+
+                // Now create the Section and add it to the database
+                let section = cuentitos_common::Section::new(block_id, name_string_id, path_string_id);
+                let section_id = context.database.add_section(section);
+
+                // Update the block with the correct section_id
+                context.database.blocks[block_id].block_type = BlockType::Section(section_id);
 
                 // Update both stacks
                 if level >= self.last_block_at_level.len() {
@@ -479,18 +497,18 @@ impl Parser {
                         continue;
                     };
 
-                    // Create GoToSectionAndBack block with placeholder target_block_id
+                    // Create GoToAndBack block with placeholder SectionId
                     // This will be resolved in the validation pass
                     let block = Block::with_line(
-                        BlockType::GoToSectionAndBack {
-                            path: final_path,
-                            target_block_id: 0, // Placeholder, will be resolved
-                        },
+                        BlockType::GoToAndBack(0), // Placeholder SectionId, will be resolved
                         parent_id,
                         level,
                         context.current_line,
                     );
                     let block_id = context.database.add_block(block);
+
+                    // Store the path for later resolution
+                    self.goto_paths.insert(block_id, final_path);
 
                     // Update last block at this level
                     if level >= self.last_block_at_level.len() {
@@ -554,18 +572,18 @@ impl Parser {
                             continue;
                         };
 
-                        // Create GoToSection block with placeholder target_block_id
+                        // Create GoTo block with placeholder SectionId
                         // This will be resolved in the validation pass
                         let block = Block::with_line(
-                            BlockType::GoToSection {
-                                path: final_path,
-                                target_block_id: 0, // Placeholder, will be resolved
-                            },
+                            BlockType::GoTo(0), // Placeholder SectionId, will be resolved
                             parent_id,
                             level,
                             context.current_line,
                         );
                         let block_id = context.database.add_block(block);
+
+                        // Store the path for later resolution
+                        self.goto_paths.insert(block_id, final_path);
 
                         // Update last block at this level
                         if level >= self.last_block_at_level.len() {
@@ -685,18 +703,20 @@ impl Parser {
             self.detect_empty_sections(&context.database)?;
         }
 
-        // Collect GoToSection and GoToSectionAndBack blocks first to avoid borrow checker issues
+        // Collect GoTo and GoToAndBack blocks first to avoid borrow checker issues
         let goto_blocks: Vec<(BlockId, String, usize, bool)> = context
             .database
             .blocks
             .iter()
             .enumerate()
             .filter_map(|(block_id, block)| match &block.block_type {
-                BlockType::GoToSection { path, .. } => {
-                    Some((block_id, path.clone(), block.line, false))
+                BlockType::GoTo(_) => {
+                    let path = self.goto_paths.get(&block_id)?.clone();
+                    Some((block_id, path, block.line, false))
                 }
-                BlockType::GoToSectionAndBack { path, .. } => {
-                    Some((block_id, path.clone(), block.line, true))
+                BlockType::GoToAndBack(_) => {
+                    let path = self.goto_paths.get(&block_id)?.clone();
+                    Some((block_id, path, block.line, true))
                 }
                 _ => None,
             })
@@ -715,29 +735,57 @@ impl Parser {
                 &context.database,
                 line,
             ) {
-                Ok(target_block_id) => {
-                    // Update the block with the resolved target
-                    if is_call_and_back {
-                        context.database.blocks[block_id].block_type =
-                            BlockType::GoToSectionAndBack {
-                                path: path.clone(),
-                                target_block_id,
-                            };
+                Ok(resolved_type) => {
+                    // Update the block with the resolved type
+                    // For GoToAndBack, convert GoTo variants to GoToAndBack, keep special variants as-is
+                    context.database.blocks[block_id].block_type = if is_call_and_back {
+                        match resolved_type {
+                            BlockType::GoTo(section_id) => {
+                                // Check if the target section has only goto blocks
+                                let target_section = &context.database.sections[section_id];
+                                let target_block_id = target_section.block_id;
 
-                        // Warn if calling END (it will not return)
-                        if path.trim() == "END" {
-                            self.warnings.push(Warning {
-                                message: "<-> END will not return (just end execution)".to_string(),
-                                file: self.file_path.clone(),
-                                line,
-                            });
+                                if Self::section_has_only_gotos(&context.database, target_block_id) {
+                                    let section_name = &context.database.strings[target_section.name];
+                                    let section_line = context.database.blocks[target_block_id].line;
+                                    self.errors.push(ParseError::EmptySection {
+                                        name: section_name.clone(),
+                                        file: self.file_path.clone(),
+                                        line: section_line,
+                                    });
+                                }
+
+                                BlockType::GoToAndBack(section_id)
+                            }
+                            BlockType::GoToStart => {
+                                self.warnings.push(Warning {
+                                    message: "<-> START will not return (restarts from beginning)".to_string(),
+                                    file: self.file_path.clone(),
+                                    line,
+                                });
+                                BlockType::GoToStart
+                            }
+                            BlockType::GoToRestart => {
+                                self.warnings.push(Warning {
+                                    message: "<-> RESTART will not return (clears state and restarts from beginning)".to_string(),
+                                    file: self.file_path.clone(),
+                                    line,
+                                });
+                                BlockType::GoToRestart
+                            }
+                            BlockType::GoToEnd => {
+                                self.warnings.push(Warning {
+                                    message: "<-> END will not return (just end execution)".to_string(),
+                                    file: self.file_path.clone(),
+                                    line,
+                                });
+                                BlockType::GoToEnd
+                            }
+                            _ => resolved_type, // Should not happen
                         }
                     } else {
-                        context.database.blocks[block_id].block_type = BlockType::GoToSection {
-                            path: path.clone(),
-                            target_block_id,
-                        };
-                    }
+                        resolved_type
+                    };
                 }
                 Err(e) => {
                     // Collect the error
@@ -755,16 +803,47 @@ impl Parser {
         Ok(())
     }
 
-    /// Build a registry mapping section paths to BlockIds
-    fn build_section_registry(&self, database: &Database) -> HashMap<String, (BlockId, usize)> {
+    /// Build the full hierarchical path for a section during parsing
+    ///
+    /// Uses last_section_at_level to build the path from parent sections.
+    /// This is called before the section block is added to the database.
+    fn build_section_path_during_parse(
+        &self,
+        database: &Database,
+        section_name: &str,
+        level: usize,
+    ) -> String {
+        let mut path_parts = Vec::new();
+
+        // Walk up the section hierarchy using last_section_at_level
+        for i in 0..level {
+            if i < self.last_section_at_level.len() {
+                let section_block_id = self.last_section_at_level[i];
+                if let BlockType::Section(section_id) = database.blocks[section_block_id].block_type {
+                    let section = &database.sections[section_id];
+                    let section_name = &database.strings[section.name];
+                    path_parts.push(section_name.clone());
+                }
+            }
+        }
+
+        // Add this section's name
+        path_parts.push(section_name.to_string());
+
+        // Join with " \ "
+        path_parts.join(" \\ ")
+    }
+
+    /// Build a registry mapping section paths to SectionIds
+    fn build_section_registry(&self, database: &Database) -> HashMap<String, SectionId> {
         let mut registry = HashMap::new();
 
-        for (block_id, block) in database.blocks.iter().enumerate() {
-            if let BlockType::Section { .. } = &block.block_type {
-                // Build the full path for this section
-                let path = self.build_section_path_string(database, block_id);
-                // Line number is block_id for simplicity (we don't track actual line numbers per block yet)
-                registry.insert(path, (block_id, block_id));
+        for block in database.blocks.iter() {
+            if let BlockType::Section(section_id) = &block.block_type {
+                // Get the path from the section metadata
+                let section = &database.sections[*section_id];
+                let path = &database.strings[section.path];
+                registry.insert(path.clone(), *section_id);
             }
         }
 
@@ -782,9 +861,11 @@ impl Parser {
 
         // Walk up the parent chain, collecting section names
         while let Some(parent_id) = database.blocks[current_id].parent_id {
-            if let BlockType::Section { display_name, .. } = &database.blocks[current_id].block_type
+            if let BlockType::Section(section_id) = &database.blocks[current_id].block_type
             {
-                path_parts.push(display_name.clone());
+                let section = &database.sections[*section_id];
+                let name = &database.strings[section.name];
+                path_parts.push(name.clone());
             }
             current_id = parent_id;
         }
@@ -830,34 +911,47 @@ impl Parser {
     /// 2. Siblings of containing section
     /// 3. Check full registry for absolute match
     ///
-    /// Returns the BlockId of the target section, or an error if not found
+    /// Helper to extract SectionId from a section BlockId
+    fn get_section_id(&self, database: &Database, block_id: BlockId) -> Option<SectionId> {
+        if let BlockType::Section(section_id) = database.blocks[block_id].block_type {
+            Some(section_id)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the BlockType variant for the resolved goto, or an error if not found
     fn resolve_path(
         &mut self,
         path: &str,
         containing_section: Option<BlockId>,
-        registry: &HashMap<String, (BlockId, usize)>,
+        registry: &HashMap<String, SectionId>,
         database: &Database,
         line: usize,
-    ) -> Result<BlockId, ParseError> {
+    ) -> Result<BlockType, ParseError> {
         let path = path.trim();
 
-        // Handle "END" (jump to end)
-        if path == "END" {
-            // END block is always the last block in the database
-            return Ok(database.blocks.len() - 1);
+        // Handle special keywords
+        match path {
+            "START" => return Ok(BlockType::GoToStart),
+            "RESTART" => return Ok(BlockType::GoToRestart),
+            "END" => return Ok(BlockType::GoToEnd),
+            _ => {}
         }
 
         // Handle "." (current section)
         if path == "." {
-            if let Some(section_id) = containing_section {
-                return Ok(section_id);
-            } else {
-                return Err(ParseError::SectionNotFound {
-                    path: path.to_string(),
-                    file: self.file_path.clone(),
-                    line,
-                });
+            if let Some(section_block_id) = containing_section {
+                // Get the SectionId from the block
+                if let BlockType::Section(section_id) = database.blocks[section_block_id].block_type {
+                    return Ok(BlockType::GoTo(section_id));
+                }
             }
+            return Err(ParseError::SectionNotFound {
+                path: path.to_string(),
+                file: self.file_path.clone(),
+                line,
+            });
         }
 
         // Parse the path into segments
@@ -866,35 +960,39 @@ impl Parser {
         // Check if this is an absolute path (doesn't start with ..)
         if !segments[0].starts_with("..") {
             // Try absolute path first
-            if let Some(&(block_id, _)) = registry.get(path) {
-                return Ok(block_id);
+            if let Some(&section_id) = registry.get(path) {
+                return Ok(BlockType::GoTo(section_id));
             }
 
             // Try relative path (search children and siblings)
-            if let Some(section_id) = containing_section {
+            if let Some(section_block_id) = containing_section {
                 // Search children first
-                if let Some(child_id) = self.find_child_section(database, section_id, segments[0]) {
+                if let Some(child_block_id) = self.find_child_section(database, section_block_id, segments[0]) {
                     if segments.len() == 1 {
-                        return Ok(child_id);
+                        if let Some(section_id) = self.get_section_id(database, child_block_id) {
+                            return Ok(BlockType::GoTo(section_id));
+                        }
                     }
                     // For longer paths, build the full path and look it up
                     let full_path = segments.join(" \\ ");
-                    if let Some(&(block_id, _)) = registry.get(&full_path) {
-                        return Ok(block_id);
+                    if let Some(&section_id) = registry.get(&full_path) {
+                        return Ok(BlockType::GoTo(section_id));
                     }
                 }
 
                 // Search siblings
-                if let Some(sibling_id) =
-                    self.find_sibling_section(database, section_id, segments[0])
+                if let Some(sibling_block_id) =
+                    self.find_sibling_section(database, section_block_id, segments[0])
                 {
                     if segments.len() == 1 {
-                        return Ok(sibling_id);
+                        if let Some(section_id) = self.get_section_id(database, sibling_block_id) {
+                            return Ok(BlockType::GoTo(section_id));
+                        }
                     }
                     // For longer paths, build the full path and look it up
                     let full_path = segments.join(" \\ ");
-                    if let Some(&(block_id, _)) = registry.get(&full_path) {
-                        return Ok(block_id);
+                    if let Some(&section_id) = registry.get(&full_path) {
+                        return Ok(BlockType::GoTo(section_id));
                     }
                 }
             }
@@ -925,17 +1023,19 @@ impl Parser {
 
             // If there are more segments, resolve them
             if segment_index < segments.len() {
-                if let Some(section_id) = current_section {
+                if let Some(section_block_id) = current_section {
                     // Look for the rest of the path as siblings
                     let remaining_path = segments[segment_index..].join(" \\ ");
-                    if let Some(sibling_id) =
-                        self.find_sibling_section(database, section_id, &remaining_path)
+                    if let Some(sibling_block_id) =
+                        self.find_sibling_section(database, section_block_id, &remaining_path)
                     {
-                        return Ok(sibling_id);
+                        if let Some(section_id) = self.get_section_id(database, sibling_block_id) {
+                            return Ok(BlockType::GoTo(section_id));
+                        }
                     }
                     // Try building the full path from current section
-                    let current_path = self.build_section_path_string(database, section_id);
-                    if let Some(parent_id) = database.blocks[section_id].parent_id {
+                    let current_path = self.build_section_path_string(database, section_block_id);
+                    if let Some(parent_id) = database.blocks[section_block_id].parent_id {
                         let full_path = if current_path.is_empty() {
                             remaining_path.clone()
                         } else {
@@ -945,15 +1045,17 @@ impl Parser {
                                 remaining_path
                             )
                         };
-                        if let Some(&(block_id, _)) = registry.get(&full_path) {
-                            return Ok(block_id);
+                        if let Some(&section_id) = registry.get(&full_path) {
+                            return Ok(BlockType::GoTo(section_id));
                         }
                     }
                 }
             } else {
                 // Just "..", return the parent section
-                if let Some(section_id) = current_section {
-                    return Ok(section_id);
+                if let Some(section_block_id) = current_section {
+                    if let Some(section_id) = self.get_section_id(database, section_block_id) {
+                        return Ok(BlockType::GoTo(section_id));
+                    }
                 }
             }
         }
@@ -976,8 +1078,10 @@ impl Parser {
         name: &str,
     ) -> Option<BlockId> {
         for &child_id in &database.blocks[parent_id].children {
-            if let BlockType::Section { display_name, .. } = &database.blocks[child_id].block_type {
-                if display_name == name {
+            if let BlockType::Section(section_id) = &database.blocks[child_id].block_type {
+                let section = &database.sections[*section_id];
+                let section_name = &database.strings[section.name];
+                if section_name == name {
                     return Some(child_id);
                 }
             }
@@ -998,10 +1102,12 @@ impl Parser {
         if let Some(parent_id) = database.blocks[section_id].parent_id {
             for &sibling_id in &database.blocks[parent_id].children {
                 if sibling_id != section_id {
-                    if let BlockType::Section { display_name, .. } =
+                    if let BlockType::Section(sec_id) =
                         &database.blocks[sibling_id].block_type
                     {
-                        if display_name == name {
+                        let section = &database.sections[*sec_id];
+                        let section_name = &database.strings[section.name];
+                        if section_name == name {
                             return Some(sibling_id);
                         }
                     }
@@ -1034,15 +1140,21 @@ impl Parser {
     /// Validate that section names don't contain backslash and aren't reserved words
     fn validate_section_names(&mut self, database: &Database) -> Result<(), ParseError> {
         for block in database.blocks.iter() {
-            if let BlockType::Section { display_name, .. } = &block.block_type {
-                // Check for reserved word "END"
-                if display_name == "END" {
-                    self.errors.push(ParseError::InvalidSectionName {
-                        message: "Section name \"END\" is reserved".to_string(),
-                        name: display_name.clone(),
-                        file: self.file_path.clone(),
-                        line: block.line,
-                    });
+            if let BlockType::Section(section_id) = &block.block_type {
+                let section = &database.sections[*section_id];
+                let display_name = &database.strings[section.name];
+
+                // Check for reserved words
+                match display_name.as_str() {
+                    "END" | "START" | "RESTART" => {
+                        self.errors.push(ParseError::InvalidSectionName {
+                            message: format!("Section name \"{}\" is reserved", display_name),
+                            name: display_name.clone(),
+                            file: self.file_path.clone(),
+                            line: block.line,
+                        });
+                    }
+                    _ => {}
                 }
 
                 // Check for backslash
@@ -1062,7 +1174,10 @@ impl Parser {
     /// Detect empty sections
     fn detect_empty_sections(&mut self, database: &Database) -> Result<(), ParseError> {
         for (block_id, block) in database.blocks.iter().enumerate() {
-            if let BlockType::Section { display_name, .. } = &block.block_type {
+            if let BlockType::Section(section_id) = &block.block_type {
+                let section = &database.sections[*section_id];
+                let display_name = &database.strings[section.name];
+
                 // Check if this section has any non-section children (recursively)
                 let has_content = Self::section_has_content(database, block_id);
 
@@ -1078,12 +1193,17 @@ impl Parser {
         Ok(())
     }
 
-    /// Check if a section has any content (String or GoToSection blocks), recursively
+    /// Check if a section has any content (String or Goto blocks), recursively
     fn section_has_content(database: &Database, section_id: BlockId) -> bool {
         for &child_id in &database.blocks[section_id].children {
             match &database.blocks[child_id].block_type {
-                BlockType::String(_) | BlockType::GoToSection { .. } => return true,
-                BlockType::Section { .. } => {
+                BlockType::String(_)
+                | BlockType::GoTo(_)
+                | BlockType::GoToAndBack(_)
+                | BlockType::GoToStart
+                | BlockType::GoToRestart
+                | BlockType::GoToEnd => return true,
+                BlockType::Section(_) => {
                     // Recursively check subsections
                     if Self::section_has_content(database, child_id) {
                         return true;
@@ -1093,6 +1213,32 @@ impl Parser {
             }
         }
         false
+    }
+
+    /// Check if a section has only goto blocks (no String blocks), recursively
+    fn section_has_only_gotos(database: &Database, section_id: BlockId) -> bool {
+        let mut has_any_blocks = false;
+        for &child_id in &database.blocks[section_id].children {
+            match &database.blocks[child_id].block_type {
+                BlockType::String(_) => return false, // Has a string, so not only gotos
+                BlockType::GoTo(_)
+                | BlockType::GoToAndBack(_)
+                | BlockType::GoToStart
+                | BlockType::GoToRestart
+                | BlockType::GoToEnd => {
+                    has_any_blocks = true;
+                }
+                BlockType::Section(_) => {
+                    // For subsections, recursively check
+                    if !Self::section_has_only_gotos(database, child_id) {
+                        return false; // Subsection has content, so not only gotos
+                    }
+                    has_any_blocks = true;
+                }
+                _ => {}
+            }
+        }
+        has_any_blocks // True if we found goto blocks and no string blocks
     }
 
     /// Detect unreachable code after a GoToSection block

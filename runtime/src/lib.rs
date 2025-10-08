@@ -7,20 +7,18 @@ struct CallFrame {
     called_section_id: BlockId, // The section that was called
 }
 
-pub struct Runtime {
-    pub database: Database,
-    running: bool,
+/// Runtime state that can be reset
+#[derive(Debug, Clone)]
+struct RuntimeState {
     program_counter: usize,
     previous_program_counter: usize,
-    current_path: Vec<BlockId>, // Track the current execution path
-    call_stack: Vec<CallFrame>, // Stack for handling <-> (call and return)
+    current_path: Vec<BlockId>,
+    call_stack: Vec<CallFrame>,
 }
 
-impl Runtime {
-    pub fn new(database: Database) -> Self {
+impl RuntimeState {
+    fn new() -> Self {
         Self {
-            database,
-            running: false,
             program_counter: 0,
             previous_program_counter: 0,
             current_path: Vec::new(),
@@ -28,25 +26,59 @@ impl Runtime {
         }
     }
 
+    fn with_start_block() -> Self {
+        let mut state = Self::new();
+        state.current_path.push(0); // START block
+        state
+    }
+}
+
+pub struct Runtime {
+    pub database: Database,
+    running: bool,
+    state: RuntimeState,
+}
+
+impl Runtime {
+    pub fn new(database: Database) -> Self {
+        Self {
+            database,
+            running: false,
+            state: RuntimeState::new(),
+        }
+    }
+
     pub fn run(&mut self) {
         self.running = true;
-        self.program_counter = 0;
-        self.current_path.clear();
-        self.call_stack.clear();
-        if !self.database.blocks.is_empty() {
-            self.current_path.push(0); // Start block
-        }
+        self.reset();
     }
 
     pub fn stop(&mut self) {
         self.running = false;
-        self.program_counter = 0;
-        self.current_path.clear();
-        self.call_stack.clear();
+        self.state = RuntimeState::new();
     }
 
     pub fn running(&self) -> bool {
         self.running
+    }
+
+    /// Reset runtime state to initial values
+    pub fn reset(&mut self) {
+        self.state = if !self.database.blocks.is_empty() {
+            RuntimeState::with_start_block()
+        } else {
+            RuntimeState::new()
+        };
+    }
+
+    /// Find a section by its path string
+    pub fn find_section_by_path(&self, path: &str) -> Option<SectionId> {
+        self.database
+            .sections
+            .iter()
+            .enumerate()
+            .find(|(_, section)| &self.database.strings[section.path] == path)
+            .map(|(section_id, _)| section_id)
     }
 
     pub fn can_continue(&self) -> bool {
@@ -65,13 +97,13 @@ impl Runtime {
             Vec::new()
         } else if self.has_ended() {
             // When we've reached the end, return only blocks in the execution path
-            self.current_path
+            self.state.current_path
                 .iter()
                 .map(|&id| self.database.blocks[id].clone())
                 .collect()
         } else {
             // Return only blocks that were visited in the execution path
-            self.current_path
+            self.state.current_path
                 .iter()
                 .map(|&id| self.database.blocks[id].clone())
                 .collect()
@@ -80,10 +112,10 @@ impl Runtime {
 
     pub fn current_block(&self) -> Option<Block> {
         if self.running() && !self.database.blocks.is_empty() {
-            if self.program_counter >= self.database.blocks.len() {
+            if self.state.program_counter >= self.database.blocks.len() {
                 None
             } else {
-                Some(self.database.blocks[self.program_counter].clone())
+                Some(self.database.blocks[self.state.program_counter].clone())
             }
         } else {
             None
@@ -92,67 +124,92 @@ impl Runtime {
 
     // Find the next block to visit in a depth-first traversal
     fn find_next_block(&mut self) -> Option<usize> {
-        if self.program_counter >= self.database.blocks.len() - 1 {
+        if self.state.program_counter >= self.database.blocks.len() - 1 {
             return None;
         }
 
-        let current_block = &self.database.blocks[self.program_counter];
+        let current_block = &self.database.blocks[self.state.program_counter];
 
-        // Handle GoToSectionAndBack: push to call stack and jump
-        if let BlockType::GoToSectionAndBack {
-            target_block_id,
-            path,
-        } = &current_block.block_type
-        {
-            // Check maximum call stack depth to prevent infinite loops
-            const MAX_CALL_DEPTH: usize = 200;
-            if self.call_stack.len() >= MAX_CALL_DEPTH {
-                // Print error message and terminate
-                let line = current_block.line;
-                if line > 0 {
-                    eprintln!(
-                        "Maximum call stack depth exceeded ({} calls) due to script:{} <-> {}",
-                        MAX_CALL_DEPTH, line, path
-                    );
-                } else {
-                    eprintln!(
-                        "Maximum call stack depth exceeded ({} calls) due to <-> {}",
-                        MAX_CALL_DEPTH, path
-                    );
+        // Handle special goto variants
+        match &current_block.block_type {
+            // GoToAndBack: push to call stack and jump to section
+            BlockType::GoToAndBack(section_id) => {
+                // Check maximum call stack depth to prevent infinite loops
+                const MAX_CALL_DEPTH: usize = 200;
+                if self.state.call_stack.len() >= MAX_CALL_DEPTH {
+                    // Print error message and terminate
+                    let section = &self.database.sections[*section_id];
+                    let section_name = &self.database.strings[section.name];
+                    let line = current_block.line;
+                    if line > 0 {
+                        eprintln!(
+                            "Maximum call stack depth exceeded ({} calls) due to script:{} <-> {}",
+                            MAX_CALL_DEPTH, line, section_name
+                        );
+                    } else {
+                        eprintln!(
+                            "Maximum call stack depth exceeded ({} calls) due to <-> {}",
+                            MAX_CALL_DEPTH, section_name
+                        );
+                    }
+                    // Jump to END to terminate execution
+                    return Some(self.database.blocks.len() - 1);
                 }
-                // Jump to END to terminate execution
+
+                // Compute the return point (where we'd go in normal traversal)
+                let return_block_id = self.compute_natural_next_block()?;
+
+                // Get the section's block ID
+                let section = &self.database.sections[*section_id];
+                let target_block_id = section.block_id;
+
+                // Push call frame
+                self.state.call_stack.push(CallFrame {
+                    return_block_id,
+                    called_section_id: target_block_id,
+                });
+
+                return Some(target_block_id);
+            }
+
+            // GoTo: jump to section
+            BlockType::GoTo(section_id) => {
+                let section = &self.database.sections[*section_id];
+                return Some(section.block_id);
+            }
+
+            // GoToStart: clear call stack and jump to START
+            BlockType::GoToStart => {
+                self.state.call_stack.clear();
+                return Some(0);
+            }
+
+            // GoToRestart: clear state (except current_path) and jump to START
+            BlockType::GoToRestart => {
+                self.state.call_stack.clear();
+                self.state.program_counter = 0;
+                self.state.previous_program_counter = 0;
+                // Don't touch current_path - let step() add block 0
+                return Some(0);
+            }
+
+            // GoToEnd: jump to END
+            BlockType::GoToEnd => {
                 return Some(self.database.blocks.len() - 1);
             }
 
-            // Compute the return point (where we'd go in normal traversal)
-            let return_block_id = self.compute_natural_next_block()?;
-
-            // Push call frame
-            self.call_stack.push(CallFrame {
-                return_block_id,
-                called_section_id: *target_block_id,
-            });
-
-            return Some(*target_block_id);
-        }
-
-        // Handle GoToSection: just jump
-        if let BlockType::GoToSection {
-            target_block_id, ..
-        } = current_block.block_type
-        {
-            return Some(target_block_id);
+            _ => {}
         }
 
         // Compute natural next block (existing traversal logic)
         let natural_next = self.compute_natural_next_block()?;
 
         // Check if we should return from a call
-        if let Some(frame) = self.call_stack.last() {
+        if let Some(frame) = self.state.call_stack.last() {
             // If natural_next is outside the called section's subtree, return instead
             if self.is_outside_section(natural_next, frame.called_section_id) {
                 let return_id = frame.return_block_id;
-                self.call_stack.pop();
+                self.state.call_stack.pop();
                 return Some(return_id);
             }
         }
@@ -162,7 +219,7 @@ impl Runtime {
 
     // Compute the natural next block according to depth-first traversal rules
     fn compute_natural_next_block(&self) -> Option<usize> {
-        let current_block = &self.database.blocks[self.program_counter];
+        let current_block = &self.database.blocks[self.state.program_counter];
 
         // First, try to find a child
         if !current_block.children.is_empty() {
@@ -170,7 +227,7 @@ impl Runtime {
         }
 
         // If no children, try to find the next sibling
-        let mut current_id = self.program_counter;
+        let mut current_id = self.state.program_counter;
         while let Some(parent_id) = self.database.blocks[current_id].parent_id {
             let parent = &self.database.blocks[parent_id];
             let current_index = parent
@@ -190,8 +247,8 @@ impl Runtime {
 
         // For disconnected blocks or when we've exhausted all siblings and parents,
         // just move to the next sequential block if it exists
-        if self.program_counter + 1 < self.database.blocks.len() {
-            Some(self.program_counter + 1)
+        if self.state.program_counter + 1 < self.database.blocks.len() {
+            Some(self.state.program_counter + 1)
         } else {
             None
         }
@@ -216,9 +273,9 @@ impl Runtime {
     pub fn step(&mut self) -> bool {
         if self.can_continue() {
             if let Some(next_id) = self.find_next_block() {
-                self.previous_program_counter = self.program_counter;
-                self.program_counter = next_id;
-                self.current_path.push(next_id);
+                self.state.previous_program_counter = self.state.program_counter;
+                self.state.program_counter = next_id;
+                self.state.current_path.push(next_id);
                 return true;
             }
         }
@@ -226,22 +283,22 @@ impl Runtime {
     }
 
     pub fn skip(&mut self) -> bool {
-        let initial_stack_depth = self.call_stack.len();
-        let previous_program_counter = self.program_counter;
+        let initial_stack_depth = self.state.call_stack.len();
+        let previous_program_counter = self.state.program_counter;
 
         // Keep stepping until we reach END or return from current call
         while !self.has_ended() && self.can_continue() {
             self.step();
 
             // If we started in a call, stop when we return from it
-            if initial_stack_depth > 0 && self.call_stack.len() < initial_stack_depth {
+            if initial_stack_depth > 0 && self.state.call_stack.len() < initial_stack_depth {
                 break;
             }
         }
 
         // Set previous_program_counter to show all blocks that were skipped
-        if self.program_counter > previous_program_counter {
-            self.previous_program_counter = previous_program_counter;
+        if self.state.program_counter > previous_program_counter {
+            self.state.previous_program_counter = previous_program_counter;
         }
 
         true

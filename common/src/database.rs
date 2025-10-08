@@ -1,10 +1,12 @@
 use crate::block::{Block, BlockId};
-use crate::StringId;
+use crate::section::Section;
+use crate::{SectionId, StringId};
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Database {
     pub blocks: Vec<Block>,
     pub strings: Vec<String>,
+    pub sections: Vec<Section>,
 }
 
 impl Database {
@@ -12,6 +14,7 @@ impl Database {
         Self {
             blocks: Vec::new(),
             strings: Vec::new(),
+            sections: Vec::new(),
         }
     }
 
@@ -31,6 +34,12 @@ impl Database {
         let string_id = self.strings.len();
         self.strings.push(string);
         string_id
+    }
+
+    pub fn add_section(&mut self, section: Section) -> SectionId {
+        let section_id = self.sections.len();
+        self.sections.push(section);
+        section_id
     }
 }
 
