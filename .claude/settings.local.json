@@ -1,17 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(gh pr view:*)",
-      "Bash(gh pr diff:*)",
-      "Bash(git fetch:*)",
-      "Bash(cargo clippy:*)",
-      "Bash(cargo build:*)",
-      "Bash(./bin/run-compat:*)",
-      "Bash(cargo test:*)",
-      "Bash(timeout:*)",
-      "Bash(cargo run:*)",
-      "Bash(gh run view:*)",
-      "Bash(cargo fmt:*)"
+      "Bash(done)",
+      "Bash(for:*)",
+      "Bash(do [[ -f \"$f\" ]])",
+      "Bash(ls:*)",
+      "Bash(while read f)",
+      "Bash(do echo \"Testing $f...\")"
     ],
     "deny": [],
     "ask": []

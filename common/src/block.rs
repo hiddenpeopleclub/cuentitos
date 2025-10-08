@@ -1,4 +1,4 @@
-use crate::StringId;
+use crate::{SectionId, StringId};
 
 pub type BlockId = usize;
 
@@ -6,18 +6,12 @@ pub type BlockId = usize;
 pub enum BlockType {
     Start,
     String(StringId),
-    Section {
-        id: String,
-        display_name: String,
-    },
-    GoToSection {
-        path: String,
-        target_block_id: BlockId,
-    },
-    GoToSectionAndBack {
-        path: String,
-        target_block_id: BlockId,
-    },
+    Section(SectionId),
+    GoTo(SectionId),
+    GoToAndBack(SectionId),
+    GoToStart,
+    GoToRestart,
+    GoToEnd,
     End,
 }
 

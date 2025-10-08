@@ -135,20 +135,17 @@ fn render_current_blocks(runtime: &cuentitos_runtime::Runtime) {
             cuentitos_common::BlockType::String(id) => {
                 println!("{}", runtime.database.strings[*id])
             }
-            cuentitos_common::BlockType::Section {
-                id: _,
-                display_name: _,
-            } => {
+            cuentitos_common::BlockType::Section(section_id) => {
                 // Build the section path by traversing up the hierarchy
-                let path = build_section_path(runtime, &block);
+                let path = build_section_path(runtime, &block, *section_id);
                 println!("-> {}", path);
             }
-            cuentitos_common::BlockType::GoToSection { .. } => {
-                // GoToSection blocks are not rendered - they're navigation commands
-                // that are executed by the runtime
-            }
-            cuentitos_common::BlockType::GoToSectionAndBack { .. } => {
-                // GoToSectionAndBack blocks are not rendered - they're navigation commands
+            cuentitos_common::BlockType::GoTo(_)
+            | cuentitos_common::BlockType::GoToAndBack(_)
+            | cuentitos_common::BlockType::GoToStart
+            | cuentitos_common::BlockType::GoToRestart
+            | cuentitos_common::BlockType::GoToEnd => {
+                // Goto blocks are not rendered - they're navigation commands
                 // that are executed by the runtime
             }
             cuentitos_common::BlockType::End => println!("END"),
@@ -158,26 +155,10 @@ fn render_current_blocks(runtime: &cuentitos_runtime::Runtime) {
 
 fn build_section_path(
     runtime: &cuentitos_runtime::Runtime,
-    current_block: &cuentitos_common::Block,
+    _current_block: &cuentitos_common::Block,
+    section_id: cuentitos_common::SectionId,
 ) -> String {
-    let mut path_parts = Vec::new();
-
-    // Add current section's display name
-    if let cuentitos_common::BlockType::Section { display_name, .. } = &current_block.block_type {
-        path_parts.push(display_name.clone());
-    }
-
-    // Traverse up the hierarchy to find parent sections
-    let mut current_id = current_block.parent_id;
-    while let Some(parent_id) = current_id {
-        let parent_block = &runtime.database.blocks[parent_id];
-        if let cuentitos_common::BlockType::Section { display_name, .. } = &parent_block.block_type
-        {
-            path_parts.insert(0, display_name.clone());
-        }
-        current_id = parent_block.parent_id;
-    }
-
-    // Join with " \ " as separator (backslash with spaces)
-    path_parts.join(" \\ ")
+    // Simply get the path from the section metadata
+    let section = &runtime.database.sections[section_id];
+    runtime.database.strings[section.path].clone()
 }
