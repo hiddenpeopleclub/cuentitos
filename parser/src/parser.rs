@@ -1522,17 +1522,15 @@ mod test {
         let goto_block = database
             .blocks
             .iter()
-            .find(|b| matches!(b.block_type, BlockType::GoToSection { .. }));
-        assert!(goto_block.is_some(), "Should have a GoToSection block");
+            .find(|b| matches!(b.block_type, BlockType::GoTo(_)));
+        assert!(goto_block.is_some(), "Should have a GoTo block");
 
-        // Check that it resolves to the Parent section (block 1)
+        // Check that it resolves to the Parent section
         if let Some(block) = goto_block {
-            if let BlockType::GoToSection {
-                target_block_id, ..
-            } = block.block_type
-            {
+            if let BlockType::GoTo(section_id) = block.block_type {
+                let section = &database.sections[section_id];
                 assert_eq!(
-                    target_block_id, 1,
+                    section.block_id, 1,
                     "Should resolve to Parent section (block 1)"
                 );
             }
