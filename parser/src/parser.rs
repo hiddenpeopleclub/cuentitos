@@ -1,7 +1,7 @@
 use crate::parsers::{
     go_to_section_and_back_parser::GoToSectionAndBackParser,
     go_to_section_parser::GoToSectionParser, line_parser::LineParser,
-    section_parser::SectionParser, FeatureParser, ParserContext,
+    option_parser::OptionParser, section_parser::SectionParser, FeatureParser, ParserContext,
 };
 use cuentitos_common::*;
 use std::collections::HashMap;
@@ -19,9 +19,11 @@ pub struct Warning {
 pub struct Parser {
     last_block_at_level: Vec<BlockId>, // Stack to track last block at each level
     last_section_at_level: Vec<BlockId>, // Stack to track last section at each level (for section hierarchy)
+    seen_non_option_at_level: Vec<bool>, // Track if we've seen a non-option child at each level
     file_path: Option<PathBuf>,
     line_parser: LineParser,
     section_parser: SectionParser,
+    option_parser: OptionParser,
     go_to_section_and_back_parser: GoToSectionAndBackParser,
     go_to_section_parser: GoToSectionParser,
     // Track section names by parent_id -> (name -> first_line_number)
@@ -87,6 +89,10 @@ pub enum ParseError {
     },
     EmptySection {
         name: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    OptionsWithoutParent {
         file: Option<PathBuf>,
         line: usize,
     },
@@ -230,6 +236,14 @@ impl fmt::Display for ParseError {
                     prefix, line, name
                 )
             }
+            ParseError::OptionsWithoutParent { file, line } => {
+                let prefix = file
+                    .as_ref()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("test.cuentitos");
+                write!(f, "{}:{}: ERROR: Options must have a parent", prefix, line)
+            }
             ParseError::MultipleErrors { errors } => {
                 for (i, error) in errors.iter().enumerate() {
                     write!(f, "{}", error)?;
@@ -249,6 +263,7 @@ impl Parser {
         Self {
             line_parser: LineParser::new(),
             section_parser: SectionParser::new(),
+            option_parser: OptionParser::new(),
             go_to_section_parser: GoToSectionParser::new(),
             ..Self::default()
         }
@@ -259,6 +274,7 @@ impl Parser {
             file_path: Some(file_path),
             line_parser: LineParser::new(),
             section_parser: SectionParser::new(),
+            option_parser: OptionParser::new(),
             go_to_section_and_back_parser: GoToSectionAndBackParser::new(),
             go_to_section_parser: GoToSectionParser::new(),
             ..Self::default()
@@ -594,6 +610,86 @@ impl Parser {
                         } else {
                             self.last_block_at_level[level] = block_id;
                         }
+                    } else if OptionParser::is_option_line(content.trim()) {
+                        // Parse as option
+                        let result = match self.option_parser.parse(content.trim(), &mut context) {
+                            Ok(result) => result,
+                            Err(e) => {
+                                self.collect_error_and_skip(e, &mut context);
+                                continue;
+                            }
+                        };
+
+                        // Validate that option has a parent
+                        // Check if we've seen a non-option at this level
+                        if level < self.seen_non_option_at_level.len()
+                            && self.seen_non_option_at_level[level]
+                        {
+                            // There's a non-option sibling before this option
+                            self.collect_error_and_skip(
+                                ParseError::OptionsWithoutParent {
+                                    file: self.file_path.clone(),
+                                    line: context.current_line,
+                                },
+                                &mut context,
+                            );
+                            continue;
+                        }
+
+                        // Find parent block
+                        let parent_id = if level < self.last_section_at_level.len() {
+                            // There's a section at this level, use it as parent
+                            Some(self.last_section_at_level[level])
+                        } else if level == 0 {
+                            // At level 0 with no section, use first block (Start or a Section)
+                            self.last_block_at_level.first().copied()
+                        } else if level <= self.last_block_at_level.len() {
+                            // No section at this level, pop back to find parent
+                            while self.last_block_at_level.len() > level {
+                                self.last_block_at_level.pop();
+                            }
+                            self.last_block_at_level.last().copied()
+                        } else {
+                            self.collect_error_and_skip(
+                                ParseError::InvalidIndentation {
+                                    message: format!("found {} spaces in: {}", level * 2, content),
+                                    file: self.file_path.clone(),
+                                    line: context.current_line,
+                                },
+                                &mut context,
+                            );
+                            continue;
+                        };
+
+                        // Options at root level (level 0) or without a parent string are invalid
+                        // At level 0, parent would be Start block, which is not valid
+                        if level == 0 || parent_id.is_none() {
+                            self.collect_error_and_skip(
+                                ParseError::OptionsWithoutParent {
+                                    file: self.file_path.clone(),
+                                    line: context.current_line,
+                                },
+                                &mut context,
+                            );
+                            continue;
+                        }
+
+                        // Create option block
+                        let string_id = context.database.add_string(result.text);
+                        let block = Block::with_line(
+                            BlockType::Option(string_id),
+                            parent_id,
+                            level,
+                            context.current_line,
+                        );
+                        let block_id = context.database.add_block(block);
+
+                        // Update last block at this level
+                        if level >= self.last_block_at_level.len() {
+                            self.last_block_at_level.push(block_id);
+                        } else {
+                            self.last_block_at_level[level] = block_id;
+                        }
                     } else {
                         // Parse as regular string
                         let result = self.line_parser.parse(content.trim(), &mut context)?;
@@ -635,6 +731,12 @@ impl Parser {
                         } else {
                             self.last_block_at_level[level] = block_id;
                         }
+
+                        // Mark that we've seen a non-option at this level
+                        if level >= self.seen_non_option_at_level.len() {
+                            self.seen_non_option_at_level.resize(level + 1, false);
+                        }
+                        self.seen_non_option_at_level[level] = true;
                     }
                 }
             }
@@ -1740,5 +1842,81 @@ mod test {
         assert_eq!(database.strings.len(), 2);
         assert_eq!(database.strings[0], "First line");
         assert_eq!(database.strings[1], "Second line");
+    }
+
+    #[test]
+    fn test_option_parsing_basic() {
+        let script = "Choose one\n  * Option A\n    Content A\n  * Option B\n    Content B";
+        let mut parser = Parser::new();
+        let (database, _warnings) = parser.parse(script).unwrap();
+
+        // Should have: Start, "Choose one", Option A, Content A, Option B, Content B, End
+        assert_eq!(database.blocks.len(), 7);
+
+        // Check that we have option blocks
+        match &database.blocks[2].block_type {
+            BlockType::Option(string_id) => {
+                assert_eq!(database.strings[*string_id], "Option A");
+            }
+            _ => panic!("Expected Option block"),
+        }
+
+        match &database.blocks[4].block_type {
+            BlockType::Option(string_id) => {
+                assert_eq!(database.strings[*string_id], "Option B");
+            }
+            _ => panic!("Expected Option block"),
+        }
+    }
+
+    #[test]
+    fn test_options_without_parent_at_root() {
+        let script = "* Option A\n  Content A\n* Option B\n  Content B";
+        let mut parser = Parser::new();
+        let result = parser.parse(script);
+
+        // Debug: print what we got
+        if let Ok((ref db, _)) = result {
+            eprintln!("Database blocks:");
+            for (i, block) in db.blocks.iter().enumerate() {
+                eprintln!("  {}: {:?}", i, block.block_type);
+            }
+        }
+
+        assert!(result.is_err(), "Expected error but got success");
+        match result.unwrap_err() {
+            ParseError::MultipleErrors { errors } => {
+                assert_eq!(errors.len(), 2);
+                // Both options should error
+                for (i, err) in errors.iter().enumerate() {
+                    match err {
+                        ParseError::OptionsWithoutParent { file: _, line } => {
+                            // First option at line 1, second at line 3
+                            assert_eq!(*line, if i == 0 { 1 } else { 3 });
+                        }
+                        _ => panic!("Expected OptionsWithoutParent error"),
+                    }
+                }
+            }
+            ParseError::OptionsWithoutParent { file: _, line } => {
+                assert_eq!(line, 1); // Single error case
+            }
+            err => panic!("Expected OptionsWithoutParent error, got: {:?}", err),
+        }
+    }
+
+    #[test]
+    fn test_options_with_non_option_sibling_before() {
+        let script = "Parent\n  Regular text\n  * Option A\n    Content A";
+        let mut parser = Parser::new();
+        let result = parser.parse(script);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ParseError::OptionsWithoutParent { file: _, line } => {
+                assert_eq!(line, 3); // Option is at line 3
+            }
+            _ => panic!("Expected OptionsWithoutParent error"),
+        }
     }
 }

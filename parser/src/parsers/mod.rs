@@ -3,6 +3,7 @@ use cuentitos_common::*;
 pub mod go_to_section_and_back_parser;
 pub mod go_to_section_parser;
 pub mod line_parser;
+pub mod option_parser;
 pub mod section_parser;
 
 /// Represents the shared context between different parsers

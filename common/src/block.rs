@@ -7,6 +7,7 @@ pub enum BlockType {
     Start,
     String(StringId),
     Section(SectionId),
+    Option(StringId),
     GoTo(SectionId),
     GoToAndBack(SectionId),
     GoToStart,
@@ -91,5 +92,16 @@ mod tests {
     fn test_is_leaf() {
         let block = Block::new(BlockType::String(0), None, 0);
         assert!(block.is_leaf());
+    }
+
+    #[test]
+    fn test_option_block_type() {
+        let block = Block::new(BlockType::Option(0), Some(1), 1);
+        assert_eq!(block.parent_id, Some(1));
+        assert_eq!(block.level, 1);
+        match block.block_type {
+            BlockType::Option(string_id) => assert_eq!(string_id, 0),
+            _ => panic!("Expected Option block type"),
+        }
     }
 }
