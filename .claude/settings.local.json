@@ -6,7 +6,8 @@
       "Bash(do [[ -f \"$f\" ]])",
       "Bash(ls:*)",
       "Bash(while read f)",
-      "Bash(do echo \"Testing $f...\")"
+      "Bash(do echo \"Testing $f...\")",
+      "Bash(gh pr checks:*)"
     ],
     "deny": [],
     "ask": []

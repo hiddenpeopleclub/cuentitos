@@ -410,7 +410,9 @@ impl Parser {
                 );
 
                 // Add name and path to strings database
-                let name_string_id = context.database.add_string(section_result.display_name.clone());
+                let name_string_id = context
+                    .database
+                    .add_string(section_result.display_name.clone());
                 let path_string_id = context.database.add_string(path_string);
 
                 // Create a placeholder block first to get the block_id
@@ -423,7 +425,8 @@ impl Parser {
                 let block_id = context.database.add_block(block);
 
                 // Now create the Section and add it to the database
-                let section = cuentitos_common::Section::new(block_id, name_string_id, path_string_id);
+                let section =
+                    cuentitos_common::Section::new(block_id, name_string_id, path_string_id);
                 let section_id = context.database.add_section(section);
 
                 // Update the block with the correct section_id
@@ -745,9 +748,12 @@ impl Parser {
                                 let target_section = &context.database.sections[section_id];
                                 let target_block_id = target_section.block_id;
 
-                                if Self::section_has_only_gotos(&context.database, target_block_id) {
-                                    let section_name = &context.database.strings[target_section.name];
-                                    let section_line = context.database.blocks[target_block_id].line;
+                                if Self::section_has_only_gotos(&context.database, target_block_id)
+                                {
+                                    let section_name =
+                                        &context.database.strings[target_section.name];
+                                    let section_line =
+                                        context.database.blocks[target_block_id].line;
                                     self.errors.push(ParseError::EmptySection {
                                         name: section_name.clone(),
                                         file: self.file_path.clone(),
@@ -759,7 +765,8 @@ impl Parser {
                             }
                             BlockType::GoToStart => {
                                 self.warnings.push(Warning {
-                                    message: "<-> START will not return (restarts from beginning)".to_string(),
+                                    message: "<-> START will not return (restarts from beginning)"
+                                        .to_string(),
                                     file: self.file_path.clone(),
                                     line,
                                 });
@@ -775,7 +782,8 @@ impl Parser {
                             }
                             BlockType::GoToEnd => {
                                 self.warnings.push(Warning {
-                                    message: "<-> END will not return (just end execution)".to_string(),
+                                    message: "<-> END will not return (just end execution)"
+                                        .to_string(),
                                     file: self.file_path.clone(),
                                     line,
                                 });
@@ -819,7 +827,8 @@ impl Parser {
         for i in 0..level {
             if i < self.last_section_at_level.len() {
                 let section_block_id = self.last_section_at_level[i];
-                if let BlockType::Section(section_id) = database.blocks[section_block_id].block_type {
+                if let BlockType::Section(section_id) = database.blocks[section_block_id].block_type
+                {
                     let section = &database.sections[section_id];
                     let section_name = &database.strings[section.name];
                     path_parts.push(section_name.clone());
@@ -861,8 +870,7 @@ impl Parser {
 
         // Walk up the parent chain, collecting section names
         while let Some(parent_id) = database.blocks[current_id].parent_id {
-            if let BlockType::Section(section_id) = &database.blocks[current_id].block_type
-            {
+            if let BlockType::Section(section_id) = &database.blocks[current_id].block_type {
                 let section = &database.sections[*section_id];
                 let name = &database.strings[section.name];
                 path_parts.push(name.clone());
@@ -943,7 +951,8 @@ impl Parser {
         if path == "." {
             if let Some(section_block_id) = containing_section {
                 // Get the SectionId from the block
-                if let BlockType::Section(section_id) = database.blocks[section_block_id].block_type {
+                if let BlockType::Section(section_id) = database.blocks[section_block_id].block_type
+                {
                     return Ok(BlockType::GoTo(section_id));
                 }
             }
@@ -967,7 +976,9 @@ impl Parser {
             // Try relative path (search children and siblings)
             if let Some(section_block_id) = containing_section {
                 // Search children first
-                if let Some(child_block_id) = self.find_child_section(database, section_block_id, segments[0]) {
+                if let Some(child_block_id) =
+                    self.find_child_section(database, section_block_id, segments[0])
+                {
                     if segments.len() == 1 {
                         if let Some(section_id) = self.get_section_id(database, child_block_id) {
                             return Ok(BlockType::GoTo(section_id));
@@ -1102,9 +1113,7 @@ impl Parser {
         if let Some(parent_id) = database.blocks[section_id].parent_id {
             for &sibling_id in &database.blocks[parent_id].children {
                 if sibling_id != section_id {
-                    if let BlockType::Section(sec_id) =
-                        &database.blocks[sibling_id].block_type
-                    {
+                    if let BlockType::Section(sec_id) = &database.blocks[sibling_id].block_type {
                         let section = &database.sections[*sec_id];
                         let section_name = &database.strings[section.name];
                         if section_name == name {

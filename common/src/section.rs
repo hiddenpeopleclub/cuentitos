@@ -3,9 +3,9 @@ use crate::{BlockId, StringId};
 /// Metadata for a section in the narrative
 #[derive(Debug, Clone, PartialEq)]
 pub struct Section {
-    pub block_id: BlockId,  // The block ID of the Section block
-    pub name: StringId,      // The section's display name
-    pub path: StringId,      // The full hierarchical path (e.g., "Root \ Child")
+    pub block_id: BlockId, // The block ID of the Section block
+    pub name: StringId,    // The section's display name
+    pub path: StringId,    // The full hierarchical path (e.g., "Root \ Child")
 }
 
 impl Section {
