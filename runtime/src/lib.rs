@@ -422,7 +422,7 @@ mod test {
 
         runtime.step();
 
-        assert_eq!(runtime.program_counter, 2);
+        assert_eq!(runtime.state.program_counter, 2);
 
         if let Some(block) = runtime.current_block() {
             match block.block_type {
@@ -611,31 +611,31 @@ mod test {
         runtime.run();
 
         // Start block
-        assert_eq!(runtime.current_path, vec![0]);
+        assert_eq!(runtime.state.current_path, vec![0]);
 
         // Step to Parent
         runtime.step();
-        assert_eq!(runtime.current_path, vec![0, 1]);
+        assert_eq!(runtime.state.current_path, vec![0, 1]);
 
         // Step to Child1
         runtime.step();
-        assert_eq!(runtime.current_path, vec![0, 1, 2]);
+        assert_eq!(runtime.state.current_path, vec![0, 1, 2]);
 
         // Step to Child2
         runtime.step();
-        assert_eq!(runtime.current_path, vec![0, 1, 2, 3]);
+        assert_eq!(runtime.state.current_path, vec![0, 1, 2, 3]);
 
         // Step to Grandchild
         runtime.step();
-        assert_eq!(runtime.current_path, vec![0, 1, 2, 3, 4]);
+        assert_eq!(runtime.state.current_path, vec![0, 1, 2, 3, 4]);
 
         // Step to Child3
         runtime.step();
-        assert_eq!(runtime.current_path, vec![0, 1, 2, 3, 4, 5]);
+        assert_eq!(runtime.state.current_path, vec![0, 1, 2, 3, 4, 5]);
 
         // Step to End
         runtime.step();
-        assert_eq!(runtime.current_path, vec![0, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(runtime.state.current_path, vec![0, 1, 2, 3, 4, 5, 6]);
     }
 
     #[test]
@@ -679,7 +679,7 @@ mod test {
         let mut runtime = Runtime::new(database);
         runtime.run();
 
-        assert!(runtime.current_path.is_empty());
+        assert!(runtime.state.current_path.is_empty());
         assert_eq!(runtime.current_block(), None);
         assert!(!runtime.can_continue());
     }
@@ -874,11 +874,11 @@ mod test {
 
         // Step to <-> Section B block
         runtime.step();
-        // Should now be AT the GoToSectionAndBack block
+        // Should now be AT the GoToAndBack block
         if let Some(block) = runtime.current_block() {
             assert!(matches!(
                 block.block_type,
-                BlockType::GoToSectionAndBack { .. }
+                BlockType::GoToAndBack(_)
             ));
         }
 
@@ -886,8 +886,9 @@ mod test {
         runtime.step();
         // Should now be at Section B
         if let Some(block) = runtime.current_block() {
-            if let BlockType::Section { display_name, .. } = &block.block_type {
-                assert_eq!(display_name, "Section B");
+            if let BlockType::Section(section_id) = &block.block_type {
+                let section_name = &runtime.database.strings[runtime.database.sections[*section_id].name];
+                assert_eq!(section_name, "Section B");
             } else {
                 panic!("Expected Section B, got {:?}", block.block_type);
             }
