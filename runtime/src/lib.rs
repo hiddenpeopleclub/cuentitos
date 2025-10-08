@@ -77,7 +77,7 @@ impl Runtime {
             .sections
             .iter()
             .enumerate()
-            .find(|(_, section)| &self.database.strings[section.path] == path)
+            .find(|(_, section)| self.database.strings[section.path] == path)
             .map(|(section_id, _)| section_id)
     }
 
@@ -97,13 +97,15 @@ impl Runtime {
             Vec::new()
         } else if self.has_ended() {
             // When we've reached the end, return only blocks in the execution path
-            self.state.current_path
+            self.state
+                .current_path
                 .iter()
                 .map(|&id| self.database.blocks[id].clone())
                 .collect()
         } else {
             // Return only blocks that were visited in the execution path
-            self.state.current_path
+            self.state
+                .current_path
                 .iter()
                 .map(|&id| self.database.blocks[id].clone())
                 .collect()
@@ -876,10 +878,7 @@ mod test {
         runtime.step();
         // Should now be AT the GoToAndBack block
         if let Some(block) = runtime.current_block() {
-            assert!(matches!(
-                block.block_type,
-                BlockType::GoToAndBack(_)
-            ));
+            assert!(matches!(block.block_type, BlockType::GoToAndBack(_)));
         }
 
         // Step again to jump to Section B
@@ -887,7 +886,8 @@ mod test {
         // Should now be at Section B
         if let Some(block) = runtime.current_block() {
             if let BlockType::Section(section_id) = &block.block_type {
-                let section_name = &runtime.database.strings[runtime.database.sections[*section_id].name];
+                let section_name =
+                    &runtime.database.strings[runtime.database.sections[*section_id].name];
                 assert_eq!(section_name, "Section B");
             } else {
                 panic!("Expected Section B, got {:?}", block.block_type);
