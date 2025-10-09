@@ -165,7 +165,8 @@ impl Runtime {
     /// Returns the current available options as (option_number, string_id) pairs
     /// Option numbers start at 1
     pub fn get_current_options(&self) -> Vec<(usize, StringId)> {
-        self.state.current_options
+        self.state
+            .current_options
             .iter()
             .enumerate()
             .filter_map(|(i, &block_id)| {
@@ -176,6 +177,11 @@ impl Runtime {
                 }
             })
             .collect()
+    }
+
+    /// Returns the current path of executed blocks
+    pub fn current_path(&self) -> &[BlockId] {
+        &self.state.current_path
     }
 
     /// Select an option by its number (1-based)
@@ -363,7 +369,10 @@ impl Runtime {
     fn is_inside_option_subtree(&self, block_id: BlockId) -> bool {
         let mut current_id = block_id;
         loop {
-            if matches!(self.database.blocks[current_id].block_type, BlockType::Option(_)) {
+            if matches!(
+                self.database.blocks[current_id].block_type,
+                BlockType::Option(_)
+            ) {
                 return true;
             }
             match self.database.blocks[current_id].parent_id {
@@ -371,18 +380,6 @@ impl Runtime {
                 None => return false,
             }
         }
-    }
-
-    // Check if a block is a descendant of an Option block
-    fn is_descendant_of_option(&self, block_id: BlockId) -> bool {
-        let mut current_id = block_id;
-        while let Some(parent_id) = self.database.blocks[current_id].parent_id {
-            if matches!(self.database.blocks[parent_id].block_type, BlockType::Option(_)) {
-                return true;
-            }
-            current_id = parent_id;
-        }
-        false
     }
 
     // Check if a block is outside a section's subtree
@@ -405,7 +402,10 @@ impl Runtime {
         if self.can_continue() {
             if let Some(next_id) = self.find_next_block() {
                 // Check if the next block is an option
-                if matches!(self.database.blocks[next_id].block_type, BlockType::Option(_)) {
+                if matches!(
+                    self.database.blocks[next_id].block_type,
+                    BlockType::Option(_)
+                ) {
                     // Collect all option siblings
                     self.collect_options_at(next_id);
                     return false; // Stop stepping, wait for user choice
@@ -431,7 +431,10 @@ impl Runtime {
 
             // Find all consecutive option children
             for &child_id in &parent.children {
-                if matches!(self.database.blocks[child_id].block_type, BlockType::Option(_)) {
+                if matches!(
+                    self.database.blocks[child_id].block_type,
+                    BlockType::Option(_)
+                ) {
                     self.state.current_options.push(child_id);
                 } else if !self.state.current_options.is_empty() {
                     // Stop when we hit a non-option after options have started
@@ -1268,7 +1271,10 @@ mod test {
 
         // Skip should go to END without re-encountering options
         runtime.skip();
-        assert!(!runtime.is_waiting_for_option(), "Should not be waiting for options after skip");
+        assert!(
+            !runtime.is_waiting_for_option(),
+            "Should not be waiting for options after skip"
+        );
         assert!(runtime.has_ended(), "Should have reached END");
     }
 }

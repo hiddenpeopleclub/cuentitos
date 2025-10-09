@@ -71,13 +71,14 @@ fn main() {
                         for input in input_string.split(',') {
                             let trimmed = input.trim();
 
-                            // Auto-step before processing to check for options
+                            // Auto-step before processing to reach options/content
                             // This allows tests to use "1,s" instead of "n,1,s"
-                            // Auto-step if: input is a number OR (we haven't stepped yet AND input is q or not a command)
                             let is_option_number = trimmed.parse::<usize>().is_ok();
                             let is_step_or_skip = matches!(trimmed, "n" | "s");
-                            let need_initial_step = last_rendered_idx == 0 && !is_step_or_skip;
-                            let should_auto_step = (is_option_number || need_initial_step)
+                            let is_first_input = last_rendered_idx == 0;
+                            let need_auto_step =
+                                is_option_number || (is_first_input && !is_step_or_skip);
+                            let should_auto_step = need_auto_step
                                 && !runtime.is_waiting_for_option()
                                 && !runtime.has_ended();
 
@@ -99,7 +100,7 @@ fn main() {
 
                                 // If we hit options, display them
                                 if runtime.is_waiting_for_option() {
-                                    display_options(&runtime);
+                                    display_options(&runtime, false);
                                 }
                             }
 
@@ -122,8 +123,9 @@ fn main() {
                             last_rendered_idx = runtime.current_path().len();
 
                             // After processing option selection, check for more options
+                            // Include parent text when redisplaying after invalid input
                             if runtime.is_waiting_for_option() {
-                                display_options(&runtime);
+                                display_options(&runtime, true);
                             }
                         }
                     }
@@ -133,7 +135,7 @@ fn main() {
 
                     // If still waiting for options and we didn't quit, display them
                     if runtime.is_waiting_for_option() && !quit_requested {
-                        display_options(&runtime);
+                        display_options(&runtime, false);
                     }
 
                     // Print QUIT only if not at an option prompt
@@ -322,14 +324,14 @@ fn render_path_from(runtime: &cuentitos_runtime::Runtime, start_idx: usize) {
     // Render all blocks from start_idx onwards in current_path
     for &block_id in &runtime.current_path()[start_idx..] {
         let block = &runtime.database.blocks[block_id];
-        match &block.block_type {
+        match block.block_type {
             cuentitos_common::BlockType::Start => println!("START"),
             cuentitos_common::BlockType::String(id) => {
-                println!("{}", runtime.database.strings[*id])
+                println!("{}", runtime.database.strings[id])
             }
             cuentitos_common::BlockType::Section(section_id) => {
                 // Build the section path
-                let path = build_section_path(runtime, *section_id);
+                let path = build_section_path(runtime, section_id);
                 println!("-> {}", path);
             }
             cuentitos_common::BlockType::GoTo(_)
@@ -348,37 +350,28 @@ fn render_path_from(runtime: &cuentitos_runtime::Runtime, start_idx: usize) {
     }
 }
 
-fn render_current_blocks(runtime: &cuentitos_runtime::Runtime) {
-    for block in runtime.current_blocks() {
-        match &block.block_type {
-            cuentitos_common::BlockType::Start => println!("START"),
-            cuentitos_common::BlockType::String(id) => {
-                println!("{}", runtime.database.strings[*id])
-            }
-            cuentitos_common::BlockType::Section(section_id) => {
-                // Build the section path by traversing up the hierarchy
-                let path = build_section_path(runtime, *section_id);
-                println!("-> {}", path);
-            }
-            cuentitos_common::BlockType::GoTo(_)
-            | cuentitos_common::BlockType::GoToAndBack(_)
-            | cuentitos_common::BlockType::GoToStart
-            | cuentitos_common::BlockType::GoToRestart
-            | cuentitos_common::BlockType::GoToEnd => {
-                // Goto blocks are not rendered - they're navigation commands
-                // that are executed by the runtime
-            }
-            cuentitos_common::BlockType::Option(_) => {
-                // Option blocks are not rendered in normal flow
-                // They are displayed via display_options() when waiting for selection
-            }
-            cuentitos_common::BlockType::End => println!("END"),
-        }
-    }
-}
-
-fn display_options(runtime: &cuentitos_runtime::Runtime) {
+fn display_options(runtime: &cuentitos_runtime::Runtime, include_parent: bool) {
     let options = runtime.get_current_options();
+
+    // Display the parent block text if requested (e.g., when redisplaying after error)
+    if include_parent {
+        if let Some(&(_, first_option_string_id)) = options.first() {
+            // Find the first option block in the database
+            if let Some(option_block_id) = runtime.database.blocks.iter().position(|b| {
+                matches!(b.block_type, cuentitos_common::BlockType::Option(sid) if sid == first_option_string_id)
+            }) {
+                // Get the parent block
+                if let Some(parent_id) = runtime.database.blocks[option_block_id].parent_id {
+                    let parent_block = &runtime.database.blocks[parent_id];
+                    // If parent is a String block, display it
+                    if let cuentitos_common::BlockType::String(string_id) = parent_block.block_type {
+                        println!("{}", runtime.database.strings[string_id]);
+                    }
+                }
+            }
+        }
+    }
+
     for (num, string_id) in options {
         println!("  {}. {}", num, runtime.database.strings[string_id]);
     }
