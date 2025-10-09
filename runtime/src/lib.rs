@@ -1,5 +1,8 @@
 use cuentitos_common::*;
 
+pub mod error;
+pub use error::RuntimeError;
+
 /// Represents a call frame for <-> (call and return) commands
 #[derive(Debug, Clone)]
 struct CallFrame {
@@ -71,14 +74,48 @@ impl Runtime {
         };
     }
 
-    /// Find a section by its path string
-    pub fn find_section_by_path(&self, path: &str) -> Option<SectionId> {
-        self.database
-            .sections
-            .iter()
-            .enumerate()
-            .find(|(_, section)| self.database.strings[section.path] == path)
-            .map(|(section_id, _)| section_id)
+    /// Find a section by its path string, resolving relative paths from current context
+    pub fn find_section_by_path(&self, path: &str) -> Result<ResolvedPath, RuntimeError> {
+        // Find the containing section based on current program counter
+        let containing_section = self.find_containing_section(self.state.program_counter);
+
+        // Use PathResolver to resolve the path
+        let resolver = PathResolver::new(&self.database, &self.database.section_registry);
+
+        resolver
+            .resolve_path(path, containing_section)
+            .map_err(|e| match e {
+                PathResolutionError::SectionNotFound { path } => {
+                    RuntimeError::SectionNotFound { path }
+                }
+                PathResolutionError::NavigationAboveRoot => RuntimeError::NavigationAboveRoot,
+                PathResolutionError::InvalidPath { message } => {
+                    RuntimeError::InvalidPath { message }
+                }
+            })
+    }
+
+    /// Find the nearest ancestor section that contains the given block
+    fn find_containing_section(&self, block_id: BlockId) -> Option<BlockId> {
+        let mut current_id = block_id;
+
+        // Walk up parents until we find a Section block
+        while let Some(parent_id) = self
+            .database
+            .blocks
+            .get(current_id)
+            .and_then(|b| b.parent_id)
+        {
+            if matches!(
+                self.database.blocks[parent_id].block_type,
+                BlockType::Section(_)
+            ) {
+                return Some(parent_id);
+            }
+            current_id = parent_id;
+        }
+
+        None
     }
 
     pub fn can_continue(&self) -> bool {
@@ -304,6 +341,113 @@ impl Runtime {
         }
 
         true
+    }
+
+    /// Jump to a section (permanent jump, does not return)
+    pub fn goto_section(&mut self, section_id: SectionId) -> Result<(), RuntimeError> {
+        if !self.running {
+            return Err(RuntimeError::NotRunning);
+        }
+
+        let section = &self.database.sections[section_id];
+        let target_block_id = section.block_id;
+
+        // Set program counter to the section block
+        self.state.program_counter = target_block_id;
+        // Add to current path
+        self.state.current_path.push(target_block_id);
+
+        Ok(())
+    }
+
+    /// Jump to a section and return (call and return)
+    pub fn goto_and_back_section(&mut self, section_id: SectionId) -> Result<(), RuntimeError> {
+        if !self.running {
+            return Err(RuntimeError::NotRunning);
+        }
+
+        // Check maximum call stack depth
+        const MAX_CALL_DEPTH: usize = 200;
+        if self.state.call_stack.len() >= MAX_CALL_DEPTH {
+            return Err(RuntimeError::InvalidPath {
+                message: format!(
+                    "Maximum call stack depth exceeded ({} calls)",
+                    MAX_CALL_DEPTH
+                ),
+            });
+        }
+
+        let section = &self.database.sections[section_id];
+        let target_block_id = section.block_id;
+
+        // Compute where we would return to (natural next block)
+        let return_block_id =
+            self.compute_natural_next_block()
+                .ok_or_else(|| RuntimeError::InvalidPath {
+                    message: "Cannot compute return point for call".to_string(),
+                })?;
+
+        // Push call frame
+        self.state.call_stack.push(CallFrame {
+            return_block_id,
+            called_section_id: target_block_id,
+        });
+
+        // Set program counter to the section block
+        self.state.program_counter = target_block_id;
+        // Add to current path
+        self.state.current_path.push(target_block_id);
+
+        Ok(())
+    }
+
+    /// Jump to START (clears call stack, restarts from beginning)
+    pub fn goto_start(&mut self) -> Result<(), RuntimeError> {
+        if !self.running {
+            return Err(RuntimeError::NotRunning);
+        }
+
+        // Clear call stack
+        self.state.call_stack.clear();
+
+        // Jump to block 0 (START)
+        self.state.program_counter = 0;
+        self.state.current_path.push(0);
+
+        Ok(())
+    }
+
+    /// Jump to RESTART (resets state and restarts from beginning)
+    pub fn goto_restart(&mut self) -> Result<(), RuntimeError> {
+        if !self.running {
+            return Err(RuntimeError::NotRunning);
+        }
+
+        // Clear call stack
+        self.state.call_stack.clear();
+
+        // Reset counters
+        self.state.program_counter = 0;
+        self.state.previous_program_counter = 0;
+
+        // Jump to block 0 (START)
+        self.state.current_path.push(0);
+
+        Ok(())
+    }
+
+    /// Jump to END
+    pub fn goto_end(&mut self) -> Result<(), RuntimeError> {
+        if !self.running {
+            return Err(RuntimeError::NotRunning);
+        }
+
+        // Jump to last block (END)
+        let end_block_id = self.database.blocks.len() - 1;
+        self.state.program_counter = end_block_id;
+        self.state.current_path.push(end_block_id);
+
+        Ok(())
     }
 }
 
@@ -841,6 +985,62 @@ mod test {
 
         // Should be at END
         assert!(runtime.has_ended());
+    }
+
+    #[test]
+    fn test_cli_goto_and_back() {
+        // Test CLI goto_and_back_section method
+        let script = "# Section A\nText in A\nMore text in A\n\n# Section B\nText in B";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        // Step to Section A
+        runtime.step();
+        assert!(matches!(
+            runtime.current_block().map(|b| b.block_type),
+            Some(BlockType::Section(_))
+        ));
+
+        // Step to "Text in A"
+        runtime.step();
+
+        // Now call Section B using CLI command
+        let resolved = runtime.find_section_by_path("Section B").unwrap();
+        if let ResolvedPath::Section(section_id) = resolved {
+            runtime.goto_and_back_section(section_id).unwrap();
+        } else {
+            panic!("Expected Section");
+        }
+
+        // Should now be at Section B
+        assert!(matches!(
+            runtime.current_block().map(|b| b.block_type),
+            Some(BlockType::Section(_))
+        ));
+
+        // Step to "Text in B"
+        runtime.step();
+
+        // Verify we're at "Text in B"
+        if let Some(block) = runtime.current_block() {
+            if let BlockType::String(id) = block.block_type {
+                assert_eq!(runtime.database.strings[id], "Text in B");
+            } else {
+                panic!("Expected String block");
+            }
+        }
+
+        // Step again - should return to "More text in A"
+        runtime.step();
+        if let Some(block) = runtime.current_block() {
+            if let BlockType::String(id) = block.block_type {
+                assert_eq!(runtime.database.strings[id], "More text in A");
+            } else {
+                panic!("Expected 'More text in A', got {:?}", block.block_type);
+            }
+        }
     }
 
     #[test]

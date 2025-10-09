@@ -7,7 +7,12 @@
       "Bash(ls:*)",
       "Bash(while read f)",
       "Bash(do echo \"Testing $f...\")",
-      "Bash(gh pr checks:*)"
+      "Bash(gh pr checks:*)",
+      "Bash(./bin/run-compat:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo run:*)",
+      "Bash(cargo:*)"
     ],
     "deny": [],
     "ask": []

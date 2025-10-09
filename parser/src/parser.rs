@@ -694,8 +694,11 @@ impl Parser {
     /// Validate and resolve all GoToSection blocks
     /// This runs after parsing and performs compile-time checks
     fn validate_and_resolve(&mut self, context: &mut ParserContext) -> Result<(), ParseError> {
-        // Build section registry: map section paths to (BlockId, line_number)
+        // Build section registry: map section paths to SectionId
         let section_registry = self.build_section_registry(&context.database);
+
+        // Store the registry in the database for runtime use
+        context.database.section_registry = section_registry.clone();
 
         // Validate section names don't contain backslash
         self.validate_section_names(&context.database)?;
