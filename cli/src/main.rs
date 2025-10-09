@@ -72,7 +72,8 @@ fn main() {
                             let trimmed = input.trim();
 
                             // Auto-step before processing to reach options/content
-                            // This allows tests to use "1,s" instead of "n,1,s"
+                            // This allows tests to use "1,s" or "q" instead of "n,1,s" or "n,q"
+                            // Only skip auto-step on first input if it's 'n' or 's'
                             let is_option_number = trimmed.parse::<usize>().is_ok();
                             let is_step_or_skip = matches!(trimmed, "n" | "s");
                             let is_first_input = last_rendered_idx == 0;
@@ -114,6 +115,9 @@ fn main() {
                                 break;
                             }
 
+                            // Track if we were already at options before processing
+                            let was_at_options = runtime.is_waiting_for_option();
+
                             if !process_input(trimmed, &mut runtime) {
                                 break;
                             }
@@ -122,10 +126,10 @@ fn main() {
                             render_path_from(&runtime, last_rendered_idx);
                             last_rendered_idx = runtime.current_path().len();
 
-                            // After processing option selection, check for more options
-                            // Include parent text when redisplaying after invalid input
+                            // After processing, check if we're at options
+                            // Include parent text only if we were already at options (invalid input case)
                             if runtime.is_waiting_for_option() {
-                                display_options(&runtime, true);
+                                display_options(&runtime, was_at_options);
                             }
                         }
                     }

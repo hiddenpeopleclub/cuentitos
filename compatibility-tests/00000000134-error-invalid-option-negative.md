@@ -13,7 +13,7 @@ Choose one
 
 ## Input
 ```input
--1
+bad
 1
 s
 ```
@@ -24,7 +24,7 @@ START
 Choose one
   1. Option A
   2. Option B
-> Invalid option: -1
+> Invalid option: bad
 Choose one
   1. Option A
   2. Option B

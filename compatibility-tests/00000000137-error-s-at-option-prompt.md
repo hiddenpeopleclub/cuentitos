@@ -13,6 +13,8 @@ Choose one
 
 ## Input
 ```input
+n
+n
 s
 2
 s
