@@ -7,7 +7,7 @@
   - [x] Go To End
   - [x] Go To Start (-> START / -> RESTART)
   - [x] Go To's in CLI (support using go to as an input method in CLI)
-  - [ ] Options (Docs & Implementation)
+  - [x] Options (Docs & Implementation)
   - [ ] Definition of Integer Variables
   - [ ] Set Integer Variables (Script & Runtime)
   - [ ] Require Integer Variables
