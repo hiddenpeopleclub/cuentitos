@@ -1,3 +1,4 @@
+use cuentitos_common::PathResolutionError;
 use std::fmt;
 
 /// Errors that can occur during runtime execution
@@ -33,3 +34,13 @@ impl fmt::Display for RuntimeError {
 }
 
 impl std::error::Error for RuntimeError {}
+
+impl From<PathResolutionError> for RuntimeError {
+    fn from(err: PathResolutionError) -> Self {
+        match err {
+            PathResolutionError::SectionNotFound { path } => RuntimeError::SectionNotFound { path },
+            PathResolutionError::NavigationAboveRoot => RuntimeError::NavigationAboveRoot,
+            PathResolutionError::InvalidPath { message } => RuntimeError::InvalidPath { message },
+        }
+    }
+}

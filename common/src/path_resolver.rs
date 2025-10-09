@@ -473,4 +473,43 @@ mod tests {
             })
         );
     }
+
+    #[test]
+    fn test_dual_validation_for_trailing_backslash() {
+        // This test documents why we have two separate validation checks:
+        // 1. Early check for "Root \\" (catches before split)
+        // 2. Segment check for empty segments (catches edge cases after split)
+        //
+        // The reason is that "Root \\" doesn't split on " \\ " pattern,
+        // so it remains as a single segment ["Root \\"], and we need
+        // the early validation to catch it.
+        let db = create_test_database();
+        let resolver = PathResolver::new(&db, &db.section_registry);
+
+        // Case 1: Trailing backslash that doesn't split
+        // "Root \\" remains as single segment, caught by early validation
+        assert_eq!(
+            resolver.resolve_path("Root \\", None),
+            Err(PathResolutionError::InvalidPath {
+                message: "Expected section name after '->'".to_string()
+            })
+        );
+
+        // Case 2: Path that creates empty segments after split
+        // "Root \\ \\" splits into ["Root", ""], caught by segment validation
+        assert_eq!(
+            resolver.resolve_path("Root \\ \\", None),
+            Err(PathResolutionError::InvalidPath {
+                message: "Expected section name after '->'".to_string()
+            })
+        );
+
+        // Case 3: Leading backslash
+        assert_eq!(
+            resolver.resolve_path("\\ Root", None),
+            Err(PathResolutionError::InvalidPath {
+                message: "Expected section name after '->'".to_string()
+            })
+        );
+    }
 }
