@@ -1,12 +1,14 @@
 use crate::block::{Block, BlockId};
 use crate::section::Section;
 use crate::{SectionId, StringId};
+use std::collections::HashMap;
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Database {
     pub blocks: Vec<Block>,
     pub strings: Vec<String>,
     pub sections: Vec<Section>,
+    pub section_registry: HashMap<String, SectionId>,
 }
 
 impl Database {
@@ -15,6 +17,7 @@ impl Database {
             blocks: Vec::new(),
             strings: Vec::new(),
             sections: Vec::new(),
+            section_registry: HashMap::new(),
         }
     }
 

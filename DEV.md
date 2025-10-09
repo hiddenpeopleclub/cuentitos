@@ -136,6 +136,7 @@ implementation.
 - If a refactoring breaks existing tests, **stop and ask** before
   proceeding
 - Run both compatibility tests and unit tests frequently
+- **IMPORTANT: For testing, ONLY use Rust unit tests or compatibility tests. NEVER create external .cuentitos script files for testing purposes.**
 
 **Bug Fixing Protocol:**
 When you encounter a bug (either from failing compatibility tests or other sources):

@@ -100,7 +100,17 @@ fn main() {
 }
 
 fn process_input(input: &str, runtime: &mut cuentitos_runtime::Runtime) -> bool {
-    match input {
+    let trimmed = input.trim();
+
+    // Check for GoTo commands
+    if trimmed.starts_with("<->") {
+        return handle_goto_and_back(trimmed, runtime);
+    } else if trimmed.starts_with("->") {
+        return handle_goto(trimmed, runtime);
+    }
+
+    // Handle standard commands
+    match trimmed {
         "n" => {
             if runtime.can_continue() {
                 runtime.step();
@@ -122,8 +132,95 @@ fn process_input(input: &str, runtime: &mut cuentitos_runtime::Runtime) -> bool 
         "q" => false,
         "" => true, // Ignore empty input
         _ => {
-            eprintln!("Unknown command: {}", input);
+            eprintln!("Unknown command: {}", trimmed);
             false
+        }
+    }
+}
+
+fn handle_goto(input: &str, runtime: &mut cuentitos_runtime::Runtime) -> bool {
+    // Must have at least one space after ->
+    if !input.starts_with("-> ") {
+        println!("ERROR: Invalid goto command: Expected section name after '->'");
+        return true; // Continue waiting for input
+    }
+
+    // Parse: extract path from "-> Section A"
+    let path = &input[3..]; // Skip "-> "
+
+    // Validate path is not empty
+    if path.trim().is_empty() {
+        println!("ERROR: Invalid goto command: Expected section name after '->'");
+        return true;
+    }
+
+    // Resolve the path using runtime
+    let resolved_path = match runtime.find_section_by_path(path) {
+        Ok(resolved) => resolved,
+        Err(e) => {
+            println!("{}", e);
+            return true; // Continue waiting for input
+        }
+    };
+
+    // Execute the appropriate goto method
+    let result = match resolved_path {
+        cuentitos_common::ResolvedPath::Section(section_id) => runtime.goto_section(section_id),
+        cuentitos_common::ResolvedPath::Start => runtime.goto_start(),
+        cuentitos_common::ResolvedPath::Restart => runtime.goto_restart(),
+        cuentitos_common::ResolvedPath::End => runtime.goto_end(),
+    };
+
+    match result {
+        Ok(()) => true, // Continue
+        Err(e) => {
+            println!("{}", e);
+            true // Continue waiting for input
+        }
+    }
+}
+
+fn handle_goto_and_back(input: &str, runtime: &mut cuentitos_runtime::Runtime) -> bool {
+    // Must have at least one space after <->
+    if !input.starts_with("<-> ") {
+        println!("ERROR: Invalid goto command: Expected section name after '<->'");
+        return true; // Continue waiting for input
+    }
+
+    // Parse: extract path from "<-> Section A"
+    let path = &input[4..]; // Skip "<-> "
+
+    // Validate path is not empty
+    if path.trim().is_empty() {
+        println!("ERROR: Invalid goto command: Expected section name after '<->'");
+        return true;
+    }
+
+    // Resolve the path using runtime
+    let resolved_path = match runtime.find_section_by_path(path) {
+        Ok(resolved) => resolved,
+        Err(e) => {
+            println!("{}", e);
+            return true; // Continue waiting for input
+        }
+    };
+
+    // Execute the appropriate goto method
+    // For <->, we only support Section (not START/RESTART/END - those don't return)
+    let result = match resolved_path {
+        cuentitos_common::ResolvedPath::Section(section_id) => {
+            runtime.goto_and_back_section(section_id)
+        }
+        cuentitos_common::ResolvedPath::Start => runtime.goto_start(), // Will not return
+        cuentitos_common::ResolvedPath::Restart => runtime.goto_restart(), // Will not return
+        cuentitos_common::ResolvedPath::End => runtime.goto_end(),     // Will not return
+    };
+
+    match result {
+        Ok(()) => true, // Continue
+        Err(e) => {
+            println!("{}", e);
+            true // Continue waiting for input
         }
     }
 }
