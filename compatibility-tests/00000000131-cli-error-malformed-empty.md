@@ -19,10 +19,10 @@ s
 
 ## Result
 ```result
-ERROR: Invalid goto command: Expected section name after '->'
-Cannot skip - reached the end of the script.
 START
 -> Section A
 Text in A
+ERROR: Invalid goto command: Expected section name after '->'
 END
+Cannot skip - reached the end of the script.
 ```

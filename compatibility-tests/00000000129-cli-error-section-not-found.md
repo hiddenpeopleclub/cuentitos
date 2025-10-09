@@ -22,10 +22,10 @@ s
 
 ## Result
 ```result
-ERROR: Section not found: Fake Section
 START
 -> Section A
 Text in A
+ERROR: Section not found: Fake Section
 -> Section B
 Text in B
 END

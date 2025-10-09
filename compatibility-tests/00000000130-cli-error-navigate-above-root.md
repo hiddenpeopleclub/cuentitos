@@ -19,10 +19,10 @@ s
 
 ## Result
 ```result
-ERROR: Cannot navigate above root level
-Cannot skip - reached the end of the script.
 START
 -> Section A
 Text in A
+ERROR: Cannot navigate above root level
 END
+Cannot skip - reached the end of the script.
 ```
