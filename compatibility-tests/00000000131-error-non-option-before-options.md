@@ -19,5 +19,7 @@ s
 
 ## Result
 ```result
-Error: Options must have a parent
+test.cuentitos:3: ERROR: Options must have a parent
+
+test.cuentitos:5: ERROR: Options must have a parent
 ```

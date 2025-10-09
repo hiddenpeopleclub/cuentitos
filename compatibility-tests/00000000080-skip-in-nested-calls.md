@@ -26,7 +26,6 @@ n,n,n,s,s
 
 ## Result
 ```result
-Cannot skip - reached the end of the script.
 START
 -> Section A
 Line 1 in A
@@ -47,4 +46,5 @@ Back in B
 Line 1 in C
 Line 2 in C
 END
+Cannot skip - reached the end of the script.
 ```
