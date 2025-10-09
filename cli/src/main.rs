@@ -178,14 +178,14 @@ fn process_input(input: &str, runtime: &mut cuentitos_runtime::Runtime) -> bool 
 
             match runtime.select_option(choice) {
                 Ok(()) => {
-                    // Display the selected option (with space before to continue from >)
+                    // Display the selected option
                     if let Some(text) = option_text {
-                        println!(" Selected: {}", text);
+                        println!("Selected: {}", text);
                     }
                     return true;
                 }
                 Err(_) => {
-                    println!(" Invalid option: {}", input);
+                    println!("Invalid option: {}", input);
                     return true; // Continue, will re-display options
                 }
             }
@@ -197,14 +197,14 @@ fn process_input(input: &str, runtime: &mut cuentitos_runtime::Runtime) -> bool 
             "n" | "s" => {
                 let num_options = runtime.get_current_options().len();
                 println!(
-                    " Use option numbers (1-{}) to choose (plus q to quit)",
+                    "Use option numbers (1-{}) to choose (plus q to quit)",
                     num_options
                 );
                 return true;
             }
             "" => return true, // Ignore empty input
             _ => {
-                println!(" Invalid option: {}", input);
+                println!("Invalid option: {}", input);
                 return true;
             }
         }
@@ -379,7 +379,7 @@ fn display_options(runtime: &cuentitos_runtime::Runtime, include_parent: bool) {
     for (num, string_id) in options {
         println!("  {}. {}", num, runtime.database.strings[string_id]);
     }
-    print!(">"); // Print > without newline, caller decides what comes next
+    print!("> "); // Print > with space, responses continue on same line
     std::io::Write::flush(&mut std::io::stdout()).ok();
 }
 
