@@ -84,15 +84,7 @@ impl Runtime {
 
         resolver
             .resolve_path(path, containing_section)
-            .map_err(|e| match e {
-                PathResolutionError::SectionNotFound { path } => {
-                    RuntimeError::SectionNotFound { path }
-                }
-                PathResolutionError::NavigationAboveRoot => RuntimeError::NavigationAboveRoot,
-                PathResolutionError::InvalidPath { message } => {
-                    RuntimeError::InvalidPath { message }
-                }
-            })
+            .map_err(RuntimeError::from)
     }
 
     /// Find the nearest ancestor section that contains the given block
