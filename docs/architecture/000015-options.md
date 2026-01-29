@@ -10,11 +10,11 @@
 
 ## Referenced Use Case(s)
 
-- [Basic Two Options](../../compatibility-tests/00000000102-basic-two-options.md)
-- [Nested Options](../../compatibility-tests/00000000108-nested-options.md)
-- [Options With Continuation](../../compatibility-tests/00000000106-options-with-continuation.md)
-- [Error: Options Without Parent](../../compatibility-tests/00000000117-error-options-without-parent.md)
-- [Skip Stops At Options](../../compatibility-tests/00000000114-skip-stops-at-options.md)
+- [Basic Two Options](../../compatibility-tests/00000000115-basic-two-options.md)
+- [Nested Options](../../compatibility-tests/00000000121-nested-options.md)
+- [Options With Continuation](../../compatibility-tests/00000000119-options-with-continuation.md)
+- [Error: Options Without Parent](../../compatibility-tests/00000000130-error-options-without-parent.md)
+- [Skip Stops At Options](../../compatibility-tests/00000000127-skip-stops-at-options.md)
 
 ## Context
 

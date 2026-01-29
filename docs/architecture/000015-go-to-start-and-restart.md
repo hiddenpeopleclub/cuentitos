@@ -22,7 +22,7 @@
 - [Error: Subsection Named START](../../compatibility-tests/00000000111-error-subsection-named-start.md)
 - [Error: Subsection Named RESTART](../../compatibility-tests/00000000112-error-subsection-named-restart.md)
 - [RESTART Clears Call Stack](../../compatibility-tests/00000000113-restart-clears-call-stack.md)
-- [START Clears Call Stack](../../compatibility-tests/00000000114-start-preserves-call-stack.md)
+- [START Clears Call Stack](../../compatibility-tests/00000000114-start-clears-call-stack.md)
 
 ## Context
 
