@@ -16,5 +16,5 @@ s
 
 ## Result
 ```result
-test.cuentitos:2: ERROR: Section name "START" is reserved: START
+00000000111-error-subsection-named-start.cuentitos:2: ERROR: Section name "START" is reserved: START
 ```

@@ -21,8 +21,8 @@ s
 
 ## Result
 ```result
-test.cuentitos:4: WARNING: Unreachable code after section jump
-test.cuentitos:5: WARNING: Unreachable code after section jump
+00000000064-warning-unreachable-children.cuentitos:4: WARNING: Unreachable code after section jump
+00000000064-warning-unreachable-children.cuentitos:5: WARNING: Unreachable code after section jump
 START
 -> Section A
 Text before

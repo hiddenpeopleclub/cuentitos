@@ -359,18 +359,12 @@ fn display_options(runtime: &cuentitos_runtime::Runtime, include_parent: bool) {
 
     // Display the parent block text if requested (e.g., when redisplaying after error)
     if include_parent {
-        if let Some(&(_, first_option_string_id)) = options.first() {
-            // Find the first option block in the database
-            if let Some(option_block_id) = runtime.database.blocks.iter().position(|b| {
-                matches!(b.block_type, cuentitos_common::BlockType::Option(sid) if sid == first_option_string_id)
-            }) {
-                // Get the parent block
-                if let Some(parent_id) = runtime.database.blocks[option_block_id].parent_id {
-                    let parent_block = &runtime.database.blocks[parent_id];
-                    // If parent is a String block, display it
-                    if let cuentitos_common::BlockType::String(string_id) = parent_block.block_type {
-                        println!("{}", runtime.database.strings[string_id]);
-                    }
+        let option_block_ids = runtime.get_current_option_block_ids();
+        if let Some(&first_option_block_id) = option_block_ids.first() {
+            if let Some(parent_id) = runtime.database.blocks[first_option_block_id].parent_id {
+                let parent_block = &runtime.database.blocks[parent_id];
+                if let cuentitos_common::BlockType::String(string_id) = parent_block.block_type {
+                    println!("{}", runtime.database.strings[string_id]);
                 }
             }
         }

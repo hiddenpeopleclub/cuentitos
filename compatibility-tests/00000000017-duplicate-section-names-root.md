@@ -19,5 +19,5 @@ s
 
 ## Result
 ```result
-test.cuentitos:5: ERROR: Duplicate section name: 'Chapter One' already exists at this level under '<root>'. Previously defined at line 1.
+00000000017-duplicate-section-names-root.cuentitos:5: ERROR: Duplicate section name: 'Chapter One' already exists at this level under '<root>'. Previously defined at line 1.
 ```

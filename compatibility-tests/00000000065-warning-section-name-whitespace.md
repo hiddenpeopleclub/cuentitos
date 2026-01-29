@@ -30,8 +30,8 @@ q
 
 ## Result
 ```result
-test.cuentitos:1: WARNING: Section name has leading/trailing whitespace: ' Section A'. Trimmed to 'Section A'
-test.cuentitos:3: WARNING: Section name has leading/trailing whitespace: ' Section A'. Trimmed to 'Section A'
+00000000065-warning-section-name-whitespace.cuentitos:1: WARNING: Section name has leading/trailing whitespace: ' Section A'. Trimmed to 'Section A'
+00000000065-warning-section-name-whitespace.cuentitos:3: WARNING: Section name has leading/trailing whitespace: ' Section A'. Trimmed to 'Section A'
 START
 -> Section A
 Text in A

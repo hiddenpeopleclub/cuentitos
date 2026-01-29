@@ -16,5 +16,5 @@ s
 
 ## Result
 ```result
-test.cuentitos:3: ERROR: Expected section name after '<->'
+00000000093-error-call-invalid-path.cuentitos:3: ERROR: Expected section name after '<->'
 ```

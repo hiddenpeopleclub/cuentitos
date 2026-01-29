@@ -20,5 +20,5 @@ s
 
 ## Result
 ```result
-test.cuentitos:4: ERROR: Section not found: .. \ Child B
+00000000075-call-with-combined-path.cuentitos:4: ERROR: Section not found: .. \ Child B
 ```

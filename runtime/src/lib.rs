@@ -19,6 +19,7 @@ struct RuntimeState {
     call_stack: Vec<CallFrame>,
     waiting_for_option_selection: bool,
     current_options: Vec<BlockId>, // IDs of available option blocks
+    last_error: Option<RuntimeError>,
 }
 
 impl RuntimeState {
@@ -30,6 +31,7 @@ impl RuntimeState {
             call_stack: Vec::new(),
             waiting_for_option_selection: false,
             current_options: Vec::new(),
+            last_error: None,
         }
     }
 
@@ -128,15 +130,7 @@ impl Runtime {
     pub fn current_blocks(&self) -> Vec<Block> {
         if !self.running || self.database.blocks.is_empty() {
             Vec::new()
-        } else if self.has_ended() {
-            // When we've reached the end, return only blocks in the execution path
-            self.state
-                .current_path
-                .iter()
-                .map(|&id| self.database.blocks[id].clone())
-                .collect()
         } else {
-            // Return only blocks that were visited in the execution path
             self.state
                 .current_path
                 .iter()
@@ -177,6 +171,16 @@ impl Runtime {
                 }
             })
             .collect()
+    }
+
+    /// Returns and clears the last runtime error, if any
+    pub fn take_last_error(&mut self) -> Option<RuntimeError> {
+        self.state.last_error.take()
+    }
+
+    /// Returns the block IDs of the current available options
+    pub fn get_current_option_block_ids(&self) -> &[BlockId] {
+        &self.state.current_options
     }
 
     /// Returns the current path of executed blocks
@@ -226,21 +230,21 @@ impl Runtime {
                 // Check maximum call stack depth to prevent infinite loops
                 const MAX_CALL_DEPTH: usize = 200;
                 if self.state.call_stack.len() >= MAX_CALL_DEPTH {
-                    // Print error message and terminate
                     let section = &self.database.sections[*section_id];
                     let section_name = &self.database.strings[section.name];
                     let line = current_block.line;
-                    if line > 0 {
-                        eprintln!(
+                    let message = if line > 0 {
+                        format!(
                             "Maximum call stack depth exceeded ({} calls) due to script:{} <-> {}",
                             MAX_CALL_DEPTH, line, section_name
-                        );
+                        )
                     } else {
-                        eprintln!(
+                        format!(
                             "Maximum call stack depth exceeded ({} calls) due to <-> {}",
                             MAX_CALL_DEPTH, section_name
-                        );
-                    }
+                        )
+                    };
+                    self.state.last_error = Some(RuntimeError::InvalidPath { message });
                     // Jump to END to terminate execution
                     return Some(self.database.blocks.len() - 1);
                 }

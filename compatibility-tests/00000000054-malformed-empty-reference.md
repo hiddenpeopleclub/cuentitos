@@ -18,5 +18,5 @@ s
 
 ## Result
 ```result
-test.cuentitos:2: ERROR: Expected section name after '->'
+00000000054-malformed-empty-reference.cuentitos:2: ERROR: Expected section name after '->'
 ```

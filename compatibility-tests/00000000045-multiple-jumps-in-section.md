@@ -22,7 +22,7 @@ s
 
 ## Result
 ```result
-test.cuentitos:3: WARNING: Unreachable code after section jump
+00000000045-multiple-jumps-in-section.cuentitos:3: WARNING: Unreachable code after section jump
 START
 -> Section A
 -> Section B

@@ -17,7 +17,7 @@ s
 
 ## Result
 ```result
-test.cuentitos:4: WARNING: Unreachable code after section jump
+00000000096-goto-end-unreachable-code.cuentitos:4: WARNING: Unreachable code after section jump
 START
 -> Section A
 Text in A

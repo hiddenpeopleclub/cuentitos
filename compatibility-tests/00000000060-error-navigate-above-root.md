@@ -17,5 +17,5 @@ s
 
 ## Result
 ```result
-test.cuentitos:4: ERROR: Cannot navigate above root level
+00000000060-error-navigate-above-root.cuentitos:4: ERROR: Cannot navigate above root level
 ```

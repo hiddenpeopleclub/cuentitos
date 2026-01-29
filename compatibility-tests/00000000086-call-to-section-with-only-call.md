@@ -23,5 +23,5 @@ s
 
 ## Result
 ```result
-test.cuentitos:6: ERROR: Section must contain at least one block: Section B
+00000000086-call-to-section-with-only-call.cuentitos:6: ERROR: Section must contain at least one block: Section B
 ```

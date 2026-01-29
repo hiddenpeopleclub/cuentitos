@@ -291,8 +291,14 @@ impl Parser {
     where
         A: AsRef<str>,
     {
-        // Clear warnings from previous parse
+        // Clear state from previous parse
         self.warnings.clear();
+        self.errors.clear();
+        self.last_block_at_level.clear();
+        self.last_section_at_level.clear();
+        self.seen_non_option_at_level.clear();
+        self.section_names_by_parent.clear();
+        self.goto_paths.clear();
 
         let mut context = if let Some(file_path) = &self.file_path {
             ParserContext::with_file(file_path.clone())
@@ -325,6 +331,11 @@ impl Parser {
             if content.trim().is_empty() {
                 context.current_line += 1;
                 continue; // Skip empty lines
+            }
+
+            // Clear stale seen_non_option flags for deeper levels
+            if level + 1 < self.seen_non_option_at_level.len() {
+                self.seen_non_option_at_level.truncate(level + 1);
             }
 
             // Try to parse as section first

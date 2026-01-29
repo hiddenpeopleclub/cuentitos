@@ -17,7 +17,7 @@ s
 
 ## Result
 ```result
-test.cuentitos:3: WARNING: <-> END will not return (just end execution)
+00000000097-call-end-warning.cuentitos:3: WARNING: <-> END will not return (just end execution)
 START
 -> Section A
 Text in A

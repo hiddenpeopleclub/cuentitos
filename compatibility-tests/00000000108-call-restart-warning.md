@@ -17,7 +17,7 @@ n,n,n,n,n,n,n,n,n,n,q
 
 ## Result
 ```result
-test.cuentitos:3: WARNING: <-> RESTART will not return (clears state and restarts from beginning)
+00000000108-call-restart-warning.cuentitos:3: WARNING: <-> RESTART will not return (clears state and restarts from beginning)
 START
 -> Section A
 Text in A

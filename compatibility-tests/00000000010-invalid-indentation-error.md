@@ -15,5 +15,5 @@ n
 
 ## Result
 ```result
-test.cuentitos:2: ERROR: Invalid indentation: found 3 spaces.
+00000000010-invalid-indentation-error.cuentitos:2: ERROR: Invalid indentation: found 3 spaces.
 ```

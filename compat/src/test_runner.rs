@@ -24,31 +24,33 @@ impl TestRunner {
     }
 
     pub fn run(&self, test_case: TestCase) -> TestResult {
-        // Create a temporary file to hold the test case
-        let mut file = File::create("test.cuentitos").unwrap();
+        // Create a temporary file named after the test case to avoid race conditions
+        let temp_filename = format!(
+            "{}.cuentitos",
+            test_case.path.file_stem().unwrap_or_default().to_string_lossy()
+        );
+        let mut file = File::create(&temp_filename).unwrap();
         writeln!(file, "{}", test_case.script).unwrap();
 
         let input_commands = test_case.input.split("\n").collect::<Vec<&str>>().join(",");
 
         // Run the runtime with the script file and the input from the test case
         let result = match Command::new(&self.runtime_path)
-            .args(["run", "test.cuentitos", &input_commands])
+            .args(["run", &temp_filename, &input_commands])
             .output()
         {
             Ok(result) => {
-                let mut output = result.stdout.clone();
-                output.pop();
-                output.pop();
+                let output = String::from_utf8(result.stdout.clone()).unwrap_or_default();
+                let output_trimmed = output.trim_end_matches(&['\r', '\n'][..]);
+                let expected_trimmed =
+                    test_case.result.trim_end_matches(&['\r', '\n'][..]);
 
-                let mut expected = test_case.result.clone().into_bytes();
-                expected.pop();
-
-                if expected == output {
+                if expected_trimmed == output_trimmed {
                     TestResult::Pass
                 } else {
                     TestResult::Fail {
                         expected: Some(test_case.result),
-                        actual: String::from_utf8(result.stdout).unwrap(),
+                        actual: output,
                     }
                 }
             }
@@ -62,7 +64,7 @@ impl TestRunner {
         };
 
         // Remove temporary file
-        std::fs::remove_file("test.cuentitos").unwrap();
+        std::fs::remove_file(&temp_filename).unwrap();
 
         result
     }
