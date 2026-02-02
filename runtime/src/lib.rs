@@ -1325,4 +1325,50 @@ mod test {
         );
         assert!(runtime.has_ended(), "Should have reached END");
     }
+
+    #[test]
+    fn test_runtime_initializes_integer_variables() {
+        let script = "--- variables\nint score\nint lives = 3\nint debt = -5\n---\nHello";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        let variables = runtime.list_variables();
+        let names: Vec<String> = variables.iter().map(|(name, _)| name.clone()).collect();
+        let values: Vec<VariableValue> =
+            variables.iter().map(|(_, value)| value.clone()).collect();
+
+        assert_eq!(names, vec!["debt", "lives", "score"]);
+        assert_eq!(
+            values,
+            vec![
+                VariableValue::Integer(-5),
+                VariableValue::Integer(3),
+                VariableValue::Integer(0)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_list_variables_sorted_alphabetically() {
+        let script = "--- variables\nint zebra = 1\nint alpha = 2\nint middle = 3\n---\nHello";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        let variables = runtime.list_variables();
+        let names: Vec<String> = variables.iter().map(|(name, _)| name.clone()).collect();
+        let values: Vec<VariableValue> =
+            variables.iter().map(|(_, value)| value.clone()).collect();
+
+        assert_eq!(names, vec!["alpha", "middle", "zebra"]);
+        assert_eq!(
+            values,
+            vec![
+                VariableValue::Integer(2),
+                VariableValue::Integer(3),
+                VariableValue::Integer(1)
+            ]
+        );
+    }
 }
