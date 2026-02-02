@@ -20,6 +20,7 @@ struct RuntimeState {
     waiting_for_option_selection: bool,
     current_options: Vec<BlockId>, // IDs of available option blocks
     last_error: Option<RuntimeError>,
+    variables: Vec<VariableValue>,
 }
 
 impl RuntimeState {
@@ -32,11 +33,13 @@ impl RuntimeState {
             waiting_for_option_selection: false,
             current_options: Vec::new(),
             last_error: None,
+            variables: Vec::new(),
         }
     }
 
-    fn with_start_block() -> Self {
+    fn with_start_block(variables: Vec<VariableValue>) -> Self {
         let mut state = Self::new();
+        state.variables = variables;
         state.current_path.push(0); // START block
         state
     }
@@ -73,11 +76,22 @@ impl Runtime {
 
     /// Reset runtime state to initial values
     pub fn reset(&mut self) {
+        let variables = self.build_initial_variables();
         self.state = if !self.database.blocks.is_empty() {
-            RuntimeState::with_start_block()
+            RuntimeState::with_start_block(variables)
         } else {
-            RuntimeState::new()
+            let mut state = RuntimeState::new();
+            state.variables = variables;
+            state
         };
+    }
+
+    fn build_initial_variables(&self) -> Vec<VariableValue> {
+        self.database
+            .variables
+            .iter()
+            .map(|definition| definition.default_value.clone())
+            .collect()
     }
 
     /// Find a section by its path string, resolving relative paths from current context
@@ -180,6 +194,90 @@ impl Runtime {
             .collect()
     }
 
+    /// Returns variables sorted alphabetically by name.
+    pub fn list_variables(&self) -> Vec<(String, VariableValue)> {
+        let mut variables: Vec<(String, VariableValue)> = self
+            .database
+            .variables
+            .iter()
+            .enumerate()
+            .map(|(idx, definition)| {
+                let name = self.database.strings[definition.name].clone();
+                let value = self
+                    .state
+                    .variables
+                    .get(idx)
+                    .cloned()
+                    .unwrap_or_else(|| definition.default_value.clone());
+                (name, value)
+            })
+            .collect();
+
+        variables.sort_by(|(left, _), (right, _)| left.cmp(right));
+        variables
+    }
+
+    fn get_variable_value(&self, variable_id: VariableId) -> VariableValue {
+        self.state
+            .variables
+            .get(variable_id)
+            .cloned()
+            .or_else(|| {
+                self.database
+                    .variables
+                    .get(variable_id)
+                    .map(|definition| definition.default_value.clone())
+            })
+            .unwrap_or_else(|| VariableValue::Integer(0))
+    }
+
+    fn set_variable_value(&mut self, variable_id: VariableId, value: VariableValue) {
+        if let Some(slot) = self.state.variables.get_mut(variable_id) {
+            *slot = value;
+        }
+    }
+
+    fn require_variable(
+        &mut self,
+        variable_id: VariableId,
+        operator: &ComparisonOperator,
+        expected: &VariableValue,
+        line: usize,
+    ) -> bool {
+        let actual = self.get_variable_value(variable_id);
+
+        let satisfied = match (&actual, expected) {
+            (VariableValue::Integer(left), VariableValue::Integer(right)) => match operator {
+                ComparisonOperator::Equal => left == right,
+                ComparisonOperator::NotEqual => left != right,
+                ComparisonOperator::LessThan => left < right,
+                ComparisonOperator::LessThanOrEqual => left <= right,
+                ComparisonOperator::GreaterThan => left > right,
+                ComparisonOperator::GreaterThanOrEqual => left >= right,
+            },
+        };
+
+        if !satisfied {
+            let name = self
+                .database
+                .variables
+                .get(variable_id)
+                .map(|definition| self.database.strings[definition.name].clone())
+                .unwrap_or_else(|| "unknown".to_string());
+            let message = format!(
+                "{} {} {} (actual: {}) at line {}",
+                name,
+                operator.as_str(),
+                expected.to_display_string(),
+                actual.to_display_string(),
+                line
+            );
+            self.state.last_error = Some(RuntimeError::RequirementFailed { message });
+        }
+
+        satisfied
+    }
+
     /// Returns and clears the last runtime error, if any
     pub fn take_last_error(&mut self) -> Option<RuntimeError> {
         self.state.last_error.take()
@@ -228,18 +326,19 @@ impl Runtime {
             return None;
         }
 
-        let current_block = &self.database.blocks[self.state.program_counter];
+        let current_block = self.database.blocks[self.state.program_counter].clone();
+        let current_line = current_block.line;
 
         // Handle special goto variants
-        match &current_block.block_type {
+        match current_block.block_type {
             // GoToAndBack: push to call stack and jump to section
             BlockType::GoToAndBack(section_id) => {
                 // Check maximum call stack depth to prevent infinite loops
                 const MAX_CALL_DEPTH: usize = 200;
                 if self.state.call_stack.len() >= MAX_CALL_DEPTH {
-                    let section = &self.database.sections[*section_id];
+                    let section = &self.database.sections[section_id];
                     let section_name = &self.database.strings[section.name];
-                    let line = current_block.line;
+                    let line = current_line;
                     let message = if line > 0 {
                         format!(
                             "Maximum call stack depth exceeded ({} calls) due to script:{} <-> {}",
@@ -260,7 +359,7 @@ impl Runtime {
                 let return_block_id = self.compute_natural_next_block()?;
 
                 // Get the section's block ID
-                let section = &self.database.sections[*section_id];
+                let section = &self.database.sections[section_id];
                 let target_block_id = section.block_id;
 
                 // Push call frame
@@ -274,7 +373,7 @@ impl Runtime {
 
             // GoTo: jump to section
             BlockType::GoTo(section_id) => {
-                let section = &self.database.sections[*section_id];
+                let section = &self.database.sections[section_id];
                 return Some(section.block_id);
             }
 
@@ -296,6 +395,20 @@ impl Runtime {
             // GoToEnd: jump to END
             BlockType::GoToEnd => {
                 return Some(self.database.blocks.len() - 1);
+            }
+
+            BlockType::SetVariable { variable_id, value } => {
+                self.set_variable_value(variable_id, value);
+            }
+
+            BlockType::RequireVariable {
+                variable_id,
+                operator,
+                value,
+            } => {
+                if !self.require_variable(variable_id, &operator, &value, current_line) {
+                    return Some(self.database.blocks.len() - 1);
+                }
             }
 
             _ => {}
@@ -1287,5 +1400,85 @@ mod test {
             "Should not be waiting for options after skip"
         );
         assert!(runtime.has_ended(), "Should have reached END");
+    }
+
+    #[test]
+    fn test_runtime_initializes_integer_variables() {
+        let script = "--- variables\nint score\nint lives = 3\nint debt = -5\n---\nHello";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        let variables = runtime.list_variables();
+        let names: Vec<String> = variables.iter().map(|(name, _)| name.clone()).collect();
+        let values: Vec<VariableValue> =
+            variables.iter().map(|(_, value)| value.clone()).collect();
+
+        assert_eq!(names, vec!["debt", "lives", "score"]);
+        assert_eq!(
+            values,
+            vec![
+                VariableValue::Integer(-5),
+                VariableValue::Integer(3),
+                VariableValue::Integer(0)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_list_variables_sorted_alphabetically() {
+        let script = "--- variables\nint zebra = 1\nint alpha = 2\nint middle = 3\n---\nHello";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        let variables = runtime.list_variables();
+        let names: Vec<String> = variables.iter().map(|(name, _)| name.clone()).collect();
+        let values: Vec<VariableValue> =
+            variables.iter().map(|(_, value)| value.clone()).collect();
+
+        assert_eq!(names, vec!["alpha", "middle", "zebra"]);
+        assert_eq!(
+            values,
+            vec![
+                VariableValue::Integer(2),
+                VariableValue::Integer(3),
+                VariableValue::Integer(1)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_set_statement_updates_value() {
+        let script = "--- variables\nint score\n---\nset score = 5\nHello";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        runtime.step(); // START -> set
+        runtime.step(); // set executes, move to Hello
+
+        let variables = runtime.list_variables();
+        assert_eq!(variables.len(), 1);
+        assert_eq!(variables[0].0, "score");
+        assert_eq!(variables[0].1, VariableValue::Integer(5));
+    }
+
+    #[test]
+    fn test_require_statement_failure_sets_error() {
+        let script = "--- variables\nint lives = 2\n---\nrequire lives >= 3\nHello";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        runtime.step(); // START -> require
+        runtime.step(); // require executes and fails
+
+        assert!(runtime.has_ended());
+        let error = runtime.take_last_error();
+        assert!(matches!(
+            error,
+            Some(RuntimeError::RequirementFailed { .. })
+        ));
     }
 }

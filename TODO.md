@@ -8,9 +8,9 @@
   - [x] Go To Start (-> START / -> RESTART)
   - [x] Go To's in CLI (support using go to as an input method in CLI)
   - [x] Options (Docs & Implementation)
-  - [ ] Definition of Integer Variables
-  - [ ] Set Integer Variables (Script & Runtime)
-  - [ ] Require Integer Variables
+  - [x] Definition of Integer Variables
+  - [x] Set Integer Variables (Script & Runtime)
+  - [x] Require Integer Variables
   - [ ] Definition of Float Variables
   - [ ] Set Float Variables (Script & Runtime)
   - [ ] Require Float Variables

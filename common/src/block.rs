@@ -1,4 +1,4 @@
-use crate::{SectionId, StringId};
+use crate::{ComparisonOperator, SectionId, StringId, VariableId, VariableValue};
 
 pub type BlockId = usize;
 
@@ -13,6 +13,15 @@ pub enum BlockType {
     GoToStart,
     GoToRestart,
     GoToEnd,
+    SetVariable {
+        variable_id: VariableId,
+        value: VariableValue,
+    },
+    RequireVariable {
+        variable_id: VariableId,
+        operator: ComparisonOperator,
+        value: VariableValue,
+    },
     End,
 }
 
