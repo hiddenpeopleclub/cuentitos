@@ -19,7 +19,7 @@ pub struct Warning {
 pub struct Parser {
     last_block_at_level: Vec<BlockId>, // Stack to track last block at each level
     last_section_at_level: Vec<BlockId>, // Stack to track last section at each level (for section hierarchy)
-    seen_non_option_at_level: Vec<bool>, // Track if we've seen a non-option child at each level
+    seen_non_option_by_parent: HashMap<BlockId, bool>, // Track if a parent has seen any non-option child
     file_path: Option<PathBuf>,
     line_parser: LineParser,
     section_parser: SectionParser,
@@ -28,6 +28,8 @@ pub struct Parser {
     go_to_section_parser: GoToSectionParser,
     // Track section names by parent_id -> (name -> first_line_number)
     section_names_by_parent: HashMap<Option<BlockId>, HashMap<String, usize>>,
+    // Track section ids by parent_id -> (id -> first_line_number)
+    section_ids_by_parent: HashMap<Option<BlockId>, HashMap<String, usize>>,
     // Track goto paths temporarily during parsing (BlockId -> path)
     goto_paths: HashMap<BlockId, String>,
     // Collect errors instead of returning immediately
@@ -287,6 +289,12 @@ impl Parser {
         context.current_line += 1;
     }
 
+    fn mark_non_option_child(&mut self, parent_id: Option<BlockId>) {
+        if let Some(parent_id) = parent_id {
+            self.seen_non_option_by_parent.insert(parent_id, true);
+        }
+    }
+
     pub fn parse<A>(&mut self, script: A) -> Result<(Database, Vec<Warning>), ParseError>
     where
         A: AsRef<str>,
@@ -296,8 +304,9 @@ impl Parser {
         self.errors.clear();
         self.last_block_at_level.clear();
         self.last_section_at_level.clear();
-        self.seen_non_option_at_level.clear();
+        self.seen_non_option_by_parent.clear();
         self.section_names_by_parent.clear();
+        self.section_ids_by_parent.clear();
         self.goto_paths.clear();
 
         let mut context = if let Some(file_path) = &self.file_path {
@@ -333,11 +342,6 @@ impl Parser {
                 continue; // Skip empty lines
             }
 
-            // Clear stale seen_non_option flags for deeper levels
-            if level + 1 < self.seen_non_option_at_level.len() {
-                self.seen_non_option_at_level.truncate(level + 1);
-            }
-
             // Try to parse as section first
             let section_result = match self.section_parser.parse(content.trim(), &mut context) {
                 Ok(result) => result,
@@ -348,21 +352,24 @@ impl Parser {
             };
 
             if let Some(mut section_result) = section_result {
-                // Check for leading/trailing whitespace in section name
-                let original_name = section_result.display_name.clone();
-                let trimmed_name = original_name.trim();
-                if trimmed_name != original_name {
+                // Check for leading/trailing whitespace in section display name
+                let original_display = section_result.display_name.clone();
+                let original_id = section_result.id.clone();
+                let trimmed_display = original_display.trim();
+                if trimmed_display != original_display {
                     self.warnings.push(Warning {
                         message: format!(
                             "Section name has leading/trailing whitespace: '{}'. Trimmed to '{}'",
-                            original_name, trimmed_name
+                            original_display, trimmed_display
                         ),
                         file: self.file_path.clone(),
                         line: context.current_line,
                     });
-                    // Update to use trimmed name
-                    section_result.display_name = trimmed_name.to_string();
-                    section_result.id = trimmed_name.to_string();
+                    // Update display name; only update id if it matched the original display
+                    section_result.display_name = trimmed_display.to_string();
+                    if original_id == original_display {
+                        section_result.id = trimmed_display.to_string();
+                    }
                 }
 
                 // This is a section
@@ -391,7 +398,7 @@ impl Parser {
                     continue;
                 }
 
-                // Check for duplicate section names
+                // Check for duplicate section display names
                 let names_map = self.section_names_by_parent.entry(parent_id).or_default();
 
                 if let Some(&previous_line) = names_map.get(&section_result.display_name) {
@@ -426,21 +433,64 @@ impl Parser {
                     continue;
                 }
 
-                // Record this section name
+                // Record this section display name
                 names_map.insert(section_result.display_name.clone(), context.current_line);
 
-                // Build the full path for this section
+                // Check for duplicate section ids
+                let ids_map = self.section_ids_by_parent.entry(parent_id).or_default();
+                if let Some(&previous_line) = ids_map.get(&section_result.id) {
+                    let parent_name = if let Some(pid) = parent_id {
+                        if pid == start_id {
+                            "<root>".to_string()
+                        } else {
+                            match &context.database.blocks[pid].block_type {
+                                BlockType::Section(section_id) => {
+                                    let section = &context.database.sections[*section_id];
+                                    context.database.strings[section.name].clone()
+                                }
+                                _ => "<root>".to_string(),
+                            }
+                        }
+                    } else {
+                        "<root>".to_string()
+                    };
+
+                    self.collect_error_and_skip(
+                        ParseError::DuplicateSectionName {
+                            name: section_result.id.clone(),
+                            parent_name,
+                            file: self.file_path.clone(),
+                            line: context.current_line,
+                            previous_line,
+                        },
+                        &mut context,
+                    );
+                    continue;
+                }
+
+                // Record this section id
+                ids_map.insert(section_result.id.clone(), context.current_line);
+
+                // Build the full display path for this section
                 let path_string = self.build_section_path_during_parse(
                     &context.database,
                     &section_result.display_name,
                     level,
                 );
+                // Build the full id path for this section
+                let id_path_string = self.build_section_id_path_during_parse(
+                    &context.database,
+                    &section_result.id,
+                    level,
+                );
 
-                // Add name and path to strings database
+                // Add name, id, and paths to strings database
                 let name_string_id = context
                     .database
                     .add_string(section_result.display_name.clone());
+                let id_string_id = context.database.add_string(section_result.id.clone());
                 let path_string_id = context.database.add_string(path_string);
+                let id_path_string_id = context.database.add_string(id_path_string);
 
                 // Create a placeholder block first to get the block_id
                 let block = Block::with_line(
@@ -452,8 +502,13 @@ impl Parser {
                 let block_id = context.database.add_block(block);
 
                 // Now create the Section and add it to the database
-                let section =
-                    cuentitos_common::Section::new(block_id, name_string_id, path_string_id);
+                let section = cuentitos_common::Section::new(
+                    block_id,
+                    name_string_id,
+                    id_string_id,
+                    path_string_id,
+                    id_path_string_id,
+                );
                 let section_id = context.database.add_section(section);
 
                 // Update the block with the correct section_id
@@ -471,6 +526,9 @@ impl Parser {
                 } else {
                     self.last_section_at_level[level] = block_id;
                 }
+
+                // Mark that parent has seen a non-option child
+                self.mark_non_option_child(parent_id);
             } else {
                 // Try to parse as go-to-section-and-back first (before go-to-section)
                 let go_to_and_back_result = match self
@@ -546,6 +604,9 @@ impl Parser {
                     } else {
                         self.last_block_at_level[level] = block_id;
                     }
+
+                    // Mark that parent has seen a non-option child
+                    self.mark_non_option_child(parent_id);
                 } else {
                     // Try to parse as go-to-section
                     let go_to_result = match self
@@ -585,11 +646,8 @@ impl Parser {
                             // At level 0 with no section, use first block (Start or a Section)
                             self.last_block_at_level.first().copied()
                         } else if level <= self.last_block_at_level.len() {
-                            // No section at this level, pop back to find parent
-                            while self.last_block_at_level.len() > level {
-                                self.last_block_at_level.pop();
-                            }
-                            self.last_block_at_level.last().copied()
+                            // No section at this level, use last block at previous level
+                            self.last_block_at_level.get(level - 1).copied()
                         } else {
                             self.collect_error_and_skip(
                                 ParseError::InvalidIndentation {
@@ -621,6 +679,9 @@ impl Parser {
                         } else {
                             self.last_block_at_level[level] = block_id;
                         }
+
+                        // Mark that parent has seen a non-option child
+                        self.mark_non_option_child(parent_id);
                     } else if OptionParser::is_option_line(content.trim()) {
                         // Parse as option
                         let result = match self.option_parser.parse(content.trim(), &mut context) {
@@ -631,22 +692,6 @@ impl Parser {
                             }
                         };
 
-                        // Validate that option has a parent
-                        // Check if we've seen a non-option at this level
-                        if level < self.seen_non_option_at_level.len()
-                            && self.seen_non_option_at_level[level]
-                        {
-                            // There's a non-option sibling before this option
-                            self.collect_error_and_skip(
-                                ParseError::OptionsWithoutParent {
-                                    file: self.file_path.clone(),
-                                    line: context.current_line,
-                                },
-                                &mut context,
-                            );
-                            continue;
-                        }
-
                         // Find parent block
                         let parent_id = if level < self.last_section_at_level.len() {
                             // There's a section at this level, use it as parent
@@ -655,11 +700,8 @@ impl Parser {
                             // At level 0 with no section, use first block (Start or a Section)
                             self.last_block_at_level.first().copied()
                         } else if level <= self.last_block_at_level.len() {
-                            // No section at this level, pop back to find parent
-                            while self.last_block_at_level.len() > level {
-                                self.last_block_at_level.pop();
-                            }
-                            self.last_block_at_level.last().copied()
+                            // No section at this level, use last block at previous level
+                            self.last_block_at_level.get(level - 1).copied()
                         } else {
                             self.collect_error_and_skip(
                                 ParseError::InvalidIndentation {
@@ -672,9 +714,43 @@ impl Parser {
                             continue;
                         };
 
-                        // Options at root level (level 0) or without a parent string are invalid
-                        // At level 0, parent would be Start block, which is not valid
+                        // Options at root level (level 0) or without a parent are invalid
                         if level == 0 || parent_id.is_none() {
+                            self.collect_error_and_skip(
+                                ParseError::OptionsWithoutParent {
+                                    file: self.file_path.clone(),
+                                    line: context.current_line,
+                                },
+                                &mut context,
+                            );
+                            continue;
+                        }
+
+                        let parent_id = parent_id.unwrap();
+                        let parent_block = &context.database.blocks[parent_id];
+
+                        // Parent must be a String or Option block
+                        if !matches!(
+                            parent_block.block_type,
+                            BlockType::String(_) | BlockType::Option(_)
+                        ) {
+                            self.collect_error_and_skip(
+                                ParseError::OptionsWithoutParent {
+                                    file: self.file_path.clone(),
+                                    line: context.current_line,
+                                },
+                                &mut context,
+                            );
+                            continue;
+                        }
+
+                        // Options cannot have non-option siblings before them
+                        if self
+                            .seen_non_option_by_parent
+                            .get(&parent_id)
+                            .copied()
+                            .unwrap_or(false)
+                        {
                             self.collect_error_and_skip(
                                 ParseError::OptionsWithoutParent {
                                     file: self.file_path.clone(),
@@ -689,13 +765,16 @@ impl Parser {
                         let string_id = context.database.add_string(result.text);
                         let block = Block::with_line(
                             BlockType::Option(string_id),
-                            parent_id,
+                            Some(parent_id),
                             level,
                             context.current_line,
                         );
                         let block_id = context.database.add_block(block);
 
                         // Update last block at this level
+                        if self.last_block_at_level.len() > level {
+                            self.last_block_at_level.truncate(level);
+                        }
                         if level >= self.last_block_at_level.len() {
                             self.last_block_at_level.push(block_id);
                         } else {
@@ -743,11 +822,8 @@ impl Parser {
                             self.last_block_at_level[level] = block_id;
                         }
 
-                        // Mark that we've seen a non-option at this level
-                        if level >= self.seen_non_option_at_level.len() {
-                            self.seen_non_option_at_level.resize(level + 1, false);
-                        }
-                        self.seen_non_option_at_level[level] = true;
+                        // Mark that parent has seen a non-option child
+                        self.mark_non_option_child(parent_id);
                     }
                 }
             }
@@ -959,6 +1035,37 @@ impl Parser {
         path_parts.join(" \\ ")
     }
 
+    /// Build the full hierarchical id path for a section during parsing
+    ///
+    /// Uses last_section_at_level to build the id path from parent sections.
+    /// This is called before the section block is added to the database.
+    fn build_section_id_path_during_parse(
+        &self,
+        database: &Database,
+        section_id: &str,
+        level: usize,
+    ) -> String {
+        let mut path_parts = Vec::new();
+
+        // Walk up the section hierarchy using last_section_at_level
+        for i in 0..level {
+            if i < self.last_section_at_level.len() {
+                let section_block_id = self.last_section_at_level[i];
+                if let BlockType::Section(sec_id) = database.blocks[section_block_id].block_type {
+                    let section = &database.sections[sec_id];
+                    let section_id_name = &database.strings[section.id];
+                    path_parts.push(section_id_name.clone());
+                }
+            }
+        }
+
+        // Add this section's id
+        path_parts.push(section_id.to_string());
+
+        // Join with " \ "
+        path_parts.join(" \\ ")
+    }
+
     /// Build a registry mapping section paths to SectionIds
     fn build_section_registry(&self, database: &Database) -> HashMap<String, SectionId> {
         let mut registry = HashMap::new();
@@ -967,7 +1074,7 @@ impl Parser {
             if let BlockType::Section(section_id) = &block.block_type {
                 // Get the path from the section metadata
                 let section = &database.sections[*section_id];
-                let path = &database.strings[section.path];
+                let path = &database.strings[section.id_path];
                 registry.insert(path.clone(), *section_id);
             }
         }
@@ -984,12 +1091,12 @@ impl Parser {
         let mut path_parts = Vec::new();
         let mut current_id = block_id;
 
-        // Walk up the parent chain, collecting section names
+        // Walk up the parent chain, collecting section ids
         while let Some(parent_id) = database.blocks[current_id].parent_id {
             if let BlockType::Section(section_id) = &database.blocks[current_id].block_type {
                 let section = &database.sections[*section_id];
-                let name = &database.strings[section.name];
-                path_parts.push(name.clone());
+                let id_name = &database.strings[section.id];
+                path_parts.push(id_name.clone());
             }
             current_id = parent_id;
         }
@@ -1151,30 +1258,31 @@ impl Parser {
             // If there are more segments, resolve them
             if segment_index < segments.len() {
                 if let Some(section_block_id) = current_section {
-                    // Look for the rest of the path as siblings
                     let remaining_path = segments[segment_index..].join(" \\ ");
-                    if let Some(sibling_block_id) =
-                        self.find_sibling_section(database, section_block_id, &remaining_path)
-                    {
-                        if let Some(section_id) = self.get_section_id(database, sibling_block_id) {
-                            return Ok(BlockType::GoTo(section_id));
-                        }
-                    }
-                    // Try building the full path from current section
+
+                    // 1) Prefer resolving as a child path from the resolved parent
                     let current_path = self.build_section_path_string(database, section_block_id);
-                    if let Some(parent_id) = database.blocks[section_block_id].parent_id {
-                        let full_path = if current_path.is_empty() {
-                            remaining_path.clone()
-                        } else {
-                            format!(
-                                "{} \\ {}",
-                                self.build_section_path_string(database, parent_id),
-                                remaining_path
-                            )
-                        };
-                        if let Some(&section_id) = registry.get(&full_path) {
-                            return Ok(BlockType::GoTo(section_id));
-                        }
+                    let child_full_path = if current_path.is_empty() {
+                        remaining_path.clone()
+                    } else {
+                        format!("{} \\ {}", current_path, remaining_path)
+                    };
+                    if let Some(&section_id) = registry.get(&child_full_path) {
+                        return Ok(BlockType::GoTo(section_id));
+                    }
+
+                    // 2) If not found, try as a sibling path (relative to parent section)
+                    let parent_path = self
+                        .find_parent_section(database, section_block_id)
+                        .map(|parent_id| self.build_section_path_string(database, parent_id))
+                        .unwrap_or_default();
+                    let sibling_full_path = if parent_path.is_empty() {
+                        remaining_path.clone()
+                    } else {
+                        format!("{} \\ {}", parent_path, remaining_path)
+                    };
+                    if let Some(&section_id) = registry.get(&sibling_full_path) {
+                        return Ok(BlockType::GoTo(section_id));
                     }
                 }
             } else {
@@ -1207,8 +1315,8 @@ impl Parser {
         for &child_id in &database.blocks[parent_id].children {
             if let BlockType::Section(section_id) = &database.blocks[child_id].block_type {
                 let section = &database.sections[*section_id];
-                let section_name = &database.strings[section.name];
-                if section_name == name {
+                let section_id_name = &database.strings[section.id];
+                if section_id_name == name {
                     return Some(child_id);
                 }
             }
@@ -1231,8 +1339,8 @@ impl Parser {
                 if sibling_id != section_id {
                     if let BlockType::Section(sec_id) = &database.blocks[sibling_id].block_type {
                         let section = &database.sections[*sec_id];
-                        let section_name = &database.strings[section.name];
-                        if section_name == name {
+                        let section_id_name = &database.strings[section.id];
+                        if section_id_name == name {
                             return Some(sibling_id);
                         }
                     }
@@ -1268,28 +1376,40 @@ impl Parser {
             if let BlockType::Section(section_id) = &block.block_type {
                 let section = &database.sections[*section_id];
                 let display_name = &database.strings[section.name];
+                let id_name = &database.strings[section.id];
 
-                // Check for reserved words
-                match display_name.as_str() {
-                    "END" | "START" | "RESTART" => {
+                let checks = [
+                    ("Section name", display_name),
+                    ("Section id", id_name),
+                ];
+
+                for (label, name) in checks {
+                    if label == "Section id" && name == display_name {
+                        continue;
+                    }
+
+                    // Check for reserved words
+                    match name.as_str() {
+                        "END" | "START" | "RESTART" => {
+                            self.errors.push(ParseError::InvalidSectionName {
+                                message: format!("{} \"{}\" is reserved", label, name),
+                                name: name.clone(),
+                                file: self.file_path.clone(),
+                                line: block.line,
+                            });
+                        }
+                        _ => {}
+                    }
+
+                    // Check for backslash
+                    if name.contains('\\') {
                         self.errors.push(ParseError::InvalidSectionName {
-                            message: format!("Section name \"{}\" is reserved", display_name),
-                            name: display_name.clone(),
+                            message: format!("{}s cannot contain '\\' character", label),
+                            name: name.clone(),
                             file: self.file_path.clone(),
                             line: block.line,
                         });
                     }
-                    _ => {}
-                }
-
-                // Check for backslash
-                if display_name.contains('\\') {
-                    self.errors.push(ParseError::InvalidSectionName {
-                        message: "Section names cannot contain '\\' character".to_string(),
-                        name: display_name.clone(),
-                        file: self.file_path.clone(),
-                        line: block.line,
-                    });
                 }
             }
         }
