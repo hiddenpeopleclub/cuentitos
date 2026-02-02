@@ -323,8 +323,13 @@ mod tests {
         let root_path_id = db.add_string("Root".to_string());
         let root_block = Block::new(BlockType::Section(0), Some(start_id), 0);
         let root_block_id = db.add_block(root_block);
-        let root_section =
-            Section::new(root_block_id, root_name_id, root_name_id, root_path_id, root_path_id);
+        let root_section = Section::new(
+            root_block_id,
+            root_name_id,
+            root_name_id,
+            root_path_id,
+            root_path_id,
+        );
         let root_section_id = db.add_section(root_section);
         db.blocks[root_block_id].block_type = BlockType::Section(root_section_id);
         db.section_registry

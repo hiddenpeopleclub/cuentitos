@@ -1406,10 +1406,7 @@ impl Parser {
                 let display_name = &database.strings[section.name];
                 let id_name = &database.strings[section.id];
 
-                let checks = [
-                    ("Section name", display_name),
-                    ("Section id", id_name),
-                ];
+                let checks = [("Section name", display_name), ("Section id", id_name)];
 
                 for (label, name) in checks {
                     if label == "Section id" && name == display_name {

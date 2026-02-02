@@ -27,7 +27,11 @@ impl TestRunner {
         // Create a temporary file named after the test case to avoid race conditions
         let temp_filename = format!(
             "{}.cuentitos",
-            test_case.path.file_stem().unwrap_or_default().to_string_lossy()
+            test_case
+                .path
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
         );
         let mut file = File::create(&temp_filename).unwrap();
         writeln!(file, "{}", test_case.script).unwrap();
@@ -42,8 +46,7 @@ impl TestRunner {
             Ok(result) => {
                 let output = String::from_utf8(result.stdout.clone()).unwrap_or_default();
                 let output_trimmed = output.trim_end_matches(&['\r', '\n'][..]);
-                let expected_trimmed =
-                    test_case.result.trim_end_matches(&['\r', '\n'][..]);
+                let expected_trimmed = test_case.result.trim_end_matches(&['\r', '\n'][..]);
 
                 if expected_trimmed == output_trimmed {
                     TestResult::Pass
