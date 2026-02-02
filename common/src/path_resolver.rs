@@ -61,6 +61,24 @@ impl<'a> PathResolver<'a> {
             });
         }
 
+        // Validate spacing around backslashes (must be " \\ ")
+        if path.contains('\\') {
+            let parts: Vec<&str> = path.split(" \\ ").collect();
+            let backslash_count = path.matches('\\').count();
+            if parts.len() != backslash_count + 1 {
+                return Err(PathResolutionError::InvalidPath {
+                    message: "Expected section name after '->'".to_string(),
+                });
+            }
+            for part in &parts {
+                if part.trim().is_empty() {
+                    return Err(PathResolutionError::InvalidPath {
+                        message: "Expected section name after '->'".to_string(),
+                    });
+                }
+            }
+        }
+
         // Handle special keywords
         match path {
             "START" => return Ok(ResolvedPath::Start),
