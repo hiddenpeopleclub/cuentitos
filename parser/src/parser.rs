@@ -114,6 +114,20 @@ pub enum ParseError {
         name: String,
         line: usize,
     },
+    UnknownVariableName {
+        name: String,
+        line: usize,
+    },
+    InvalidSetSyntax {
+        line: usize,
+    },
+    InvalidRequireSyntax {
+        line: usize,
+    },
+    InvalidRequireOperator {
+        operator: String,
+        line: usize,
+    },
     VariablesBlockNotAtTop {
         line: usize,
     },
@@ -121,6 +135,19 @@ pub enum ParseError {
     MultipleErrors {
         errors: Vec<ParseError>,
     },
+}
+
+#[derive(Debug, Clone)]
+struct SetStatement {
+    variable_id: VariableId,
+    value: VariableValue,
+}
+
+#[derive(Debug, Clone)]
+struct RequireStatement {
+    variable_id: VariableId,
+    operator: ComparisonOperator,
+    value: VariableValue,
 }
 
 impl fmt::Display for ParseError {
@@ -285,6 +312,22 @@ impl fmt::Display for ParseError {
             }
             ParseError::InvalidVariableType { name, line } => {
                 write!(f, "Error: Unknown variable type '{}' at line {}", name, line)
+            }
+            ParseError::UnknownVariableName { name, line } => {
+                write!(f, "Error: Unknown variable name '{}' at line {}", name, line)
+            }
+            ParseError::InvalidSetSyntax { line } => {
+                write!(f, "Error: Invalid set syntax at line {}", line)
+            }
+            ParseError::InvalidRequireSyntax { line } => {
+                write!(f, "Error: Invalid require syntax at line {}", line)
+            }
+            ParseError::InvalidRequireOperator { operator, line } => {
+                write!(
+                    f,
+                    "Error: Invalid require operator '{}' at line {}",
+                    operator, line
+                )
             }
             ParseError::VariablesBlockNotAtTop { line } => {
                 write!(
@@ -796,9 +839,12 @@ impl Parser {
 
                         // Mark that parent has seen a non-option child
                         self.mark_non_option_child(parent_id);
-                    } else if OptionParser::is_option_line(content.trim()) {
-                        // Parse as option
-                        let result = match self.option_parser.parse(content.trim(), &mut context) {
+                    } else {
+                        let set_result = match self.parse_set_statement(
+                            content.trim(),
+                            context.current_line,
+                            &context.database,
+                        ) {
                             Ok(result) => result,
                             Err(e) => {
                                 self.collect_error_and_skip(e, &mut context);
@@ -806,138 +852,249 @@ impl Parser {
                             }
                         };
 
-                        // Find parent block
-                        let parent_id = if level < self.last_section_at_level.len() {
-                            // There's a section at this level, use it as parent
-                            Some(self.last_section_at_level[level])
-                        } else if level == 0 {
-                            // At level 0 with no section, use first block (Start or a Section)
-                            self.last_block_at_level.first().copied()
-                        } else if level <= self.last_block_at_level.len() {
-                            // No section at this level, use last block at previous level
-                            self.last_block_at_level.get(level - 1).copied()
-                        } else {
-                            self.collect_error_and_skip(
-                                ParseError::InvalidIndentation {
+                        if let Some(set_result) = set_result {
+                            // Find parent block: check if there's a section at this level first
+                            let parent_id = if level < self.last_section_at_level.len() {
+                                // There's a section at this level, use it as parent
+                                Some(self.last_section_at_level[level])
+                            } else if level == 0 {
+                                // At level 0 with no section, use first block (Start or a Section)
+                                self.last_block_at_level.first().copied()
+                            } else if level <= self.last_block_at_level.len() {
+                                // No section at this level, pop back to find parent
+                                while self.last_block_at_level.len() > level {
+                                    self.last_block_at_level.pop();
+                                }
+                                self.last_block_at_level.last().copied()
+                            } else {
+                                return Err(ParseError::InvalidIndentation {
                                     message: format!("found {} spaces in: {}", level * 2, content),
                                     file: self.file_path.clone(),
                                     line: context.current_line,
+                                });
+                            };
+
+                            let block = Block::with_line(
+                                BlockType::SetVariable {
+                                    variable_id: set_result.variable_id,
+                                    value: set_result.value,
                                 },
-                                &mut context,
+                                parent_id,
+                                level,
+                                context.current_line,
                             );
-                            continue;
-                        };
+                            let block_id = context.database.add_block(block);
 
-                        // Options at root level (level 0) or without a parent are invalid
-                        if level == 0 || parent_id.is_none() {
-                            self.collect_error_and_skip(
-                                ParseError::OptionsWithoutParent {
-                                    file: self.file_path.clone(),
-                                    line: context.current_line,
-                                },
-                                &mut context,
-                            );
-                            continue;
-                        }
-
-                        let parent_id = parent_id.unwrap();
-                        let parent_block = &context.database.blocks[parent_id];
-
-                        // Parent must be a String or Option block
-                        if !matches!(
-                            parent_block.block_type,
-                            BlockType::String(_) | BlockType::Option(_)
-                        ) {
-                            self.collect_error_and_skip(
-                                ParseError::OptionsWithoutParent {
-                                    file: self.file_path.clone(),
-                                    line: context.current_line,
-                                },
-                                &mut context,
-                            );
-                            continue;
-                        }
-
-                        // Options cannot have non-option siblings before them
-                        if self
-                            .seen_non_option_by_parent
-                            .get(&parent_id)
-                            .copied()
-                            .unwrap_or(false)
-                        {
-                            self.collect_error_and_skip(
-                                ParseError::OptionsWithoutParent {
-                                    file: self.file_path.clone(),
-                                    line: context.current_line,
-                                },
-                                &mut context,
-                            );
-                            continue;
-                        }
-
-                        // Create option block
-                        let string_id = context.database.add_string(result.text);
-                        let block = Block::with_line(
-                            BlockType::Option(string_id),
-                            Some(parent_id),
-                            level,
-                            context.current_line,
-                        );
-                        let block_id = context.database.add_block(block);
-
-                        // Update last block at this level
-                        if self.last_block_at_level.len() > level {
-                            self.last_block_at_level.truncate(level);
-                        }
-                        if level >= self.last_block_at_level.len() {
-                            self.last_block_at_level.push(block_id);
-                        } else {
-                            self.last_block_at_level[level] = block_id;
-                        }
-                    } else {
-                        // Parse as regular string
-                        let result = self.line_parser.parse(content.trim(), &mut context)?;
-
-                        // Find parent block: check if there's a section at this level first
-                        let parent_id = if level < self.last_section_at_level.len() {
-                            // There's a section at this level, use it as parent
-                            Some(self.last_section_at_level[level])
-                        } else if level == 0 {
-                            // At level 0 with no section, use first block (Start or a Section)
-                            self.last_block_at_level.first().copied()
-                        } else if level <= self.last_block_at_level.len() {
-                            // No section at this level, pop back to find parent
-                            while self.last_block_at_level.len() > level {
-                                self.last_block_at_level.pop();
+                            if level >= self.last_block_at_level.len() {
+                                self.last_block_at_level.push(block_id);
+                            } else {
+                                self.last_block_at_level[level] = block_id;
                             }
-                            self.last_block_at_level.last().copied()
-                        } else {
-                            return Err(ParseError::InvalidIndentation {
-                                message: format!("found {} spaces in: {}", level * 2, content),
-                                file: self.file_path.clone(),
-                                line: context.current_line,
-                            });
-                        };
 
-                        // Create new block
-                        let string_id = context.database.add_string(result.string);
-                        let block = Block::with_line(
-                            BlockType::String(string_id),
-                            parent_id,
-                            level,
-                            context.current_line,
-                        );
-                        let block_id = context.database.add_block(block);
-
-                        // Update last block at this level
-                        if level >= self.last_block_at_level.len() {
-                            self.last_block_at_level.push(block_id);
+                            self.mark_non_option_child(parent_id);
                         } else {
-                            self.last_block_at_level[level] = block_id;
+                            let require_result = match self.parse_require_statement(
+                                content.trim(),
+                                context.current_line,
+                                &context.database,
+                            ) {
+                                Ok(result) => result,
+                                Err(e) => {
+                                    self.collect_error_and_skip(e, &mut context);
+                                    continue;
+                                }
+                            };
+
+                            if let Some(require_result) = require_result {
+                                // Find parent block: check if there's a section at this level first
+                                let parent_id = if level < self.last_section_at_level.len() {
+                                    // There's a section at this level, use it as parent
+                                    Some(self.last_section_at_level[level])
+                                } else if level == 0 {
+                                    // At level 0 with no section, use first block (Start or a Section)
+                                    self.last_block_at_level.first().copied()
+                                } else if level <= self.last_block_at_level.len() {
+                                    // No section at this level, pop back to find parent
+                                    while self.last_block_at_level.len() > level {
+                                        self.last_block_at_level.pop();
+                                    }
+                                    self.last_block_at_level.last().copied()
+                                } else {
+                                    return Err(ParseError::InvalidIndentation {
+                                        message: format!("found {} spaces in: {}", level * 2, content),
+                                        file: self.file_path.clone(),
+                                        line: context.current_line,
+                                    });
+                                };
+
+                                let block = Block::with_line(
+                                    BlockType::RequireVariable {
+                                        variable_id: require_result.variable_id,
+                                        operator: require_result.operator,
+                                        value: require_result.value,
+                                    },
+                                    parent_id,
+                                    level,
+                                    context.current_line,
+                                );
+                                let block_id = context.database.add_block(block);
+
+                                if level >= self.last_block_at_level.len() {
+                                    self.last_block_at_level.push(block_id);
+                                } else {
+                                    self.last_block_at_level[level] = block_id;
+                                }
+
+                                self.mark_non_option_child(parent_id);
+                            } else if OptionParser::is_option_line(content.trim()) {
+                                // Parse as option
+                                let result =
+                                    match self.option_parser.parse(content.trim(), &mut context) {
+                                        Ok(result) => result,
+                                        Err(e) => {
+                                            self.collect_error_and_skip(e, &mut context);
+                                            continue;
+                                        }
+                                    };
+
+                                // Find parent block
+                                let parent_id = if level < self.last_section_at_level.len() {
+                                    // There's a section at this level, use it as parent
+                                    Some(self.last_section_at_level[level])
+                                } else if level == 0 {
+                                    // At level 0 with no section, use first block (Start or a Section)
+                                    self.last_block_at_level.first().copied()
+                                } else if level <= self.last_block_at_level.len() {
+                                    // No section at this level, use last block at previous level
+                                    self.last_block_at_level.get(level - 1).copied()
+                                } else {
+                                    self.collect_error_and_skip(
+                                        ParseError::InvalidIndentation {
+                                            message: format!(
+                                                "found {} spaces in: {}",
+                                                level * 2,
+                                                content
+                                            ),
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        },
+                                        &mut context,
+                                    );
+                                    continue;
+                                };
+
+                                // Options at root level (level 0) or without a parent are invalid
+                                if level == 0 || parent_id.is_none() {
+                                    self.collect_error_and_skip(
+                                        ParseError::OptionsWithoutParent {
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        },
+                                        &mut context,
+                                    );
+                                    continue;
+                                }
+
+                                let parent_id = parent_id.unwrap();
+                                let parent_block = &context.database.blocks[parent_id];
+
+                                // Parent must be a String or Option block
+                                if !matches!(
+                                    parent_block.block_type,
+                                    BlockType::String(_) | BlockType::Option(_)
+                                ) {
+                                    self.collect_error_and_skip(
+                                        ParseError::OptionsWithoutParent {
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        },
+                                        &mut context,
+                                    );
+                                    continue;
+                                }
+
+                                // Options cannot have non-option siblings before them
+                                if self
+                                    .seen_non_option_by_parent
+                                    .get(&parent_id)
+                                    .copied()
+                                    .unwrap_or(false)
+                                {
+                                    self.collect_error_and_skip(
+                                        ParseError::OptionsWithoutParent {
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        },
+                                        &mut context,
+                                    );
+                                    continue;
+                                }
+
+                                // Create option block
+                                let string_id = context.database.add_string(result.text);
+                                let block = Block::with_line(
+                                    BlockType::Option(string_id),
+                                    Some(parent_id),
+                                    level,
+                                    context.current_line,
+                                );
+                                let block_id = context.database.add_block(block);
+
+                                // Update last block at this level
+                                if self.last_block_at_level.len() > level {
+                                    self.last_block_at_level.truncate(level);
+                                }
+                                if level >= self.last_block_at_level.len() {
+                                    self.last_block_at_level.push(block_id);
+                                } else {
+                                    self.last_block_at_level[level] = block_id;
+                                }
+                            } else {
+                                // Parse as regular string
+                                let result = self.line_parser.parse(content.trim(), &mut context)?;
+
+                                // Find parent block: check if there's a section at this level first
+                                let parent_id = if level < self.last_section_at_level.len() {
+                                    // There's a section at this level, use it as parent
+                                    Some(self.last_section_at_level[level])
+                                } else if level == 0 {
+                                    // At level 0 with no section, use first block (Start or a Section)
+                                    self.last_block_at_level.first().copied()
+                                } else if level <= self.last_block_at_level.len() {
+                                    // No section at this level, pop back to find parent
+                                    while self.last_block_at_level.len() > level {
+                                        self.last_block_at_level.pop();
+                                    }
+                                    self.last_block_at_level.last().copied()
+                                } else {
+                                    return Err(ParseError::InvalidIndentation {
+                                        message: format!("found {} spaces in: {}", level * 2, content),
+                                        file: self.file_path.clone(),
+                                        line: context.current_line,
+                                    });
+                                };
+
+                                // Create new block
+                                let string_id = context.database.add_string(result.string);
+                                let block = Block::with_line(
+                                    BlockType::String(string_id),
+                                    parent_id,
+                                    level,
+                                    context.current_line,
+                                );
+                                let block_id = context.database.add_block(block);
+
+                                // Update last block at this level
+                                if level >= self.last_block_at_level.len() {
+                                    self.last_block_at_level.push(block_id);
+                                } else {
+                                    self.last_block_at_level[level] = block_id;
+                                }
+
+                                // Mark that parent has seen a non-option child
+                                self.mark_non_option_child(parent_id);
+                            }
                         }
-
-                        // Mark that parent has seen a non-option child
-                        self.mark_non_option_child(parent_id);
                     }
                 }
             }
@@ -1050,6 +1207,143 @@ impl Parser {
         database.add_variable(name_part.to_string(), definition);
 
         Ok(())
+    }
+
+    fn parse_set_statement(
+        &self,
+        line: &str,
+        line_number: usize,
+        database: &Database,
+    ) -> Result<Option<SetStatement>, ParseError> {
+        if line != "set" && !line.starts_with("set ") {
+            return Ok(None);
+        }
+
+        let rest = line.strip_prefix("set").unwrap_or("").trim();
+        if rest.is_empty() {
+            return Err(ParseError::InvalidSetSyntax { line: line_number });
+        }
+
+        let (name_part, value_part) = match rest.split_once('=') {
+            Some((name, value)) => (name.trim(), value.trim()),
+            None => {
+                return Err(ParseError::InvalidSetSyntax { line: line_number });
+            }
+        };
+
+        if name_part.is_empty() {
+            return Err(ParseError::MissingVariableName { line: line_number });
+        }
+
+        let variable_id = match database.variable_registry.get(name_part) {
+            Some(&variable_id) => variable_id,
+            None => {
+                return Err(ParseError::UnknownVariableName {
+                    name: name_part.to_string(),
+                    line: line_number,
+                })
+            }
+        };
+
+        if value_part.is_empty() {
+            return Err(ParseError::InvalidIntegerValue {
+                name: name_part.to_string(),
+                value: value_part.to_string(),
+                line: line_number,
+            });
+        }
+
+        let value = match value_part.parse::<i64>() {
+            Ok(value) => VariableValue::Integer(value),
+            Err(_) => {
+                return Err(ParseError::InvalidIntegerValue {
+                    name: name_part.to_string(),
+                    value: value_part.to_string(),
+                    line: line_number,
+                })
+            }
+        };
+
+        Ok(Some(SetStatement { variable_id, value }))
+    }
+
+    fn parse_require_statement(
+        &self,
+        line: &str,
+        line_number: usize,
+        database: &Database,
+    ) -> Result<Option<RequireStatement>, ParseError> {
+        if line != "require" && !line.starts_with("require ") {
+            return Ok(None);
+        }
+
+        let rest = line.strip_prefix("require").unwrap_or("").trim();
+        if rest.is_empty() {
+            return Err(ParseError::InvalidRequireSyntax { line: line_number });
+        }
+
+        let parts: Vec<&str> = rest.split_whitespace().collect();
+        if parts.len() != 3 {
+            return Err(ParseError::InvalidRequireSyntax { line: line_number });
+        }
+
+        let name_part = parts[0];
+        let operator_part = parts[1];
+        let value_part = parts[2];
+
+        if name_part.is_empty() {
+            return Err(ParseError::MissingVariableName { line: line_number });
+        }
+
+        let variable_id = match database.variable_registry.get(name_part) {
+            Some(&variable_id) => variable_id,
+            None => {
+                return Err(ParseError::UnknownVariableName {
+                    name: name_part.to_string(),
+                    line: line_number,
+                })
+            }
+        };
+
+        let operator = match operator_part {
+            "=" | "==" => ComparisonOperator::Equal,
+            "!=" => ComparisonOperator::NotEqual,
+            "<" => ComparisonOperator::LessThan,
+            "<=" => ComparisonOperator::LessThanOrEqual,
+            ">" => ComparisonOperator::GreaterThan,
+            ">=" => ComparisonOperator::GreaterThanOrEqual,
+            _ => {
+                return Err(ParseError::InvalidRequireOperator {
+                    operator: operator_part.to_string(),
+                    line: line_number,
+                })
+            }
+        };
+
+        if value_part.is_empty() {
+            return Err(ParseError::InvalidIntegerValue {
+                name: name_part.to_string(),
+                value: value_part.to_string(),
+                line: line_number,
+            });
+        }
+
+        let value = match value_part.parse::<i64>() {
+            Ok(value) => VariableValue::Integer(value),
+            Err(_) => {
+                return Err(ParseError::InvalidIntegerValue {
+                    name: name_part.to_string(),
+                    value: value_part.to_string(),
+                    line: line_number,
+                })
+            }
+        };
+
+        Ok(Some(RequireStatement {
+            variable_id,
+            operator,
+            value,
+        }))
     }
 
     fn parse_indentation<'a>(
@@ -1659,7 +1953,9 @@ impl Parser {
                 | BlockType::GoToAndBack(_)
                 | BlockType::GoToStart
                 | BlockType::GoToRestart
-                | BlockType::GoToEnd => return true,
+                | BlockType::GoToEnd
+                | BlockType::SetVariable { .. }
+                | BlockType::RequireVariable { .. } => return true,
                 BlockType::Section(_) => {
                     // Recursively check subsections
                     if Self::section_has_content(database, child_id) {
@@ -1684,6 +1980,9 @@ impl Parser {
                 | BlockType::GoToRestart
                 | BlockType::GoToEnd => {
                     has_any_blocks = true;
+                }
+                BlockType::SetVariable { .. } | BlockType::RequireVariable { .. } => {
+                    return false;
                 }
                 BlockType::Section(_) => {
                     // For subsections, recursively check
@@ -2305,5 +2604,35 @@ mod test {
             }
             err => panic!("Expected DuplicateVariableName error, got: {:?}", err),
         }
+    }
+
+    #[test]
+    fn test_parse_set_statement_block() {
+        let script = "--- variables\nint score\n---\nset score = 5\nHello";
+        let mut parser = Parser::new();
+        let result = parser.parse(script);
+
+        assert!(result.is_ok(), "Expected ok, got error: {:?}", result);
+        let (database, _warnings) = result.unwrap();
+
+        assert!(database
+            .blocks
+            .iter()
+            .any(|block| matches!(block.block_type, BlockType::SetVariable { .. })));
+    }
+
+    #[test]
+    fn test_parse_require_statement_block() {
+        let script = "--- variables\nint score = 5\n---\nrequire score >= 3\nHello";
+        let mut parser = Parser::new();
+        let result = parser.parse(script);
+
+        assert!(result.is_ok(), "Expected ok, got error: {:?}", result);
+        let (database, _warnings) = result.unwrap();
+
+        assert!(database
+            .blocks
+            .iter()
+            .any(|block| matches!(block.block_type, BlockType::RequireVariable { .. })));
     }
 }

@@ -343,7 +343,7 @@ fn handle_goto_command(
 
 fn report_runtime_error(runtime: &mut cuentitos_runtime::Runtime) -> bool {
     if let Some(err) = runtime.take_last_error() {
-        eprintln!("{}", err);
+        println!("{}", err);
         return true;
     }
     false
@@ -367,7 +367,9 @@ fn render_path_from(runtime: &cuentitos_runtime::Runtime, start_idx: usize) {
             | cuentitos_common::BlockType::GoToAndBack(_)
             | cuentitos_common::BlockType::GoToStart
             | cuentitos_common::BlockType::GoToRestart
-            | cuentitos_common::BlockType::GoToEnd => {
+            | cuentitos_common::BlockType::GoToEnd
+            | cuentitos_common::BlockType::SetVariable { .. }
+            | cuentitos_common::BlockType::RequireVariable { .. } => {
                 // Goto blocks are not rendered - they're navigation commands
             }
             cuentitos_common::BlockType::Option(_) => {

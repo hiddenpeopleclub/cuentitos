@@ -12,6 +12,8 @@ pub enum RuntimeError {
     InvalidPath { message: String },
     /// Runtime is not currently running
     NotRunning,
+    /// Variable requirement failed
+    RequirementFailed { message: String },
 }
 
 impl fmt::Display for RuntimeError {
@@ -28,6 +30,9 @@ impl fmt::Display for RuntimeError {
             }
             RuntimeError::NotRunning => {
                 write!(f, "ERROR: Runtime is not running")
+            }
+            RuntimeError::RequirementFailed { message } => {
+                write!(f, "ERROR: Requirement failed: {}", message)
             }
         }
     }

@@ -5,6 +5,29 @@ pub enum VariableType {
     Integer,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ComparisonOperator {
+    Equal,
+    NotEqual,
+    LessThan,
+    LessThanOrEqual,
+    GreaterThan,
+    GreaterThanOrEqual,
+}
+
+impl ComparisonOperator {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ComparisonOperator::Equal => "=",
+            ComparisonOperator::NotEqual => "!=",
+            ComparisonOperator::LessThan => "<",
+            ComparisonOperator::LessThanOrEqual => "<=",
+            ComparisonOperator::GreaterThan => ">",
+            ComparisonOperator::GreaterThanOrEqual => ">=",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum VariableValue {
     Integer(i64),

@@ -14,4 +14,4 @@ pub use block::{Block, BlockId, BlockType};
 pub use database::Database;
 pub use path_resolver::{PathResolutionError, PathResolver, ResolvedPath};
 pub use section::Section;
-pub use variable::{VariableDefinition, VariableType, VariableValue};
+pub use variable::{ComparisonOperator, VariableDefinition, VariableType, VariableValue};
