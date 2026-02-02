@@ -1,6 +1,6 @@
-# Recursive Call with Dot
+# Call Another Section (Non-Recursive)
 
-This test verifies that a section can call itself recursively using <-> .
+This test verifies that a section can call another section using <->.
 
 ## Script
 ```cuentitos
