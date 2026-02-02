@@ -97,6 +97,13 @@ impl Runtime {
     fn find_containing_section(&self, block_id: BlockId) -> Option<BlockId> {
         let mut current_id = block_id;
 
+        if matches!(
+            self.database.blocks[current_id].block_type,
+            BlockType::Section(_)
+        ) {
+            return Some(current_id);
+        }
+
         // Walk up parents until we find a Section block
         while let Some(parent_id) = self
             .database

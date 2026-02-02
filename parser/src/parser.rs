@@ -382,7 +382,15 @@ impl Parser {
                     }
                     self.last_section_at_level.last().copied()
                 } else {
-                    Some(start_id)
+                    self.collect_error_and_skip(
+                        ParseError::InvalidIndentation {
+                            message: format!("found {} spaces in: {}", level * 2, content),
+                            file: self.file_path.clone(),
+                            line: context.current_line,
+                        },
+                        &mut context,
+                    );
+                    continue;
                 };
 
                 // Validate orphaned subsections: if hash_count > 1 (subsection) and parent is start_id, that's an error
@@ -866,7 +874,20 @@ impl Parser {
         line: &'a str,
         context: &ParserContext,
     ) -> Result<(usize, &'a str), ParseError> {
-        let spaces = line.chars().take_while(|c| *c == ' ').count();
+        let mut spaces = 0;
+        for ch in line.chars() {
+            match ch {
+                ' ' => spaces += 1,
+                '\t' => {
+                    return Err(ParseError::InvalidIndentation {
+                        message: "found tab indentation.".to_string(),
+                        file: self.file_path.clone(),
+                        line: context.current_line,
+                    })
+                }
+                _ => break,
+            }
+        }
 
         // Check if indentation is valid (multiple of 2)
         if spaces % 2 != 0 {
@@ -1112,6 +1133,13 @@ impl Parser {
     /// Returns None if the block is at the root level (no containing section).
     fn find_containing_section(&self, database: &Database, block_id: BlockId) -> Option<BlockId> {
         let mut current_id = block_id;
+
+        if matches!(
+            database.blocks[current_id].block_type,
+            BlockType::Section { .. }
+        ) {
+            return Some(current_id);
+        }
 
         // Walk up parents until we find a Section block
         while let Some(parent_id) = database.blocks[current_id].parent_id {
