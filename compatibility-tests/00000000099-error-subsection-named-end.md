@@ -16,5 +16,5 @@ s
 
 ## Result
 ```result
-test.cuentitos:2: ERROR: Section name "END" is reserved: END
+00000000099-error-subsection-named-end.cuentitos:2: ERROR: Section name "END" is reserved: END
 ```

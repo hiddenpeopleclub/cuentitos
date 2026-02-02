@@ -19,5 +19,5 @@ s
 
 ## Result
 ```result
-test.cuentitos:4: ERROR: Section not found: NonExistent
+00000000053-section-not-found-relative.cuentitos:4: ERROR: Section not found: NonExistent
 ```

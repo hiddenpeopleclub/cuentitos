@@ -15,5 +15,5 @@ s
 
 ## Result
 ```result
-test.cuentitos:1: ERROR: Section names cannot contain '\' character: Section \ Name
+00000000061-error-section-name-with-backslash.cuentitos:1: ERROR: Section names cannot contain '\' character: Section \ Name
 ```

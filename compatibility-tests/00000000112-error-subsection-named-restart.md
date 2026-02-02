@@ -16,5 +16,5 @@ s
 
 ## Result
 ```result
-test.cuentitos:2: ERROR: Section name "RESTART" is reserved: RESTART
+00000000112-error-subsection-named-restart.cuentitos:2: ERROR: Section name "RESTART" is reserved: RESTART
 ```

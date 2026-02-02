@@ -18,5 +18,5 @@ s
 
 ## Result
 ```result
-test.cuentitos:2: ERROR: Expected section name after '->'
+00000000055-malformed-trailing-backslash.cuentitos:2: ERROR: Expected section names separated by ' \\ '
 ```

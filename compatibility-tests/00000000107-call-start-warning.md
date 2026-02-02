@@ -17,7 +17,7 @@ n,n,n,n,n,n,n,n,n,n,q
 
 ## Result
 ```result
-test.cuentitos:3: WARNING: <-> START will not return (restarts from beginning)
+00000000107-call-start-warning.cuentitos:3: WARNING: <-> START will not return (restarts from beginning)
 START
 -> Section A
 Text in A

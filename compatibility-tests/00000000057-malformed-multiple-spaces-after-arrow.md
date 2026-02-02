@@ -18,7 +18,7 @@ s
 
 ## Result
 ```result
-test.cuentitos:2: WARNING: Section name has leading/trailing whitespace: ' Section B'. Trimmed to 'Section B'
+00000000057-malformed-multiple-spaces-after-arrow.cuentitos:2: WARNING: Section name has leading/trailing whitespace: ' Section B'. Trimmed to 'Section B'
 START
 -> Section A
 -> Section B

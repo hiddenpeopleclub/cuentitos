@@ -20,5 +20,14 @@ s
 
 ## Result
 ```result
-test.cuentitos:4: ERROR: Section not found: .. \ Child B
+START
+-> Root
+-> Root \ Child A
+In Child A
+-> Root \ Child B
+In Child B
+Back in Child A
+-> Root \ Child B
+In Child B
+END
 ```

@@ -16,5 +16,5 @@ s
 
 ## Result
 ```result
-test.cuentitos:3: ERROR: Expected section name after '<->'
+00000000091-error-call-malformed-syntax.cuentitos:3: ERROR: Expected section name after '<->'
 ```

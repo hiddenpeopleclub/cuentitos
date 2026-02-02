@@ -18,5 +18,5 @@ n
 
 ## Result
 ```result
-test.cuentitos:4: ERROR: Section without title: found empty section title.
+00000000013-section-without-title.cuentitos:4: ERROR: Section without title: found empty section title.
 ```

@@ -20,5 +20,5 @@ s
 
 ## Result
 ```result
-test.cuentitos:1: ERROR: Invalid section hierarchy: found sub-section without parent section.
+00000000014-subsection-without-parent.cuentitos:1: ERROR: Invalid section hierarchy: found sub-section without parent section.
 ```

@@ -17,7 +17,7 @@ s
 
 ## Result
 ```result
-test.cuentitos:1: ERROR: Options must have a parent
+00000000130-error-options-without-parent.cuentitos:1: ERROR: Options must have a parent
 
-test.cuentitos:3: ERROR: Options must have a parent
+00000000130-error-options-without-parent.cuentitos:3: ERROR: Options must have a parent
 ```

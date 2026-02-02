@@ -18,6 +18,8 @@ pub enum PathResolutionError {
     InvalidPath { message: String },
 }
 
+const BACKSLASH_SPACING_ERROR: &str = "Expected section names separated by ' \\\\ '";
+
 /// Resolves section paths to SectionIds or special targets
 pub struct PathResolver<'a> {
     database: &'a Database,
@@ -50,15 +52,33 @@ impl<'a> PathResolver<'a> {
         // Validate path doesn't end with backslash (trailing backslash)
         if path.ends_with(" \\") || path.ends_with('\\') {
             return Err(PathResolutionError::InvalidPath {
-                message: "Expected section name after '->'".to_string(),
+                message: BACKSLASH_SPACING_ERROR.to_string(),
             });
         }
 
         // Validate path doesn't start with backslash (leading backslash)
         if path.starts_with("\\ ") || path.starts_with('\\') {
             return Err(PathResolutionError::InvalidPath {
-                message: "Expected section name after '->'".to_string(),
+                message: BACKSLASH_SPACING_ERROR.to_string(),
             });
+        }
+
+        // Validate spacing around backslashes (must be " \\ ")
+        if path.contains('\\') {
+            let parts: Vec<&str> = path.split(" \\ ").collect();
+            let backslash_count = path.matches('\\').count();
+            if parts.len() != backslash_count + 1 {
+                return Err(PathResolutionError::InvalidPath {
+                    message: BACKSLASH_SPACING_ERROR.to_string(),
+                });
+            }
+            for part in &parts {
+                if part.trim().is_empty() {
+                    return Err(PathResolutionError::InvalidPath {
+                        message: BACKSLASH_SPACING_ERROR.to_string(),
+                    });
+                }
+            }
         }
 
         // Handle special keywords
@@ -92,7 +112,7 @@ impl<'a> PathResolver<'a> {
         for segment in &segments {
             if segment.is_empty() {
                 return Err(PathResolutionError::InvalidPath {
-                    message: "Expected section name after '->'".to_string(),
+                    message: BACKSLASH_SPACING_ERROR.to_string(),
                 });
             }
         }
@@ -100,7 +120,7 @@ impl<'a> PathResolver<'a> {
         // Check if segments is empty (shouldn't happen with trim, but defensive)
         if segments.is_empty() {
             return Err(PathResolutionError::InvalidPath {
-                message: "Expected section name after '->'".to_string(),
+                message: BACKSLASH_SPACING_ERROR.to_string(),
             });
         }
 
@@ -166,30 +186,31 @@ impl<'a> PathResolver<'a> {
             // If there are more segments, resolve them
             if segment_index < segments.len() {
                 if let Some(section_block_id) = current_section {
-                    // Look for the rest of the path as siblings
                     let remaining_path = segments[segment_index..].join(" \\ ");
-                    if let Some(sibling_block_id) =
-                        self.find_sibling_section(section_block_id, &remaining_path)
-                    {
-                        if let Some(section_id) = self.get_section_id(sibling_block_id) {
-                            return Ok(ResolvedPath::Section(section_id));
-                        }
-                    }
-                    // Try building the full path from current section
+
+                    // 1) Prefer resolving as a child path from the resolved parent
                     let current_path = self.build_section_path_string(section_block_id);
-                    if let Some(parent_id) = self.database.blocks[section_block_id].parent_id {
-                        let full_path = if current_path.is_empty() {
-                            remaining_path.clone()
-                        } else {
-                            format!(
-                                "{} \\ {}",
-                                self.build_section_path_string(parent_id),
-                                remaining_path
-                            )
-                        };
-                        if let Some(&section_id) = self.section_registry.get(&full_path) {
-                            return Ok(ResolvedPath::Section(section_id));
-                        }
+                    let child_full_path = if current_path.is_empty() {
+                        remaining_path.clone()
+                    } else {
+                        format!("{} \\ {}", current_path, remaining_path)
+                    };
+                    if let Some(&section_id) = self.section_registry.get(&child_full_path) {
+                        return Ok(ResolvedPath::Section(section_id));
+                    }
+
+                    // 2) If not found, try as a sibling path (relative to parent section)
+                    let parent_path = self
+                        .find_parent_section(section_block_id)
+                        .map(|parent_id| self.build_section_path_string(parent_id))
+                        .unwrap_or_default();
+                    let sibling_full_path = if parent_path.is_empty() {
+                        remaining_path.clone()
+                    } else {
+                        format!("{} \\ {}", parent_path, remaining_path)
+                    };
+                    if let Some(&section_id) = self.section_registry.get(&sibling_full_path) {
+                        return Ok(ResolvedPath::Section(section_id));
                     }
                 }
             } else {
@@ -212,8 +233,8 @@ impl<'a> PathResolver<'a> {
         for &child_id in &self.database.blocks[parent_id].children {
             if let BlockType::Section(section_id) = &self.database.blocks[child_id].block_type {
                 let section = &self.database.sections[*section_id];
-                let section_name = &self.database.strings[section.name];
-                if section_name == name {
+                let section_id_name = &self.database.strings[section.id];
+                if section_id_name == name {
                     return Some(child_id);
                 }
             }
@@ -229,8 +250,8 @@ impl<'a> PathResolver<'a> {
                     if let BlockType::Section(sec_id) = &self.database.blocks[sibling_id].block_type
                     {
                         let section = &self.database.sections[*sec_id];
-                        let section_name = &self.database.strings[section.name];
-                        if section_name == name {
+                        let section_id_name = &self.database.strings[section.id];
+                        if section_id_name == name {
                             return Some(sibling_id);
                         }
                     }
@@ -271,12 +292,12 @@ impl<'a> PathResolver<'a> {
         let mut path_parts = Vec::new();
         let mut current_id = block_id;
 
-        // Walk up the parent chain, collecting section names
+        // Walk up the parent chain, collecting section ids
         while let Some(parent_id) = self.database.blocks[current_id].parent_id {
             if let BlockType::Section(section_id) = &self.database.blocks[current_id].block_type {
                 let section = &self.database.sections[*section_id];
-                let name = &self.database.strings[section.name];
-                path_parts.push(name.clone());
+                let id_name = &self.database.strings[section.id];
+                path_parts.push(id_name.clone());
             }
             current_id = parent_id;
         }
@@ -304,7 +325,13 @@ mod tests {
         let root_path_id = db.add_string("Root".to_string());
         let root_block = Block::new(BlockType::Section(0), Some(start_id), 0);
         let root_block_id = db.add_block(root_block);
-        let root_section = Section::new(root_block_id, root_name_id, root_path_id);
+        let root_section = Section::new(
+            root_block_id,
+            root_name_id,
+            root_name_id,
+            root_path_id,
+            root_path_id,
+        );
         let root_section_id = db.add_section(root_section);
         db.blocks[root_block_id].block_type = BlockType::Section(root_section_id);
         db.section_registry
@@ -315,7 +342,13 @@ mod tests {
         let child_a_path_id = db.add_string("Root \\ Child A".to_string());
         let child_a_block = Block::new(BlockType::Section(0), Some(root_block_id), 1);
         let child_a_block_id = db.add_block(child_a_block);
-        let child_a_section = Section::new(child_a_block_id, child_a_name_id, child_a_path_id);
+        let child_a_section = Section::new(
+            child_a_block_id,
+            child_a_name_id,
+            child_a_name_id,
+            child_a_path_id,
+            child_a_path_id,
+        );
         let child_a_section_id = db.add_section(child_a_section);
         db.blocks[child_a_block_id].block_type = BlockType::Section(child_a_section_id);
         db.section_registry
@@ -326,7 +359,13 @@ mod tests {
         let child_b_path_id = db.add_string("Root \\ Child B".to_string());
         let child_b_block = Block::new(BlockType::Section(0), Some(root_block_id), 1);
         let child_b_block_id = db.add_block(child_b_block);
-        let child_b_section = Section::new(child_b_block_id, child_b_name_id, child_b_path_id);
+        let child_b_section = Section::new(
+            child_b_block_id,
+            child_b_name_id,
+            child_b_name_id,
+            child_b_path_id,
+            child_b_path_id,
+        );
         let child_b_section_id = db.add_section(child_b_section);
         db.blocks[child_b_block_id].block_type = BlockType::Section(child_b_section_id);
         db.section_registry
@@ -337,8 +376,13 @@ mod tests {
         let grandchild_path_id = db.add_string("Root \\ Child B \\ Grandchild".to_string());
         let grandchild_block = Block::new(BlockType::Section(0), Some(child_b_block_id), 2);
         let grandchild_block_id = db.add_block(grandchild_block);
-        let grandchild_section =
-            Section::new(grandchild_block_id, grandchild_name_id, grandchild_path_id);
+        let grandchild_section = Section::new(
+            grandchild_block_id,
+            grandchild_name_id,
+            grandchild_name_id,
+            grandchild_path_id,
+            grandchild_path_id,
+        );
         let grandchild_section_id = db.add_section(grandchild_section);
         db.blocks[grandchild_block_id].block_type = BlockType::Section(grandchild_section_id);
         db.section_registry.insert(
@@ -469,7 +513,7 @@ mod tests {
         assert_eq!(
             resolver.resolve_path("Root \\", None),
             Err(PathResolutionError::InvalidPath {
-                message: "Expected section name after '->'".to_string()
+                message: BACKSLASH_SPACING_ERROR.to_string()
             })
         );
     }
@@ -491,7 +535,7 @@ mod tests {
         assert_eq!(
             resolver.resolve_path("Root \\", None),
             Err(PathResolutionError::InvalidPath {
-                message: "Expected section name after '->'".to_string()
+                message: BACKSLASH_SPACING_ERROR.to_string()
             })
         );
 
@@ -500,7 +544,7 @@ mod tests {
         assert_eq!(
             resolver.resolve_path("Root \\ \\", None),
             Err(PathResolutionError::InvalidPath {
-                message: "Expected section name after '->'".to_string()
+                message: BACKSLASH_SPACING_ERROR.to_string()
             })
         );
 
@@ -508,7 +552,7 @@ mod tests {
         assert_eq!(
             resolver.resolve_path("\\ Root", None),
             Err(PathResolutionError::InvalidPath {
-                message: "Expected section name after '->'".to_string()
+                message: BACKSLASH_SPACING_ERROR.to_string()
             })
         );
     }

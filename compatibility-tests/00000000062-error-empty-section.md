@@ -17,5 +17,5 @@ s
 
 ## Result
 ```result
-test.cuentitos:1: ERROR: Section must contain at least one block: Section A
+00000000062-error-empty-section.cuentitos:1: ERROR: Section must contain at least one block: Section A
 ```
