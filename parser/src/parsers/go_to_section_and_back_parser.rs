@@ -73,9 +73,11 @@ impl FeatureParser for GoToSectionAndBackParser {
 impl GoToSectionAndBackParser {
     /// Validate spacing rules in the path
     fn validate_path_spacing(path: &str) -> Result<(), String> {
+        const BACKSLASH_SPACING_ERROR: &str = "Expected section names separated by ' \\\\ '";
+
         // Check for trailing backslash
         if path.trim_end().ends_with('\\') {
-            return Err("Expected section name after '<->'".to_string());
+            return Err(BACKSLASH_SPACING_ERROR.to_string());
         }
 
         // If path contains \, validate spacing around it
@@ -88,13 +90,13 @@ impl GoToSectionAndBackParser {
             // then spacing is wrong
             let backslash_count = path.matches('\\').count();
             if parts.len() != backslash_count + 1 {
-                return Err("Expected section name after '<->'".to_string());
+                return Err(BACKSLASH_SPACING_ERROR.to_string());
             }
 
             // Check that no part is empty (would indicate " \ \ " or "\ " or " \" patterns)
             for part in &parts {
                 if part.trim().is_empty() {
-                    return Err("Expected section name after '<->'".to_string());
+                    return Err(BACKSLASH_SPACING_ERROR.to_string());
                 }
             }
         }

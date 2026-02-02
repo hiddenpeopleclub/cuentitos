@@ -19,5 +19,5 @@ s
 
 ## Result
 ```result
-00000000058-malformed-wrong-spacing-in-path.cuentitos:6: ERROR: Expected section name after '->'
+00000000058-malformed-wrong-spacing-in-path.cuentitos:6: ERROR: Expected section names separated by ' \\ '
 ```

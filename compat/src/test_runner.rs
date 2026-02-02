@@ -18,29 +18,58 @@ pub struct TestRunner {
     runtime_path: PathBuf,
 }
 
+struct TempFileGuard {
+    path: PathBuf,
+    dir: PathBuf,
+}
+
+impl TempFileGuard {
+    fn new(path: PathBuf, dir: PathBuf) -> Self {
+        Self { path, dir }
+    }
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+        let _ = std::fs::remove_dir(&self.dir);
+    }
+}
+
 impl TestRunner {
     pub fn from_path(path: PathBuf) -> Self {
         TestRunner { runtime_path: path }
     }
 
     pub fn run(&self, test_case: TestCase) -> TestResult {
-        // Create a temporary file named after the test case to avoid race conditions
-        let temp_filename = format!(
-            "{}.cuentitos",
-            test_case
-                .path
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-        );
-        let mut file = File::create(&temp_filename).unwrap();
+        // Create a temporary file in the system temp directory
+        let file_stem = test_case
+            .path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let temp_dir = std::env::temp_dir().join(format!(
+            "cuentitos-compat-{}-{}",
+            std::process::id(),
+            unique
+        ));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let temp_path = temp_dir.join(format!("{}.cuentitos", file_stem));
+        let _temp_guard = TempFileGuard::new(temp_path.clone(), temp_dir);
+        let mut file = File::create(&temp_path).unwrap();
         writeln!(file, "{}", test_case.script).unwrap();
 
         let input_commands = test_case.input.split("\n").collect::<Vec<&str>>().join(",");
 
         // Run the runtime with the script file and the input from the test case
         let result = match Command::new(&self.runtime_path)
-            .args(["run", &temp_filename, &input_commands])
+            .arg("run")
+            .arg(&temp_path)
+            .arg(&input_commands)
             .output()
         {
             Ok(result) => {
@@ -65,9 +94,6 @@ impl TestRunner {
                 }
             }
         };
-
-        // Remove temporary file
-        std::fs::remove_file(&temp_filename).unwrap();
 
         result
     }

@@ -354,7 +354,6 @@ impl Parser {
             if let Some(mut section_result) = section_result {
                 // Check for leading/trailing whitespace in section display name
                 let original_display = section_result.display_name.clone();
-                let original_id = section_result.id.clone();
                 let trimmed_display = original_display.trim();
                 if trimmed_display != original_display {
                     self.warnings.push(Warning {
@@ -367,7 +366,7 @@ impl Parser {
                     });
                     // Update display name; only update id if it matched the original display
                     section_result.display_name = trimmed_display.to_string();
-                    if original_id == original_display {
+                    if section_result.id_is_implicit {
                         section_result.id = trimmed_display.to_string();
                     }
                 }
@@ -496,7 +495,11 @@ impl Parser {
                 let name_string_id = context
                     .database
                     .add_string(section_result.display_name.clone());
-                let id_string_id = context.database.add_string(section_result.id.clone());
+                let id_string_id = if section_result.id_is_implicit {
+                    name_string_id
+                } else {
+                    context.database.add_string(section_result.id.clone())
+                };
                 let path_string_id = context.database.add_string(path_string);
                 let id_path_string_id = context.database.add_string(id_path_string);
 
@@ -1405,11 +1408,15 @@ impl Parser {
                 let section = &database.sections[*section_id];
                 let display_name = &database.strings[section.name];
                 let id_name = &database.strings[section.id];
+                let skip_id_validation = section.id == section.name;
 
-                let checks = [("Section name", display_name), ("Section id", id_name)];
+                let checks = [
+                    ("Section name", display_name, false),
+                    ("Section id", id_name, skip_id_validation),
+                ];
 
-                for (label, name) in checks {
-                    if label == "Section id" && name == display_name {
+                for (label, name, skip) in checks {
+                    if skip {
                         continue;
                     }
 
@@ -1837,13 +1844,13 @@ mod test {
         assert!(result.is_err());
         match result {
             Err(ParseError::InvalidGoToSection { message, line, .. }) => {
-                assert!(message.contains("Expected section name after '->'"));
+                assert!(message.contains("Expected section names separated by ' \\\\ '"));
                 assert_eq!(line, 2);
             }
             Err(ParseError::MultipleErrors { errors }) => {
                 assert!(errors.iter().any(
                     |e| matches!(e, ParseError::InvalidGoToSection { message, line, .. }
-                    if message.contains("Expected section name after '->'") && *line == 2)
+                    if message.contains("Expected section names separated by ' \\\\ '") && *line == 2)
                 ));
             }
             _ => panic!("Expected InvalidGoToSection error"),
@@ -1905,13 +1912,13 @@ mod test {
         assert!(result.is_err());
         match result {
             Err(ParseError::InvalidGoToSection { message, line, .. }) => {
-                assert!(message.contains("Expected section name after '->'"));
+                assert!(message.contains("Expected section names separated by ' \\\\ '"));
                 assert_eq!(line, 4);
             }
             Err(ParseError::MultipleErrors { errors }) => {
                 assert!(errors.iter().any(
                     |e| matches!(e, ParseError::InvalidGoToSection { message, line, .. }
-                    if message.contains("Expected section name after '->'") && *line == 4)
+                    if message.contains("Expected section names separated by ' \\\\ '") && *line == 4)
                 ));
             }
             _ => panic!("Expected InvalidGoToSection error"),

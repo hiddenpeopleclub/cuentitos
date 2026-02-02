@@ -181,7 +181,9 @@ The runtime simply uses the pre-resolved target_block_id, making execution trivi
 ### Error Messages
 
 1. **Section not found**: `"Section not found: {path}"`
-2. **Malformed syntax**: `"Expected section name after '->'"`
+2. **Malformed syntax**:
+   - `"Expected section name after '->'"` (missing name or space after arrow)
+   - `"Expected section names separated by ' \\ '"` (invalid backslash spacing)
 3. **Navigation above root**: `"Cannot navigate above root level"`
 4. **Section name with backslash**: `"Section names cannot contain '\' character: {name}"`
 5. **Empty section**: `"Section must contain at least one block: {name}"`

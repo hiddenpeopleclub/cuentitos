@@ -89,6 +89,9 @@ fn main() {
                                     && !runtime.has_ended()
                                     && runtime.step()
                                 {
+                                    if report_runtime_error(&mut runtime) {
+                                        break;
+                                    }
                                     // If we hit options after stepping, break
                                     if runtime.is_waiting_for_option() {
                                         break;
@@ -222,6 +225,7 @@ fn process_input(input: &str, runtime: &mut cuentitos_runtime::Runtime) -> bool 
         "n" => {
             if runtime.can_continue() {
                 runtime.step();
+                report_runtime_error(runtime);
                 true
             } else {
                 println!("Cannot continue - reached the end of the script.");
@@ -231,6 +235,7 @@ fn process_input(input: &str, runtime: &mut cuentitos_runtime::Runtime) -> bool 
         "s" => {
             if runtime.can_continue() {
                 runtime.skip();
+                report_runtime_error(runtime);
                 true
             } else {
                 println!("Cannot skip - reached the end of the script.");
@@ -322,6 +327,14 @@ fn handle_goto_command(
             true // Continue waiting for input
         }
     }
+}
+
+fn report_runtime_error(runtime: &mut cuentitos_runtime::Runtime) -> bool {
+    if let Some(err) = runtime.take_last_error() {
+        eprintln!("{}", err);
+        return true;
+    }
+    false
 }
 
 fn render_path_from(runtime: &cuentitos_runtime::Runtime, start_idx: usize) {

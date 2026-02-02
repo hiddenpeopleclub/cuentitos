@@ -11,6 +11,7 @@ pub struct SectionParseResult {
     pub id: String,
     pub display_name: String,
     pub hash_count: usize,
+    pub id_is_implicit: bool,
 }
 
 impl SectionParser {
@@ -59,22 +60,27 @@ impl FeatureParser for SectionParser {
 
         // Parse the format - can be either:
         // "Display Name" (without ID - use display name as ID)
-        let (section_id, display_name) = if rest.contains(':') {
+        let (section_id, display_name, id_is_implicit) = if rest.contains(':') {
             let parts: Vec<&str> = rest.splitn(2, ':').collect();
             if parts.len() == 2 {
-                (parts[0].trim().to_string(), parts[1].trim().to_string())
+                (
+                    parts[0].trim().to_string(),
+                    parts[1].trim().to_string(),
+                    false,
+                )
             } else {
-                (rest.to_string(), rest.to_string())
+                (rest.to_string(), rest.to_string(), false)
             }
         } else {
             // Use the display name as the ID when no ID is provided (preserve whitespace for validation)
-            (rest.to_string(), rest.to_string())
+            (rest.to_string(), rest.to_string(), true)
         };
 
         Ok(Some(SectionParseResult {
             id: section_id,
             display_name,
             hash_count,
+            id_is_implicit,
         }))
     }
 }

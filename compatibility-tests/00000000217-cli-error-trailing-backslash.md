@@ -22,7 +22,7 @@ s
 START
 -> Section A
 Text in A
-ERROR: Invalid goto command: Expected section name after '->'
+ERROR: Invalid goto command: Expected section names separated by ' \\ '
 END
 Cannot skip - reached the end of the script.
 ```

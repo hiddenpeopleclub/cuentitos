@@ -18,6 +18,8 @@ pub enum PathResolutionError {
     InvalidPath { message: String },
 }
 
+const BACKSLASH_SPACING_ERROR: &str = "Expected section names separated by ' \\\\ '";
+
 /// Resolves section paths to SectionIds or special targets
 pub struct PathResolver<'a> {
     database: &'a Database,
@@ -50,14 +52,14 @@ impl<'a> PathResolver<'a> {
         // Validate path doesn't end with backslash (trailing backslash)
         if path.ends_with(" \\") || path.ends_with('\\') {
             return Err(PathResolutionError::InvalidPath {
-                message: "Expected section name after '->'".to_string(),
+                message: BACKSLASH_SPACING_ERROR.to_string(),
             });
         }
 
         // Validate path doesn't start with backslash (leading backslash)
         if path.starts_with("\\ ") || path.starts_with('\\') {
             return Err(PathResolutionError::InvalidPath {
-                message: "Expected section name after '->'".to_string(),
+                message: BACKSLASH_SPACING_ERROR.to_string(),
             });
         }
 
@@ -67,13 +69,13 @@ impl<'a> PathResolver<'a> {
             let backslash_count = path.matches('\\').count();
             if parts.len() != backslash_count + 1 {
                 return Err(PathResolutionError::InvalidPath {
-                    message: "Expected section name after '->'".to_string(),
+                    message: BACKSLASH_SPACING_ERROR.to_string(),
                 });
             }
             for part in &parts {
                 if part.trim().is_empty() {
                     return Err(PathResolutionError::InvalidPath {
-                        message: "Expected section name after '->'".to_string(),
+                        message: BACKSLASH_SPACING_ERROR.to_string(),
                     });
                 }
             }
@@ -110,7 +112,7 @@ impl<'a> PathResolver<'a> {
         for segment in &segments {
             if segment.is_empty() {
                 return Err(PathResolutionError::InvalidPath {
-                    message: "Expected section name after '->'".to_string(),
+                    message: BACKSLASH_SPACING_ERROR.to_string(),
                 });
             }
         }
@@ -118,7 +120,7 @@ impl<'a> PathResolver<'a> {
         // Check if segments is empty (shouldn't happen with trim, but defensive)
         if segments.is_empty() {
             return Err(PathResolutionError::InvalidPath {
-                message: "Expected section name after '->'".to_string(),
+                message: BACKSLASH_SPACING_ERROR.to_string(),
             });
         }
 
@@ -511,7 +513,7 @@ mod tests {
         assert_eq!(
             resolver.resolve_path("Root \\", None),
             Err(PathResolutionError::InvalidPath {
-                message: "Expected section name after '->'".to_string()
+                message: BACKSLASH_SPACING_ERROR.to_string()
             })
         );
     }
@@ -533,7 +535,7 @@ mod tests {
         assert_eq!(
             resolver.resolve_path("Root \\", None),
             Err(PathResolutionError::InvalidPath {
-                message: "Expected section name after '->'".to_string()
+                message: BACKSLASH_SPACING_ERROR.to_string()
             })
         );
 
@@ -542,7 +544,7 @@ mod tests {
         assert_eq!(
             resolver.resolve_path("Root \\ \\", None),
             Err(PathResolutionError::InvalidPath {
-                message: "Expected section name after '->'".to_string()
+                message: BACKSLASH_SPACING_ERROR.to_string()
             })
         );
 
@@ -550,7 +552,7 @@ mod tests {
         assert_eq!(
             resolver.resolve_path("\\ Root", None),
             Err(PathResolutionError::InvalidPath {
-                message: "Expected section name after '->'".to_string()
+                message: BACKSLASH_SPACING_ERROR.to_string()
             })
         );
     }
