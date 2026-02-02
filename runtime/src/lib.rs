@@ -20,6 +20,7 @@ struct RuntimeState {
     waiting_for_option_selection: bool,
     current_options: Vec<BlockId>, // IDs of available option blocks
     last_error: Option<RuntimeError>,
+    variables: Vec<VariableValue>,
 }
 
 impl RuntimeState {
@@ -32,11 +33,13 @@ impl RuntimeState {
             waiting_for_option_selection: false,
             current_options: Vec::new(),
             last_error: None,
+            variables: Vec::new(),
         }
     }
 
-    fn with_start_block() -> Self {
+    fn with_start_block(variables: Vec<VariableValue>) -> Self {
         let mut state = Self::new();
+        state.variables = variables;
         state.current_path.push(0); // START block
         state
     }
@@ -73,11 +76,22 @@ impl Runtime {
 
     /// Reset runtime state to initial values
     pub fn reset(&mut self) {
+        let variables = self.build_initial_variables();
         self.state = if !self.database.blocks.is_empty() {
-            RuntimeState::with_start_block()
+            RuntimeState::with_start_block(variables)
         } else {
-            RuntimeState::new()
+            let mut state = RuntimeState::new();
+            state.variables = variables;
+            state
         };
+    }
+
+    fn build_initial_variables(&self) -> Vec<VariableValue> {
+        self.database
+            .variables
+            .iter()
+            .map(|definition| definition.default_value.clone())
+            .collect()
     }
 
     /// Find a section by its path string, resolving relative paths from current context
@@ -178,6 +192,29 @@ impl Runtime {
                 }
             })
             .collect()
+    }
+
+    /// Returns variables sorted alphabetically by name.
+    pub fn list_variables(&self) -> Vec<(String, VariableValue)> {
+        let mut variables: Vec<(String, VariableValue)> = self
+            .database
+            .variables
+            .iter()
+            .enumerate()
+            .map(|(idx, definition)| {
+                let name = self.database.strings[definition.name].clone();
+                let value = self
+                    .state
+                    .variables
+                    .get(idx)
+                    .cloned()
+                    .unwrap_or_else(|| definition.default_value.clone());
+                (name, value)
+            })
+            .collect();
+
+        variables.sort_by(|(left, _), (right, _)| left.cmp(right));
+        variables
     }
 
     /// Returns and clears the last runtime error, if any

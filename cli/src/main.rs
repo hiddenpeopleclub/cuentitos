@@ -70,12 +70,13 @@ fn main() {
                     if !input_string.is_empty() {
                         for input in input_string.split(',') {
                             let trimmed = input.trim();
+                            let is_variable_command = trimmed == "?";
 
                             // Auto-step before processing to reach options/content
                             // This allows tests to use "1,s" or "q" instead of "n,1,s" or "n,q"
                             // Only skip auto-step on first input if it's 'n' or 's'
                             let is_option_number = trimmed.parse::<usize>().is_ok();
-                            let is_step_or_skip = matches!(trimmed, "n" | "s");
+                            let is_step_or_skip = matches!(trimmed, "n" | "s" | "?");
                             let is_first_input = last_rendered_idx == 0;
                             let need_auto_step =
                                 is_option_number || (is_first_input && !is_step_or_skip);
@@ -120,6 +121,17 @@ fn main() {
 
                             // Track if we were already at options before processing
                             let was_at_options = runtime.is_waiting_for_option();
+
+                            if is_variable_command {
+                                render_path_from(&runtime, last_rendered_idx);
+                                last_rendered_idx = runtime.current_path().len();
+                                print_variables(&runtime);
+
+                                if runtime.is_waiting_for_option() {
+                                    display_options(&runtime, was_at_options);
+                                }
+                                continue;
+                            }
 
                             if !process_input(trimmed, &mut runtime) {
                                 break;
@@ -364,6 +376,12 @@ fn render_path_from(runtime: &cuentitos_runtime::Runtime, start_idx: usize) {
             }
             cuentitos_common::BlockType::End => println!("END"),
         }
+    }
+}
+
+fn print_variables(runtime: &cuentitos_runtime::Runtime) {
+    for (name, value) in runtime.list_variables() {
+        println!("{}: {}", name, value.to_display_string());
     }
 }
 

@@ -98,6 +98,26 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    DuplicateVariableName {
+        name: String,
+        line: usize,
+    },
+    MissingVariableName {
+        line: usize,
+    },
+    InvalidIntegerValue {
+        name: String,
+        value: String,
+        line: usize,
+    },
+    InvalidVariableType {
+        name: String,
+        line: usize,
+    },
+    VariablesBlockNotAtTop {
+        line: usize,
+    },
+    UnclosedVariablesBlock,
     MultipleErrors {
         errors: Vec<ParseError>,
     },
@@ -246,6 +266,34 @@ impl fmt::Display for ParseError {
                     .unwrap_or("test.cuentitos");
                 write!(f, "{}:{}: ERROR: Options must have a parent", prefix, line)
             }
+            ParseError::DuplicateVariableName { name, line } => {
+                write!(
+                    f,
+                    "Error: Duplicate variable name '{}' at line {}",
+                    name, line
+                )
+            }
+            ParseError::MissingVariableName { line } => {
+                write!(f, "Error: Missing variable name at line {}", line)
+            }
+            ParseError::InvalidIntegerValue { name, value, line } => {
+                write!(
+                    f,
+                    "Error: Invalid integer value '{}' for variable '{}' at line {}",
+                    value, name, line
+                )
+            }
+            ParseError::InvalidVariableType { name, line } => {
+                write!(f, "Error: Unknown variable type '{}' at line {}", name, line)
+            }
+            ParseError::VariablesBlockNotAtTop { line } => {
+                write!(
+                    f,
+                    "Error: Variables block must appear at top of script at line {}",
+                    line
+                )
+            }
+            ParseError::UnclosedVariablesBlock => write!(f, "Error: Unclosed variables block"),
             ParseError::MultipleErrors { errors } => {
                 for (i, error) in errors.iter().enumerate() {
                     write!(f, "{}", error)?;
@@ -321,13 +369,73 @@ impl Parser {
         self.last_block_at_level.push(start_id);
         self.last_section_at_level.push(start_id); // Start can be parent of top-level sections
 
+        let mut in_variables_block = false;
+        let mut variables_block_started = false;
+        let mut saw_non_variable_content = false;
+        let mut seen_variable_names: HashMap<String, usize> = HashMap::new();
+        let mut variable_errors: Vec<ParseError> = Vec::new();
+
         // Iterate through each line
         for line in script.as_ref().lines() {
+            let trimmed_line = line.trim();
+
+            if in_variables_block {
+                if trimmed_line == "---" {
+                    in_variables_block = false;
+                    self.errors.append(&mut variable_errors);
+                    context.current_line += 1;
+                    continue;
+                }
+
+                if trimmed_line.is_empty() || Self::is_comment(line) {
+                    context.current_line += 1;
+                    continue;
+                }
+
+                if let Err(error) = self.parse_variable_definition(
+                    trimmed_line,
+                    context.current_line,
+                    &mut context.database,
+                    &mut seen_variable_names,
+                ) {
+                    variable_errors.push(error);
+                }
+                context.current_line += 1;
+                continue;
+            }
+
+            if !variables_block_started
+                && !saw_non_variable_content
+                && trimmed_line == "--- variables"
+            {
+                in_variables_block = true;
+                variables_block_started = true;
+                context.current_line += 1;
+                continue;
+            }
+
             // Skip comment lines
             if Self::is_comment(line) {
                 context.current_line += 1;
                 continue;
             }
+
+            if trimmed_line.is_empty() {
+                context.current_line += 1;
+                continue; // Skip empty lines
+            }
+
+            if trimmed_line == "--- variables" {
+                self.collect_error_and_skip(
+                    ParseError::VariablesBlockNotAtTop {
+                        line: context.current_line,
+                    },
+                    &mut context,
+                );
+                continue;
+            }
+
+            saw_non_variable_content = true;
 
             let (level, content) = match self.parse_indentation(line, &context) {
                 Ok(result) => result,
@@ -336,11 +444,6 @@ impl Parser {
                     continue;
                 }
             };
-
-            if content.trim().is_empty() {
-                context.current_line += 1;
-                continue; // Skip empty lines
-            }
 
             // Try to parse as section first
             let section_result = match self.section_parser.parse(content.trim(), &mut context) {
@@ -843,6 +946,10 @@ impl Parser {
             context.current_line += 1;
         }
 
+        if in_variables_block {
+            self.errors.push(ParseError::UnclosedVariablesBlock);
+        }
+
         // Add End block (with no parent)
         let end_block = Block::new(BlockType::End, None, 0);
         context.database.add_block(end_block);
@@ -870,6 +977,79 @@ impl Parser {
     /// Only line-level comments are supported; inline comments (// after content) are not detected.
     fn is_comment(line: &str) -> bool {
         line.trim_start().starts_with("//")
+    }
+
+    fn parse_variable_definition(
+        &self,
+        line: &str,
+        line_number: usize,
+        database: &mut Database,
+        seen_variable_names: &mut HashMap<String, usize>,
+    ) -> Result<(), ParseError> {
+        let mut split = line.splitn(2, char::is_whitespace);
+        let variable_type = split.next().unwrap_or("");
+        let rest = split.next().unwrap_or("").trim();
+
+        if variable_type != "int" {
+            return Err(ParseError::InvalidVariableType {
+                name: variable_type.to_string(),
+                line: line_number,
+            });
+        }
+
+        if rest.is_empty() {
+            return Err(ParseError::MissingVariableName { line: line_number });
+        }
+
+        let (name_part, value_part) = if let Some(eq_index) = rest.find('=') {
+            let (name, value_with_equals) = rest.split_at(eq_index);
+            (name.trim(), Some(value_with_equals[1..].trim()))
+        } else {
+            (rest.trim(), None)
+        };
+
+        if name_part.is_empty() {
+            return Err(ParseError::MissingVariableName { line: line_number });
+        }
+
+        if seen_variable_names.contains_key(name_part) {
+            return Err(ParseError::DuplicateVariableName {
+                name: name_part.to_string(),
+                line: line_number,
+            });
+        }
+
+        seen_variable_names.insert(name_part.to_string(), line_number);
+
+        let default_value = if let Some(raw_value) = value_part {
+            if raw_value.is_empty() {
+                return Err(ParseError::InvalidIntegerValue {
+                    name: name_part.to_string(),
+                    value: raw_value.to_string(),
+                    line: line_number,
+                });
+            }
+
+            match raw_value.parse::<i64>() {
+                Ok(value) => VariableValue::Integer(value),
+                Err(_) => {
+                    return Err(ParseError::InvalidIntegerValue {
+                        name: name_part.to_string(),
+                        value: raw_value.to_string(),
+                        line: line_number,
+                    })
+                }
+            }
+        } else {
+            VariableValue::Integer(0)
+        };
+
+        let name_string_id = database.add_string(name_part.to_string());
+        let definition =
+            VariableDefinition::new(name_string_id, VariableType::Integer, default_value);
+        database.add_variable(name_part.to_string(), definition);
+
+        Ok(())
     }
 
     fn parse_indentation<'a>(
@@ -2080,6 +2260,50 @@ mod test {
                 assert_eq!(line, 3); // Option is at line 3
             }
             _ => panic!("Expected OptionsWithoutParent error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_integer_variables() {
+        let script = "--- variables\nint score\nint lives = 3\n---\nHello";
+        let mut parser = Parser::new();
+        let result = parser.parse(script);
+
+        assert!(result.is_ok(), "Expected ok, got error: {:?}", result);
+        let (database, _warnings) = result.unwrap();
+
+        assert_eq!(database.variables.len(), 2);
+        assert_eq!(database.strings[database.variables[0].name], "score");
+        assert_eq!(
+            database.variables[0].default_value,
+            VariableValue::Integer(0)
+        );
+        assert_eq!(database.strings[database.variables[1].name], "lives");
+        assert_eq!(
+            database.variables[1].default_value,
+            VariableValue::Integer(3)
+        );
+    }
+
+    #[test]
+    fn test_error_duplicate_variable_name() {
+        let script = "--- variables\nint score\nint score = 5\n---\nHello";
+        let mut parser = Parser::new();
+        let result = parser.parse(script);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ParseError::DuplicateVariableName { name, line } => {
+                assert_eq!(name, "score");
+                assert_eq!(line, 3);
+            }
+            ParseError::MultipleErrors { errors } => {
+                assert!(errors.iter().any(|e| {
+                    matches!(e, ParseError::DuplicateVariableName { name, line }
+                        if name == "score" && *line == 3)
+                }));
+            }
+            err => panic!("Expected DuplicateVariableName error, got: {:?}", err),
         }
     }
 }
