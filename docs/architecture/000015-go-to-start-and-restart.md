@@ -10,19 +10,19 @@
 
 ## Referenced Use Case(s)
 
-- [Jump to START from Root Level](../../compatibility-tests/00000000102-goto-start-from-root.md)
-- [Jump to START from Within Subsection](../../compatibility-tests/00000000103-goto-start-from-subsection.md)
-- [Jump to START Shows All Blocks](../../compatibility-tests/00000000104-goto-start-shows-all-blocks.md)
-- [Jump to RESTART from Root Level](../../compatibility-tests/00000000105-goto-restart-from-root.md)
-- [Jump to RESTART from Within Subsection](../../compatibility-tests/00000000106-goto-restart-from-subsection.md)
-- [Call to START with Warning](../../compatibility-tests/00000000107-call-start-warning.md)
-- [Call to RESTART with Warning](../../compatibility-tests/00000000108-call-restart-warning.md)
-- [Error: Section Named START](../../compatibility-tests/00000000109-error-section-named-start.md)
-- [Error: Section Named RESTART](../../compatibility-tests/00000000110-error-section-named-restart.md)
-- [Error: Subsection Named START](../../compatibility-tests/00000000111-error-subsection-named-start.md)
-- [Error: Subsection Named RESTART](../../compatibility-tests/00000000112-error-subsection-named-restart.md)
-- [RESTART Clears Call Stack](../../compatibility-tests/00000000113-restart-clears-call-stack.md)
-- [START Clears Call Stack](../../compatibility-tests/00000000114-start-clears-call-stack.md)
+- [Jump to START from Root Level](../../compatibility-tests/goto-start/feature/from-root.md)
+- [Jump to START from Within Subsection](../../compatibility-tests/goto-start/feature/from-subsection.md)
+- [Jump to START Shows All Blocks](../../compatibility-tests/goto-start/feature/shows-all-blocks.md)
+- [Jump to RESTART from Root Level](../../compatibility-tests/goto-restart/feature/from-root.md)
+- [Jump to RESTART from Within Subsection](../../compatibility-tests/goto-restart/feature/from-subsection.md)
+- [Call to START with Warning](../../compatibility-tests/goto-start/edge-cases/call-start-warning.md)
+- [Call to RESTART with Warning](../../compatibility-tests/goto-restart/edge-cases/call-restart-warning.md)
+- [Error: Section Named START](../../compatibility-tests/goto-start/errors/section-named-start.md)
+- [Error: Section Named RESTART](../../compatibility-tests/goto-restart/errors/section-named-restart.md)
+- [Error: Subsection Named START](../../compatibility-tests/goto-start/errors/subsection-named-start.md)
+- [Error: Subsection Named RESTART](../../compatibility-tests/goto-restart/errors/subsection-named-restart.md)
+- [RESTART Clears Call Stack](../../compatibility-tests/goto-restart/feature/clears-call-stack.md)
+- [START Clears Call Stack](../../compatibility-tests/goto-start/feature/clears-call-stack.md)
 
 ## Context
 

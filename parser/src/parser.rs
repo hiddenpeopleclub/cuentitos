@@ -1565,7 +1565,7 @@ mod test {
     #[test]
     fn test_single_line_script() {
         let test_case = TestCase::from_string(
-            include_str!("../../compatibility-tests/00000000001-single-line-and-end.md"),
+            include_str!("../../compatibility-tests/strings/feature/single-line-and-end.md"),
             "single-line.md",
         );
 

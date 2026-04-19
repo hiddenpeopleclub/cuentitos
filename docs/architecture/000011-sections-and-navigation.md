@@ -10,10 +10,10 @@
 
 ## Referenced Use Case(s)
 
-- [Basic Section Test](../../compatibility-tests/00000000011-basic-section.md)
-- [Nested Sections Test](../../compatibility-tests/00000000012-nested-sections.md)
-- [Section Without Title Error](../../compatibility-tests/00000000013-section-without-title.md)
-- [Subsection Without Parent Error](../../compatibility-tests/00000000014-subsection-without-parent.md)
+- [Basic Section Test](../../compatibility-tests/sections/feature/basic-section.md)
+- [Nested Sections Test](../../compatibility-tests/sections/feature/nested-sections.md)
+- [Section Without Title Error](../../compatibility-tests/sections/errors/without-title.md)
+- [Subsection Without Parent Error](../../compatibility-tests/sections/errors/subsection-without-parent.md)
 
 ## Context
 

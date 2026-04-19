@@ -11,15 +11,15 @@
 
 ## Referenced Use Case(s)
 
-- [Basic Jump to Sibling](../../compatibility-tests/00000000032-basic-jump-to-sibling.md)
-- [Jump Using Absolute Path](../../compatibility-tests/00000000033-jump-absolute-path.md)
-- [Jump Using Relative Child Path](../../compatibility-tests/00000000036-jump-relative-child.md)
-- [Jump Using Relative Sibling Path](../../compatibility-tests/00000000037-jump-relative-sibling.md)
-- [Jump to Parent Using ..](../../compatibility-tests/00000000038-jump-to-parent.md)
-- [Restart Current Section Using .](../../compatibility-tests/00000000039-restart-current-section.md)
-- [Jump Using Combined Path](../../compatibility-tests/00000000040-jump-parent-then-sibling.md)
-- [Section Not Found Error](../../compatibility-tests/00000000052-section-not-found-absolute.md)
-- [Unreachable Code Warning](../../compatibility-tests/00000000063-warning-unreachable-siblings.md)
+- [Basic Jump to Sibling](../../compatibility-tests/goto-section/feature/basic-jump-to-sibling.md)
+- [Jump Using Absolute Path](../../compatibility-tests/goto-section/feature/jump-absolute-path.md)
+- [Jump Using Relative Child Path](../../compatibility-tests/goto-section/feature/jump-relative-child.md)
+- [Jump Using Relative Sibling Path](../../compatibility-tests/goto-section/feature/jump-relative-sibling.md)
+- [Jump to Parent Using ..](../../compatibility-tests/goto-section/feature/jump-to-parent.md)
+- [Restart Current Section Using .](../../compatibility-tests/goto-section/feature/restart-current-section.md)
+- [Jump Using Combined Path](../../compatibility-tests/goto-section/feature/jump-parent-then-sibling.md)
+- [Section Not Found Error](../../compatibility-tests/goto-section/errors/section-not-found-absolute.md)
+- [Unreachable Code Warning](../../compatibility-tests/goto-section/edge-cases/unreachable-siblings-warning.md)
 
 ## Context
 
