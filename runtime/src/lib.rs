@@ -842,7 +842,9 @@ mod test {
     #[test]
     fn test_nested_block_traversal() {
         let test_case = TestCase::from_string(
-            include_str!("../../compatibility-tests/strings/feature/nested-strings-with-siblings.md"),
+            include_str!(
+                "../../compatibility-tests/strings/feature/nested-strings-with-siblings.md"
+            ),
             "nested-strings.md",
         );
 

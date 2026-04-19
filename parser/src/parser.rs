@@ -1480,11 +1480,8 @@ impl Parser {
                 | BlockType::GoToStart
                 | BlockType::GoToRestart
                 | BlockType::GoToEnd => return true,
-                BlockType::Section(_) => {
-                    // Recursively check subsections
-                    if Self::section_has_content(database, child_id) {
-                        return true;
-                    }
+                BlockType::Section(_) if Self::section_has_content(database, child_id) => {
+                    return true;
                 }
                 _ => {}
             }
