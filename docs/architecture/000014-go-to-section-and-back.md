@@ -10,11 +10,11 @@
 
 ## Referenced Use Case(s)
 
-- [Basic Call and Return](../../compatibility-tests/00000000066-basic-call-and-return.md)
-- [Nested Calls (Two Levels)](../../compatibility-tests/00000000069-nested-calls-two-levels.md)
-- [Called Section Contains Jump](../../compatibility-tests/00000000076-called-section-contains-jump.md)
-- [Skip Within Called Section](../../compatibility-tests/00000000079-skip-within-called-section.md)
-- [Call to Section with Subsections](../../compatibility-tests/00000000082-call-to-section-with-subsections.md)
+- [Basic Call and Return](../../compatibility-tests/goto-section-and-back/feature/basic-call-and-return.md)
+- [Nested Calls (Two Levels)](../../compatibility-tests/goto-section-and-back/feature/nested-calls-two-levels.md)
+- [Called Section Contains Jump](../../compatibility-tests/goto-section-and-back/edge-cases/called-section-contains-jump.md)
+- [Skip Within Called Section](../../compatibility-tests/goto-section-and-back/edge-cases/skip-within-called-section.md)
+- [Call to Section with Subsections](../../compatibility-tests/goto-section-and-back/edge-cases/call-to-section-with-subsections.md)
 
 ## Context
 

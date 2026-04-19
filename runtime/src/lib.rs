@@ -617,8 +617,8 @@ mod test {
     #[test]
     fn get_current_block() {
         let test_case = TestCase::from_string(
-            include_str!("../../compatibility-tests/00000000002-two-lines-and-end.md"),
-            "00000000002-two-lines-and-end.md",
+            include_str!("../../compatibility-tests/strings/feature/two-lines-and-end.md"),
+            "two-lines-and-end.md",
         );
 
         let (database, _warnings) = cuentitos_parser::parse(&test_case.script).unwrap();
@@ -672,8 +672,8 @@ mod test {
     #[test]
     fn test_skip_basic() {
         let test_case = TestCase::from_string(
-            include_str!("../../compatibility-tests/00000000003-two-lines-and-skip.md"),
-            "00000000003-two-lines-and-skip.md",
+            include_str!("../../compatibility-tests/strings/feature/two-lines-and-skip.md"),
+            "two-lines-and-skip.md",
         );
 
         let (database, _warnings) = cuentitos_parser::parse(&test_case.script).unwrap();
@@ -693,8 +693,8 @@ mod test {
     #[test]
     fn step_moves_to_next_line() {
         let test_case = TestCase::from_string(
-            include_str!("../../compatibility-tests/00000000002-two-lines-and-end.md"),
-            "00000000002-two-lines-and-end.md",
+            include_str!("../../compatibility-tests/strings/feature/two-lines-and-end.md"),
+            "two-lines-and-end.md",
         );
 
         let (database, _warnings) = cuentitos_parser::parse(&test_case.script).unwrap();
@@ -724,8 +724,8 @@ mod test {
     #[test]
     fn skip_moves_to_end() {
         let test_case = TestCase::from_string(
-            include_str!("../../compatibility-tests/00000000003-two-lines-and-skip.md"),
-            "00000000003-two-lines-and-skip.md",
+            include_str!("../../compatibility-tests/strings/feature/two-lines-and-skip.md"),
+            "two-lines-and-skip.md",
         );
 
         let (database, _warnings) = cuentitos_parser::parse(&test_case.script).unwrap();
@@ -747,8 +747,8 @@ mod test {
     #[test]
     fn skip_and_current_blocks_show_intermediate_blocks() {
         let test_case = TestCase::from_string(
-            include_str!("../../compatibility-tests/00000000003-two-lines-and-skip.md"),
-            "00000000003-two-lines-and-skip.md",
+            include_str!("../../compatibility-tests/strings/feature/two-lines-and-skip.md"),
+            "two-lines-and-skip.md",
         );
 
         let (database, _warnings) = cuentitos_parser::parse(&test_case.script).unwrap();
@@ -792,8 +792,8 @@ mod test {
     #[test]
     fn can_continue_and_has_ended() {
         let test_case = TestCase::from_string(
-            include_str!("../../compatibility-tests/00000000002-two-lines-and-end.md"),
-            "00000000002-two-lines-and-end.md",
+            include_str!("../../compatibility-tests/strings/feature/two-lines-and-end.md"),
+            "two-lines-and-end.md",
         );
 
         let (database, _warnings) = cuentitos_parser::parse(&test_case.script).unwrap();
@@ -842,7 +842,9 @@ mod test {
     #[test]
     fn test_nested_block_traversal() {
         let test_case = TestCase::from_string(
-            include_str!("../../compatibility-tests/00000000009-nested-strings-with-siblings.md"),
+            include_str!(
+                "../../compatibility-tests/strings/feature/nested-strings-with-siblings.md"
+            ),
             "nested-strings.md",
         );
 

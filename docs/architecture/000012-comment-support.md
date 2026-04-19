@@ -10,11 +10,11 @@
 
 ## Referenced Use Case(s)
 
-- [Single Comment Line](../../compatibility-tests/00000000020-single-comment-line.md)
-- [Comment Before Text](../../compatibility-tests/00000000021-comment-before-text.md)
-- [Comment Between Text Lines](../../compatibility-tests/00000000023-comment-between-text-lines.md)
-- [Comments in Sections](../../compatibility-tests/00000000025-comments-in-sections.md)
-- [Comments with Arbitrary Indentation](../../compatibility-tests/00000000027-comments-with-arbitrary-indentation.md)
+- [Single Comment Line](../../compatibility-tests/comments/feature/single-comment-line.md)
+- [Comment Before Text](../../compatibility-tests/comments/feature/before-text.md)
+- [Comment Between Text Lines](../../compatibility-tests/comments/feature/between-text-lines.md)
+- [Comments in Sections](../../compatibility-tests/comments/feature/in-sections.md)
+- [Comments with Arbitrary Indentation](../../compatibility-tests/comments/feature/arbitrary-indentation.md)
 
 ## Context
 

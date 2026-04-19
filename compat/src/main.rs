@@ -5,6 +5,7 @@ use colored::Colorize;
 use cuentitos_common::test_case::TestCase;
 use glob::{glob, GlobError};
 use std::path::PathBuf;
+use std::process::ExitCode;
 
 mod test_runner;
 
@@ -19,19 +20,19 @@ struct Args {
     compatibility_tests: String,
 }
 
-fn main() {
+fn main() -> ExitCode {
     let args = Args::parse();
 
     // Check that the runtime exists
     if !args.runtime.exists() {
         println!("Error: Runtime path does not exist");
-        return;
+        return ExitCode::from(2);
     }
 
     // Check that the runtime is a file
     if !args.runtime.is_file() {
         println!("Error: Runtime path is not a file");
-        return;
+        return ExitCode::from(2);
     }
 
     let compatibility_tests = get_compatibility_tests(args.compatibility_tests);
@@ -41,11 +42,12 @@ fn main() {
 
     if compatibility_tests.is_empty() {
         println!("Error: No compatibility tests found");
-        return;
+        return ExitCode::from(2);
     }
     let runner = TestRunner::from_path(args.runtime);
 
     let mut failed_tests = vec![];
+    let mut pending_tests = vec![];
 
     for test in compatibility_tests {
         match test {
@@ -55,6 +57,12 @@ fn main() {
                 match content {
                     Ok(content) => {
                         let test_case = TestCase::from_string(content, &path);
+
+                        if test_case.pending_reason.is_some() {
+                            print!("{}", "P".yellow());
+                            pending_tests.push(test_case);
+                            continue;
+                        }
 
                         match runner.run(test_case.clone()) {
                             TestResult::Pass => print!("{}", ".".green()),
@@ -79,6 +87,7 @@ fn main() {
     println!("\n");
 
     let failed_count = failed_tests.len();
+    let pending_count = pending_tests.len();
 
     for (test, fail) in failed_tests {
         println!("{}", "------------------------------------".red().bold());
@@ -98,14 +107,36 @@ fn main() {
         }
     }
 
+    if pending_count > 0 {
+        println!("{}", "------------------------------------".yellow().bold());
+        println!("{}", "Pending tests:".yellow().bold());
+        for test in &pending_tests {
+            let reason = test.pending_reason.as_deref().unwrap_or("");
+            println!(
+                "  {} ({}): {}",
+                test.name.bold(),
+                test.path.to_str().unwrap_or(""),
+                reason
+            );
+        }
+    }
+
     println!("\n");
     println!(
-        "{} {} | {} {}",
+        "{} {} | {} {} | {} {}",
         "Total:".bold(),
         test_count,
         "Failed:".red().bold(),
-        failed_count
+        failed_count,
+        "Pending:".yellow().bold(),
+        pending_count
     );
+
+    if failed_count > 0 {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
 }
 
 fn get_compatibility_tests(path: String) -> Vec<Result<PathBuf, GlobError>> {

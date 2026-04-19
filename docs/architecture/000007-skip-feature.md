@@ -10,7 +10,7 @@
 
 ## Referenced Use Case(s)
 
-- Compatibility Test: [Two Lines and Skip](../../compatibility-tests/00000000003-two-lines-and-skip.md)
+- Compatibility Test: [Two Lines and Skip](../../compatibility-tests/strings/feature/two-lines-and-skip.md)
 
 ## Context
 
