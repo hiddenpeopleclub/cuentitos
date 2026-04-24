@@ -23,5 +23,5 @@ s
 ```result
 START
 Before the gated block.
-RUNTIME ERROR: Integer overflow
+runtime-overflow.cuentitos:7: RUNTIME ERROR: Integer overflow.
 ```

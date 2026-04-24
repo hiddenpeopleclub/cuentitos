@@ -25,5 +25,5 @@ s
 ```result
 START
 Before the gated block.
-RUNTIME ERROR: Division by zero
+runtime-division-by-zero.cuentitos:8: RUNTIME ERROR: Division by zero.
 ```
