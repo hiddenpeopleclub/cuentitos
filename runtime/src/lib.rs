@@ -907,7 +907,7 @@ mod test {
 
         runtime.run();
 
-        assert_eq!(runtime.running(), true);
+        assert!(runtime.running());
 
         runtime.stop();
 

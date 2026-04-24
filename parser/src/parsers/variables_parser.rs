@@ -70,8 +70,13 @@ pub fn parse_variables_block(
     let mut declared_lines: HashMap<String, usize> = HashMap::new();
     let mut declared_values: HashMap<String, i64> = HashMap::new();
 
-    for offset in (start_line_index + 1)..closing_line_index {
-        let raw_line = lines[offset];
+    for (offset, raw_line) in lines
+        .iter()
+        .copied()
+        .enumerate()
+        .take(closing_line_index)
+        .skip(start_line_index + 1)
+    {
         let line_number = offset + 1;
         let trimmed = raw_line.trim();
         if trimmed.is_empty() {

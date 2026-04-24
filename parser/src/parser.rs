@@ -2113,7 +2113,10 @@ mod test {
 
         let (_database, warnings) = result.unwrap();
         // Should have a warning about the extra space
-        assert!(warnings.len() > 0, "Should have warning about whitespace");
+        assert!(
+            !warnings.is_empty(),
+            "Should have warning about whitespace"
+        );
         assert!(
             warnings
                 .iter()
