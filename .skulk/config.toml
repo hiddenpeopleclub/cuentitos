@@ -1,0 +1,5 @@
+host = "bluebubble"
+session_prefix = "cuentitos-"
+base_path = "~/cuentitos"
+worktree_base = "~/cuentitos-worktrees"
+default_branch = "main"

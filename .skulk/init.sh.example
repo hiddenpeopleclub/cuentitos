@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Example skulk agent init script.
+# Rename to .skulk/init.sh (or configure init_script in config.toml) to enable.
+#
+# Runs inside the agent's tmux session before Claude Code starts.
+# Working directory: the agent's worktree.
+#
+# Env vars available:
+#   SKULK_AGENT_NAME   e.g. auth-refactor
+#   SKULK_SESSION      tmux session name, e.g. myproject-auth-refactor
+#   SKULK_BRANCH       git branch (same as SKULK_SESSION)
+#   SKULK_WORKTREE     absolute path to the worktree
+# Plus anything sourced from .skulk/.env (if present).
+#
+# Hard-fail: if this script exits non-zero, Claude does not start.
+# For optional steps, use `command || true` to skip on failure.
+
+set -e
+
+echo "Setting up $SKULK_AGENT_NAME in $SKULK_WORKTREE..."
+
+# Examples — uncomment and adapt as needed:
+# npm install
+# cargo fetch
+# bundle install
+# docker compose up -d db redis
+# [ -n "$DATABASE_URL" ] && bundle exec rake db:migrate || true
+
+echo "Ready."
