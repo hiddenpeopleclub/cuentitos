@@ -1,7 +1,9 @@
 # Edge Case: `?` With No `---` Block in the Script
 
 A script with no `--- variables` block should still accept `?` mid-execution.
-`?` prints nothing (because no variables are declared) and does not advance the cursor.
+`?` does not advance the cursor; because no variables are declared, the runtime
+emits a warning. Line 0 is used because `?` is a CLI input with no corresponding
+script line.
 
 ## Script
 ```cuentitos
@@ -21,6 +23,7 @@ s
 ```result
 START
 First line.
+debug-before-any-block.cuentitos:0: WARNING: No variables declared.
 Second line.
 Third line.
 END
