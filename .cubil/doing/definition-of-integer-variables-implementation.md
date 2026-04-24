@@ -4,10 +4,8 @@ created: 2026-04-20
 
 # Definition of Integer Variables — Implementation
 
-# Definition of Integer Variables — Implementation
-
-Implement integer variable **declarations** so the compat tests written in
-"Definition of Integer Variables — Compatibility Tests" pass. Part 2 of 2.
+Implement integer variable **declarations** so the compat tests under
+`compatibility-tests/variables-integer/` (merged in PR #68) pass. Part 2 of 2.
 
 ## Feature summary
 
@@ -43,6 +41,11 @@ int another_integer = five + 5
 declaration order. Must work at any point during execution and reflect
 current values.
 
+If `?` is used when no variables are declared (no `--- variables` block, or
+an empty one), the runtime emits a warning
+`<filename>.cuentitos:0: WARNING: No variables declared.` (line `0` is the
+sentinel for CLI-triggered warnings, matching the existing warning format).
+
 ## Errors (parse-time)
 
 - Duplicate variable name
@@ -51,7 +54,9 @@ current values.
 - Default expression references a variable not yet declared (forward
   reference) or that does not exist
 - Division by zero in a default expression (constant-folded)
-- Overflow in a default expression (constant-folded)
+- Overflow in a default expression (constant-folded, including when the
+  overflow occurs through a reference to a previously-declared variable —
+  see `errors/overflow-through-variable.md`)
 - Malformed `--- variables` / `---` delimiters
 
 ## Acceptance
@@ -61,6 +66,5 @@ current values.
 
 ## Dependencies
 
-Requires "Definition of Integer Variables — Compatibility Tests". Unblocks
-"Set Integer Variables — Implementation" and "Require Integer Variables —
-Implementation".
+Compat tests shipped in PR #68. Unblocks "Set Integer Variables —
+Implementation" and "Require Integer Variables — Implementation".
