@@ -20,11 +20,14 @@ struct RuntimeState {
     waiting_for_option_selection: bool,
     current_options: Vec<BlockId>, // IDs of available option blocks
     last_error: Option<RuntimeError>,
-    /// Current integer variable values, aligned index-for-index with
+    /// Current variable values, aligned index-for-index with
     /// `Database.variables`. `variable_values[i]` is the current value of the
     /// variable declared at position `i`. Always reinitialized from declared
     /// defaults on every `reset()` (and therefore on every `run()`).
-    variable_values: Vec<i64>,
+    ///
+    /// Typed so that adding new `VariableValue` variants (bool, float, string)
+    /// is strictly additive — no storage migration needed.
+    variable_values: Vec<VariableValue>,
 }
 
 impl RuntimeState {
@@ -92,38 +95,51 @@ impl Runtime {
             .database
             .variables
             .iter()
-            .map(|v| v.default_value)
+            .map(|v| v.kind.initial_value())
             .collect();
     }
 
     /// Returns the current value of every declared variable, in declaration order.
-    pub fn variable_values(&self) -> &[i64] {
+    pub fn variable_values(&self) -> &[VariableValue] {
         &self.state.variable_values
     }
 
     /// Returns the current value of the variable with the given name.
-    pub fn variable_value(&self, name: &str) -> Option<i64> {
+    pub fn variable_value(&self, name: &str) -> Option<&VariableValue> {
         self.database
             .variable_id(name)
-            .and_then(|id| self.state.variable_values.get(id).copied())
+            .and_then(|id| self.state.variable_values.get(id))
     }
 
     /// Sets a variable by name; returns
     /// [`RuntimeError::UndefinedVariable`] if no variable with that name has
-    /// been declared.
+    /// been declared, or [`RuntimeError::VariableTypeMismatch`] if `value`'s
+    /// variant differs from the variable's declared kind.
     ///
     /// This is introduced now so upcoming `set` implementations have a stable
     /// mutation point. Not yet called from runtime execution itself.
-    pub fn set_variable_value(&mut self, name: &str, value: i64) -> Result<(), RuntimeError> {
-        match self.database.variable_id(name) {
-            Some(id) => {
-                self.state.variable_values[id] = value;
-                Ok(())
-            }
-            None => Err(RuntimeError::UndefinedVariable {
+    pub fn set_variable_value(
+        &mut self,
+        name: &str,
+        value: VariableValue,
+    ) -> Result<(), RuntimeError> {
+        let id =
+            self.database
+                .variable_id(name)
+                .ok_or_else(|| RuntimeError::UndefinedVariable {
+                    name: name.to_string(),
+                })?;
+        // Reject writes that don't match the declared variant. Today there's
+        // only one variant, so this is unreachable — it exists as a guard for
+        // future types (bool/float/string) so the setter can't silently clobber
+        // the declared kind.
+        if !self.state.variable_values[id].same_kind(&value) {
+            return Err(RuntimeError::VariableTypeMismatch {
                 name: name.to_string(),
-            }),
+            });
         }
+        self.state.variable_values[id] = value;
+        Ok(())
     }
 
     /// Find a section by its path string, resolving relative paths from current context
@@ -657,10 +673,17 @@ mod test {
         let mut runtime = Runtime::new(database);
         runtime.run();
 
-        assert_eq!(runtime.variable_values(), &[5, 0, 7]);
-        assert_eq!(runtime.variable_value("a"), Some(5));
-        assert_eq!(runtime.variable_value("b"), Some(0));
-        assert_eq!(runtime.variable_value("c"), Some(7));
+        assert_eq!(
+            runtime.variable_values(),
+            &[
+                VariableValue::Int(5),
+                VariableValue::Int(0),
+                VariableValue::Int(7),
+            ]
+        );
+        assert_eq!(runtime.variable_value("a"), Some(&VariableValue::Int(5)));
+        assert_eq!(runtime.variable_value("b"), Some(&VariableValue::Int(0)));
+        assert_eq!(runtime.variable_value("c"), Some(&VariableValue::Int(7)));
         assert_eq!(runtime.variable_value("missing"), None);
     }
 
@@ -671,10 +694,15 @@ mod test {
         let mut runtime = Runtime::new(database);
         runtime.run();
 
-        runtime.set_variable_value("a", 42).unwrap();
-        assert_eq!(runtime.variable_value("a"), Some(42));
+        runtime
+            .set_variable_value("a", VariableValue::Int(42))
+            .unwrap();
+        assert_eq!(runtime.variable_value("a"), Some(&VariableValue::Int(42)));
 
-        assert!(runtime.set_variable_value("missing", 1).is_err());
+        assert!(matches!(
+            runtime.set_variable_value("missing", VariableValue::Int(1)),
+            Err(RuntimeError::UndefinedVariable { .. })
+        ));
     }
 
     #[test]
