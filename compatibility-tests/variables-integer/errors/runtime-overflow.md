@@ -11,7 +11,7 @@ int big = 2147483647
 
 Before the gated block.
 Gated block.
-  req big + 1 > 0
+  req big < big + 1
 ```
 
 ## Input

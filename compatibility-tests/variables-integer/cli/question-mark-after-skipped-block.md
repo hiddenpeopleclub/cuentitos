@@ -30,8 +30,8 @@ s
 ```result
 START
 You are alive.
+You press on.
 health: 10
 gold: 0
-You press on.
 END
 ```
