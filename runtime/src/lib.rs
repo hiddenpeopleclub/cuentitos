@@ -20,8 +20,10 @@ struct RuntimeState {
     waiting_for_option_selection: bool,
     current_options: Vec<BlockId>, // IDs of available option blocks
     last_error: Option<RuntimeError>,
-    /// Current integer variable values, aligned with `Database.variables`.
-    /// Populated on `reset()` from each variable's declared default.
+    /// Current integer variable values, aligned index-for-index with
+    /// `Database.variables`. `variable_values[i]` is the current value of the
+    /// variable declared at position `i`. Always reinitialized from declared
+    /// defaults on every `reset()` (and therefore on every `run()`).
     variable_values: Vec<i64>,
 }
 
@@ -75,14 +77,17 @@ impl Runtime {
         self.running
     }
 
-    /// Reset runtime state to initial values
+    /// Reset runtime state to initial values.
+    ///
+    /// Unconditionally reinitializes `variable_values` from each variable's
+    /// declared default — any runtime mutations made via
+    /// [`Runtime::set_variable_value`] since the last reset are discarded.
     pub fn reset(&mut self) {
         self.state = if !self.database.blocks.is_empty() {
             RuntimeState::with_start_block()
         } else {
             RuntimeState::new()
         };
-        // Initialize variable values from declared defaults.
         self.state.variable_values = self
             .database
             .variables
@@ -103,16 +108,20 @@ impl Runtime {
             .and_then(|id| self.state.variable_values.get(id).copied())
     }
 
-    /// Sets a variable by name; returns an error if the variable does not exist.
-    /// (Introduced now so upcoming `set` implementations can mutate state here.)
+    /// Sets a variable by name; returns
+    /// [`RuntimeError::UndefinedVariable`] if no variable with that name has
+    /// been declared.
+    ///
+    /// This is introduced now so upcoming `set` implementations have a stable
+    /// mutation point. Not yet called from runtime execution itself.
     pub fn set_variable_value(&mut self, name: &str, value: i64) -> Result<(), RuntimeError> {
         match self.database.variable_id(name) {
             Some(id) => {
                 self.state.variable_values[id] = value;
                 Ok(())
             }
-            None => Err(RuntimeError::InvalidPath {
-                message: format!("Undefined variable: '{}'", name),
+            None => Err(RuntimeError::UndefinedVariable {
+                name: name.to_string(),
             }),
         }
     }

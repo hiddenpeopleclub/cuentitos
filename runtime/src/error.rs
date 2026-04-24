@@ -12,6 +12,8 @@ pub enum RuntimeError {
     InvalidPath { message: String },
     /// Runtime is not currently running
     NotRunning,
+    /// Attempted to read/write a variable that was never declared
+    UndefinedVariable { name: String },
 }
 
 impl fmt::Display for RuntimeError {
@@ -28,6 +30,9 @@ impl fmt::Display for RuntimeError {
             }
             RuntimeError::NotRunning => {
                 write!(f, "ERROR: Runtime is not running")
+            }
+            RuntimeError::UndefinedVariable { name } => {
+                write!(f, "ERROR: Undefined variable: '{}'", name)
             }
         }
     }
