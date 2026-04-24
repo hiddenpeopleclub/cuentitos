@@ -20,5 +20,5 @@ s
 
 ## Result
 ```result
-malformed-expression.cuentitos:6: ERROR: Malformed expression
+malformed-req-expression.cuentitos:6: ERROR: Malformed expression in 'req': 'x > 5 +'.
 ```
