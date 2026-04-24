@@ -6,7 +6,7 @@ runtime produces a runtime error when the `req` is reached.
 ## Script
 ```cuentitos
 --- variables
-int big = 2147483647
+int big = 9223372036854775807
 ---
 
 Before the gated block.
