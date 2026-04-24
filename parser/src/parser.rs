@@ -98,8 +98,62 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
-    VariablesBlock {
-        message: String,
+    UnterminatedVariablesBlock {
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    DuplicateVariable {
+        name: String,
+        previous_line: usize,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    MalformedDefaultExpression {
+        expr: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    DivisionByZero {
+        variable: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    IntegerOverflow {
+        variable: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    InvalidVariableName {
+        name: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    UndefinedVariableReference {
+        name: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    ForwardVariableReference {
+        name: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    SelfReferenceInDefault {
+        name: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    IndentedVariableDeclaration {
+        content: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    MissingVariableName {
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    MalformedVariableDeclaration {
+        content: String,
         file: Option<PathBuf>,
         line: usize,
     },
@@ -108,51 +162,48 @@ pub enum ParseError {
     },
 }
 
+/// Render the prefix used in `Display` error lines: the script's file name, or
+/// a neutral placeholder when no path is available.
+fn file_prefix(file: &Option<PathBuf>) -> &str {
+    file.as_ref()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .unwrap_or("<script>")
+}
+
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ParseError::UnexpectedToken { file, line } => {
-                let prefix = file
-                    .as_ref()
-                    .and_then(|p| p.file_name())
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("test.cuentitos");
-                write!(f, "{}:{}: ERROR: Unexpected token", prefix, line)
+                write!(f, "{}:{}: ERROR: Unexpected token", file_prefix(file), line)
             }
             ParseError::UnexpectedEndOfFile { file, line } => {
-                let prefix = file
-                    .as_ref()
-                    .and_then(|p| p.file_name())
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("test.cuentitos");
-                write!(f, "{}:{}: ERROR: Unexpected end of file", prefix, line)
+                write!(
+                    f,
+                    "{}:{}: ERROR: Unexpected end of file",
+                    file_prefix(file),
+                    line
+                )
             }
             ParseError::InvalidIndentation {
                 message,
                 file,
                 line,
             } => {
-                let prefix = file
-                    .as_ref()
-                    .and_then(|p| p.file_name())
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("test.cuentitos");
                 write!(
                     f,
                     "{}:{}: ERROR: Invalid indentation: {}",
-                    prefix, line, message
+                    file_prefix(file),
+                    line,
+                    message
                 )
             }
             ParseError::SectionWithoutTitle { file, line } => {
-                let prefix = file
-                    .as_ref()
-                    .and_then(|p| p.file_name())
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("test.cuentitos");
                 write!(
                     f,
                     "{}:{}: ERROR: Section without title: found empty section title.",
-                    prefix, line
+                    file_prefix(file),
+                    line
                 )
             }
             ParseError::InvalidSectionHierarchy {
@@ -160,15 +211,12 @@ impl fmt::Display for ParseError {
                 file,
                 line,
             } => {
-                let prefix = file
-                    .as_ref()
-                    .and_then(|p| p.file_name())
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("test.cuentitos");
                 write!(
                     f,
                     "{}:{}: ERROR: Invalid section hierarchy: {}",
-                    prefix, line, message
+                    file_prefix(file),
+                    line,
+                    message
                 )
             }
             ParseError::DuplicateSectionName {
@@ -178,44 +226,38 @@ impl fmt::Display for ParseError {
                 line,
                 previous_line,
             } => {
-                let prefix = file
-                    .as_ref()
-                    .and_then(|p| p.file_name())
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("test.cuentitos");
-                write!(f, "{}:{}: ERROR: Duplicate section name: '{}' already exists at this level under '{}'. Previously defined at line {}.",
-                    prefix, line, name, parent_name, previous_line)
+                write!(
+                    f,
+                    "{}:{}: ERROR: Duplicate section name: '{}' already exists at this level under '{}'. Previously defined at line {}.",
+                    file_prefix(file),
+                    line,
+                    name,
+                    parent_name,
+                    previous_line
+                )
             }
             ParseError::InvalidGoToSection {
                 message,
                 file,
                 line,
             } => {
-                let prefix = file
-                    .as_ref()
-                    .and_then(|p| p.file_name())
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("test.cuentitos");
-                write!(f, "{}:{}: ERROR: {}", prefix, line, message)
+                write!(f, "{}:{}: ERROR: {}", file_prefix(file), line, message)
             }
             ParseError::SectionNotFound { path, file, line } => {
-                let prefix = file
-                    .as_ref()
-                    .and_then(|p| p.file_name())
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("test.cuentitos");
-                write!(f, "{}:{}: ERROR: Section not found: {}", prefix, line, path)
+                write!(
+                    f,
+                    "{}:{}: ERROR: Section not found: {}",
+                    file_prefix(file),
+                    line,
+                    path
+                )
             }
             ParseError::NavigationAboveRoot { file, line } => {
-                let prefix = file
-                    .as_ref()
-                    .and_then(|p| p.file_name())
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("test.cuentitos");
                 write!(
                     f,
                     "{}:{}: ERROR: Cannot navigate above root level",
-                    prefix, line
+                    file_prefix(file),
+                    line
                 )
             }
             ParseError::InvalidSectionName {
@@ -224,44 +266,159 @@ impl fmt::Display for ParseError {
                 file,
                 line,
             } => {
-                let prefix = file
-                    .as_ref()
-                    .and_then(|p| p.file_name())
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("test.cuentitos");
-                write!(f, "{}:{}: ERROR: {}: {}", prefix, line, message, name)
+                write!(
+                    f,
+                    "{}:{}: ERROR: {}: {}",
+                    file_prefix(file),
+                    line,
+                    message,
+                    name
+                )
             }
             ParseError::EmptySection { name, file, line } => {
-                let prefix = file
-                    .as_ref()
-                    .and_then(|p| p.file_name())
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("test.cuentitos");
                 write!(
                     f,
                     "{}:{}: ERROR: Section must contain at least one block: {}",
-                    prefix, line, name
+                    file_prefix(file),
+                    line,
+                    name
                 )
             }
             ParseError::OptionsWithoutParent { file, line } => {
-                let prefix = file
-                    .as_ref()
-                    .and_then(|p| p.file_name())
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("test.cuentitos");
-                write!(f, "{}:{}: ERROR: Options must have a parent", prefix, line)
+                write!(
+                    f,
+                    "{}:{}: ERROR: Options must have a parent",
+                    file_prefix(file),
+                    line
+                )
             }
-            ParseError::VariablesBlock {
-                message,
+            ParseError::UnterminatedVariablesBlock { file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Unterminated '--- variables' block: missing closing '---'.",
+                    file_prefix(file),
+                    line
+                )
+            }
+            ParseError::DuplicateVariable {
+                name,
+                previous_line,
                 file,
                 line,
             } => {
-                let prefix = file
-                    .as_ref()
-                    .and_then(|p| p.file_name())
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("test.cuentitos");
-                write!(f, "{}:{}: ERROR: {}", prefix, line, message)
+                write!(
+                    f,
+                    "{}:{}: ERROR: Duplicate variable name: '{}' already declared. Previously declared at line {}.",
+                    file_prefix(file),
+                    line,
+                    name,
+                    previous_line
+                )
+            }
+            ParseError::MalformedDefaultExpression { expr, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Malformed default expression: '{}'.",
+                    file_prefix(file),
+                    line,
+                    expr
+                )
+            }
+            ParseError::DivisionByZero {
+                variable,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Division by zero in default expression for '{}'.",
+                    file_prefix(file),
+                    line,
+                    variable
+                )
+            }
+            ParseError::IntegerOverflow {
+                variable,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Integer overflow in default expression for '{}'.",
+                    file_prefix(file),
+                    line,
+                    variable
+                )
+            }
+            ParseError::InvalidVariableName { name, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Invalid variable name: '{}'. Variable names must start with a letter or underscore.",
+                    file_prefix(file),
+                    line,
+                    name
+                )
+            }
+            ParseError::UndefinedVariableReference { name, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Undefined variable: '{}'.",
+                    file_prefix(file),
+                    line,
+                    name
+                )
+            }
+            ParseError::ForwardVariableReference { name, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Forward reference: variable '{}' referenced before declaration.",
+                    file_prefix(file),
+                    line,
+                    name
+                )
+            }
+            ParseError::SelfReferenceInDefault { name, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Self-reference in default: variable '{}' references itself.",
+                    file_prefix(file),
+                    line,
+                    name
+                )
+            }
+            ParseError::IndentedVariableDeclaration {
+                content,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Malformed variable declaration: '{}'. Declarations must not be indented.",
+                    file_prefix(file),
+                    line,
+                    content
+                )
+            }
+            ParseError::MissingVariableName { file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Malformed variable declaration: missing variable name.",
+                    file_prefix(file),
+                    line
+                )
+            }
+            ParseError::MalformedVariableDeclaration {
+                content,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Malformed variable declaration: '{}'. Expected 'int <name> [= <expr>]'.",
+                    file_prefix(file),
+                    line,
+                    content
+                )
             }
             ParseError::MultipleErrors { errors } => {
                 for (i, error) in errors.iter().enumerate() {
@@ -341,46 +498,53 @@ impl Parser {
         // Collect lines so we can consume a leading `--- variables` block without
         // disturbing line-number accounting for the rest of the script.
         let collected: Vec<&str> = script.as_ref().lines().collect();
-        let mut skip_until_index: Option<usize> = None;
+        let mut skip_until_index: usize = 0;
 
         // Find the first non-empty, non-comment line. If it is `--- variables`,
         // parse that block before the main pass. Only a leading variables block
-        // is supported; anything else is treated as regular content.
-        for (i, line) in collected.iter().enumerate() {
+        // is supported; anything else is treated as regular content and a
+        // mid-file occurrence surfaces as a warning in the main pass.
+        for (i, line) in collected.iter().copied().enumerate() {
             let trimmed = line.trim();
             if trimmed.is_empty() || Self::is_comment(line) {
                 continue;
             }
             if trimmed == "--- variables" {
-                match crate::parsers::variables_parser::parse_variables_block(
+                let outcome = crate::parsers::variables_parser::parse_variables_block(
                     &collected,
                     i,
                     &mut context.database,
                     &self.file_path,
-                ) {
-                    Ok(result) => {
-                        skip_until_index = Some(i + result.consumed_lines);
-                    }
-                    Err(e) => {
-                        self.errors.push(e);
-                        // On malformed block (e.g. unterminated), skip the rest of the
-                        // file to avoid re-parsing the block body as narrative content.
-                        skip_until_index = Some(collected.len());
-                    }
+                );
+                // `consumed_lines` always covers the full block span (or the
+                // rest of the file when the block is unterminated), so the
+                // main pass can resume cleanly in both success and error
+                // cases.
+                skip_until_index = i + outcome.consumed_lines;
+                for error in outcome.errors {
+                    self.errors.push(error);
                 }
             }
             break;
         }
 
-        let skip_until_index = skip_until_index.unwrap_or(0);
-
         // Iterate through each line, accounting for any block consumed above.
-        for (line_index, line) in collected.iter().enumerate() {
+        for (line_index, line) in collected.iter().copied().enumerate() {
             if line_index < skip_until_index {
                 context.current_line += 1;
                 continue;
             }
-            let line = *line;
+            // `--- variables` is only valid as the first directive in the
+            // file. Anything later is almost certainly a user mistake.
+            if line.trim() == "--- variables" {
+                self.warnings.push(Warning {
+                    message:
+                        "'--- variables' block must appear at the start of the file; treating as content."
+                            .to_string(),
+                    file: self.file_path.clone(),
+                    line: context.current_line + 1,
+                });
+            }
             // Skip comment lines
             if Self::is_comment(line) {
                 context.current_line += 1;
