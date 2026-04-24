@@ -1,16 +1,14 @@
-# Require Error: Malformed Expression
+# Error: Malformed Default Expression
 
-A `req` whose RHS is a syntactically incomplete expression — here, a trailing
-`+` with no right operand — is a parse-time error.
+A default expression with a dangling operator should fail to parse.
 
 ## Script
 ```cuentitos
 --- variables
-int x = 5
+int a = 5 +
 ---
 
-Line.
-  req x > 5 +
+This is the story.
 ```
 
 ## Input
@@ -20,5 +18,5 @@ s
 
 ## Result
 ```result
-malformed-expression.cuentitos:6: ERROR: Malformed expression
+malformed-expression.cuentitos:2: ERROR: Malformed default expression: '5 +'.
 ```
