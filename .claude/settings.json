@@ -1,0 +1,7 @@
+{
+  "enabledPlugins": {
+    "cubil@frantufro-plugins": true,
+    "rust-development@frantufro-plugins": true,
+    "skulk@frantufro-plugins": true
+  }
+}

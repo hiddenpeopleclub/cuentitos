@@ -50,6 +50,11 @@ an_integer_that_starts_with_one: 1
 
 `?` must work at any point during execution.
 
+If `?` is used when no variables are declared (either no `--- variables`
+block exists, or the block is empty), the runtime emits a warning
+(`WARNING: No variables declared` or similar, following the existing warning
+format convention in `compatibility-tests/*/edge-cases/*-warning.md`).
+
 ## Tests to write
 
 Organized under `compatibility-tests/variables-integer/<bucket>/`:
@@ -75,9 +80,10 @@ Organized under `compatibility-tests/variables-integer/<bucket>/`:
   - overflow in a default (constant-folded)
   - malformed `--- variables` / `---` delimiters
 - `edge-cases/`:
-  - empty `--- variables` block
+  - empty `--- variables` block (`?` emits "no variables declared" warning)
   - nested parentheses in a default
-  - `?` before any `---` block exists in the script
+  - `?` before any `---` block exists in the script (emits "no variables
+    declared" warning)
 
 ## Acceptance
 
