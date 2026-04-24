@@ -53,7 +53,7 @@ fn main() {
                             .as_ref()
                             .and_then(|p| p.file_name())
                             .and_then(|n| n.to_str())
-                            .unwrap_or("test.cuentitos");
+                            .unwrap_or("<script>");
                         println!(
                             "{}:{}: WARNING: {}",
                             file_name, warning.line, warning.message
@@ -418,16 +418,18 @@ fn print_debug_variables(runtime: &cuentitos_runtime::Runtime, script_path: &Pat
     let file_name = script_path
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("test.cuentitos");
+        .unwrap_or("<script>");
 
     if runtime.database.variables.is_empty() {
         println!("{}:0: WARNING: No variables declared.", file_name);
         return;
     }
 
+    // `variable_values` and `database.variables` are kept in lock-step by
+    // `Runtime::reset`; iterating the zip relies on that invariant.
     let values = runtime.variable_values();
-    for (i, variable) in runtime.database.variables.iter().enumerate() {
-        let value = values.get(i).copied().unwrap_or(variable.default_value);
+    debug_assert_eq!(values.len(), runtime.database.variables.len());
+    for (variable, value) in runtime.database.variables.iter().zip(values) {
         println!("{}: {}", variable.name, value);
     }
 }
