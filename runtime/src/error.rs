@@ -12,6 +12,11 @@ pub enum RuntimeError {
     InvalidPath { message: String },
     /// Runtime is not currently running
     NotRunning,
+    /// Attempted to read/write a variable that was never declared
+    UndefinedVariable { name: String },
+    /// Attempted to write a value whose variant doesn't match the variable's
+    /// declared kind (e.g. assigning a string to an int).
+    VariableTypeMismatch { name: String },
 }
 
 impl fmt::Display for RuntimeError {
@@ -28,6 +33,12 @@ impl fmt::Display for RuntimeError {
             }
             RuntimeError::NotRunning => {
                 write!(f, "ERROR: Runtime is not running")
+            }
+            RuntimeError::UndefinedVariable { name } => {
+                write!(f, "ERROR: Undefined variable: '{}'", name)
+            }
+            RuntimeError::VariableTypeMismatch { name } => {
+                write!(f, "ERROR: Type mismatch assigning to variable '{}'", name)
             }
         }
     }

@@ -20,6 +20,14 @@ struct RuntimeState {
     waiting_for_option_selection: bool,
     current_options: Vec<BlockId>, // IDs of available option blocks
     last_error: Option<RuntimeError>,
+    /// Current variable values, aligned index-for-index with
+    /// `Database.variables`. `variable_values[i]` is the current value of the
+    /// variable declared at position `i`. Always reinitialized from declared
+    /// defaults on every `reset()` (and therefore on every `run()`).
+    ///
+    /// Typed so that adding new `VariableValue` variants (bool, float, string)
+    /// is strictly additive — no storage migration needed.
+    variable_values: Vec<VariableValue>,
 }
 
 impl RuntimeState {
@@ -32,6 +40,7 @@ impl RuntimeState {
             waiting_for_option_selection: false,
             current_options: Vec::new(),
             last_error: None,
+            variable_values: Vec::new(),
         }
     }
 
@@ -71,13 +80,66 @@ impl Runtime {
         self.running
     }
 
-    /// Reset runtime state to initial values
+    /// Reset runtime state to initial values.
+    ///
+    /// Unconditionally reinitializes `variable_values` from each variable's
+    /// declared default — any runtime mutations made via
+    /// [`Runtime::set_variable_value`] since the last reset are discarded.
     pub fn reset(&mut self) {
         self.state = if !self.database.blocks.is_empty() {
             RuntimeState::with_start_block()
         } else {
             RuntimeState::new()
         };
+        self.state.variable_values = self
+            .database
+            .variables
+            .iter()
+            .map(|v| v.kind.initial_value())
+            .collect();
+    }
+
+    /// Returns the current value of every declared variable, in declaration order.
+    pub fn variable_values(&self) -> &[VariableValue] {
+        &self.state.variable_values
+    }
+
+    /// Returns the current value of the variable with the given name.
+    pub fn variable_value(&self, name: &str) -> Option<&VariableValue> {
+        self.database
+            .variable_id(name)
+            .and_then(|id| self.state.variable_values.get(id))
+    }
+
+    /// Sets a variable by name; returns
+    /// [`RuntimeError::UndefinedVariable`] if no variable with that name has
+    /// been declared, or [`RuntimeError::VariableTypeMismatch`] if `value`'s
+    /// variant differs from the variable's declared kind.
+    ///
+    /// This is introduced now so upcoming `set` implementations have a stable
+    /// mutation point. Not yet called from runtime execution itself.
+    pub fn set_variable_value(
+        &mut self,
+        name: &str,
+        value: VariableValue,
+    ) -> Result<(), RuntimeError> {
+        let id =
+            self.database
+                .variable_id(name)
+                .ok_or_else(|| RuntimeError::UndefinedVariable {
+                    name: name.to_string(),
+                })?;
+        // Reject writes that don't match the declared variant. Today there's
+        // only one variant, so this is unreachable — it exists as a guard for
+        // future types (bool/float/string) so the setter can't silently clobber
+        // the declared kind.
+        if !self.state.variable_values[id].same_kind(&value) {
+            return Err(RuntimeError::VariableTypeMismatch {
+                name: name.to_string(),
+            });
+        }
+        self.state.variable_values[id] = value;
+        Ok(())
     }
 
     /// Find a section by its path string, resolving relative paths from current context
@@ -603,6 +665,99 @@ mod test {
     }
 
     #[test]
+    fn variable_values_initialize_from_defaults_on_run() {
+        let script = "--- variables\nint a = 5\nint b\nint c = a + 2\n---\n\nStory.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        assert_eq!(database.variables.len(), 3);
+
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        assert_eq!(
+            runtime.variable_values(),
+            &[
+                VariableValue::Int(5),
+                VariableValue::Int(0),
+                VariableValue::Int(7),
+            ]
+        );
+        assert_eq!(runtime.variable_value("a"), Some(&VariableValue::Int(5)));
+        assert_eq!(runtime.variable_value("b"), Some(&VariableValue::Int(0)));
+        assert_eq!(runtime.variable_value("c"), Some(&VariableValue::Int(7)));
+        assert_eq!(runtime.variable_value("missing"), None);
+    }
+
+    #[test]
+    fn set_variable_value_updates_state() {
+        let script = "--- variables\nint a = 5\n---\n\nStory.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        runtime
+            .set_variable_value("a", VariableValue::Int(42))
+            .unwrap();
+        assert_eq!(runtime.variable_value("a"), Some(&VariableValue::Int(42)));
+
+        assert!(matches!(
+            runtime.set_variable_value("missing", VariableValue::Int(1)),
+            Err(RuntimeError::UndefinedVariable { .. })
+        ));
+    }
+
+    #[test]
+    fn reset_restores_declared_defaults_after_mutation() {
+        // `Runtime::reset` (and therefore `run`) must reinitialize variable
+        // values from declared defaults, discarding any prior mutations
+        // performed via `set_variable_value`.
+        let script = "--- variables\nint a = 5\nint b = 10\n---\n\nStory.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        runtime
+            .set_variable_value("a", VariableValue::Int(99))
+            .unwrap();
+        runtime
+            .set_variable_value("b", VariableValue::Int(-1))
+            .unwrap();
+        assert_eq!(runtime.variable_value("a"), Some(&VariableValue::Int(99)));
+        assert_eq!(runtime.variable_value("b"), Some(&VariableValue::Int(-1)));
+
+        runtime.reset();
+
+        assert_eq!(runtime.variable_value("a"), Some(&VariableValue::Int(5)));
+        assert_eq!(runtime.variable_value("b"), Some(&VariableValue::Int(10)));
+
+        runtime
+            .set_variable_value("a", VariableValue::Int(123))
+            .unwrap();
+        runtime.run();
+        assert_eq!(runtime.variable_value("a"), Some(&VariableValue::Int(5)));
+    }
+
+    #[test]
+    fn variable_type_mismatch_error_displays_and_is_constructible() {
+        // The `VariableTypeMismatch` branch of `set_variable_value` is
+        // unreachable while `VariableValue` has a single variant — every
+        // value trivially shares its kind with the declared one. This test
+        // pins the user-facing error contract (variant exists, carries the
+        // variable name, and renders a clear message) so the wiring is
+        // verified today and the branch becomes triggerable as soon as a
+        // second `VariableValue` variant is introduced.
+        let err = RuntimeError::VariableTypeMismatch {
+            name: "x".to_string(),
+        };
+        let rendered = format!("{}", err);
+        assert!(
+            rendered.contains("Type mismatch"),
+            "unexpected message: {}",
+            rendered
+        );
+        assert!(rendered.contains("'x'"), "unexpected message: {}", rendered);
+    }
+
+    #[test]
     fn run_initiates_runtime() {
         let database = cuentitos_common::Database::default();
         let mut runtime = Runtime::new(database.clone());
@@ -832,7 +987,7 @@ mod test {
 
         runtime.run();
 
-        assert_eq!(runtime.running(), true);
+        assert!(runtime.running());
 
         runtime.stop();
 
