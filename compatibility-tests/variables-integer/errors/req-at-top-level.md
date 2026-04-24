@@ -19,5 +19,5 @@ s
 
 ## Result
 ```result
-req-at-top-level.cuentitos:5: ERROR: req statement has no parent block
+req-at-top-level.cuentitos:5: ERROR: Top-level 'req' has no parent block.
 ```

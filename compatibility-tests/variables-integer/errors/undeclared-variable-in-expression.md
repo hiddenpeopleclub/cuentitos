@@ -20,5 +20,5 @@ s
 
 ## Result
 ```result
-undeclared-variable-in-expression.cuentitos:6: ERROR: Undeclared variable: mana
+undeclared-variable-in-expression.cuentitos:6: ERROR: Undefined variable: 'mana'.
 ```

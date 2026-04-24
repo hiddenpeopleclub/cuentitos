@@ -20,5 +20,5 @@ s
 
 ## Result
 ```result
-unknown-operator.cuentitos:6: ERROR: Unknown comparison operator: ~
+unknown-operator.cuentitos:6: ERROR: Unknown comparison operator: '~'.
 ```

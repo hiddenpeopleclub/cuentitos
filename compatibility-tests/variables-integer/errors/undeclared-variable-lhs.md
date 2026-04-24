@@ -20,5 +20,5 @@ s
 
 ## Result
 ```result
-undeclared-variable-lhs.cuentitos:6: ERROR: Undeclared variable: mana
+undeclared-variable-lhs.cuentitos:6: ERROR: Undefined variable: 'mana'.
 ```
