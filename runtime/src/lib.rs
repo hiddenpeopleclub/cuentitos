@@ -706,6 +706,58 @@ mod test {
     }
 
     #[test]
+    fn reset_restores_declared_defaults_after_mutation() {
+        // `Runtime::reset` (and therefore `run`) must reinitialize variable
+        // values from declared defaults, discarding any prior mutations
+        // performed via `set_variable_value`.
+        let script = "--- variables\nint a = 5\nint b = 10\n---\n\nStory.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        runtime
+            .set_variable_value("a", VariableValue::Int(99))
+            .unwrap();
+        runtime
+            .set_variable_value("b", VariableValue::Int(-1))
+            .unwrap();
+        assert_eq!(runtime.variable_value("a"), Some(&VariableValue::Int(99)));
+        assert_eq!(runtime.variable_value("b"), Some(&VariableValue::Int(-1)));
+
+        runtime.reset();
+
+        assert_eq!(runtime.variable_value("a"), Some(&VariableValue::Int(5)));
+        assert_eq!(runtime.variable_value("b"), Some(&VariableValue::Int(10)));
+
+        runtime
+            .set_variable_value("a", VariableValue::Int(123))
+            .unwrap();
+        runtime.run();
+        assert_eq!(runtime.variable_value("a"), Some(&VariableValue::Int(5)));
+    }
+
+    #[test]
+    fn variable_type_mismatch_error_displays_and_is_constructible() {
+        // The `VariableTypeMismatch` branch of `set_variable_value` is
+        // unreachable while `VariableValue` has a single variant — every
+        // value trivially shares its kind with the declared one. This test
+        // pins the user-facing error contract (variant exists, carries the
+        // variable name, and renders a clear message) so the wiring is
+        // verified today and the branch becomes triggerable as soon as a
+        // second `VariableValue` variant is introduced.
+        let err = RuntimeError::VariableTypeMismatch {
+            name: "x".to_string(),
+        };
+        let rendered = format!("{}", err);
+        assert!(
+            rendered.contains("Type mismatch"),
+            "unexpected message: {}",
+            rendered
+        );
+        assert!(rendered.contains("'x'"), "unexpected message: {}", rendered);
+    }
+
+    #[test]
     fn run_initiates_runtime() {
         let database = cuentitos_common::Database::default();
         let mut runtime = Runtime::new(database.clone());

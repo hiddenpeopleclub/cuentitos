@@ -542,7 +542,7 @@ impl Parser {
                         "'--- variables' block must appear at the start of the file; treating as content."
                             .to_string(),
                     file: self.file_path.clone(),
-                    line: context.current_line + 1,
+                    line: context.current_line,
                 });
             }
             // Skip comment lines
@@ -2300,5 +2300,38 @@ mod test {
             }
             _ => panic!("Expected OptionsWithoutParent error"),
         }
+    }
+
+    #[test]
+    fn variables_block_skip_accounting_preserves_content_line_numbers() {
+        // After consuming a `--- variables` block, errors raised on later
+        // content lines must report their original line number, not an
+        // offset into the post-block region.
+        let script = "--- variables\nint a = 1\n---\nFirst line\n   Invalid indentation";
+        let mut parser = Parser::new();
+        let result = parser.parse(script);
+
+        match result {
+            Err(ParseError::InvalidIndentation { line, .. }) => {
+                assert_eq!(line, 5, "indentation error must point at line 5");
+            }
+            other => panic!("expected InvalidIndentation at line 5, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn mid_file_variables_block_emits_warning() {
+        // `--- variables` is only valid as the first directive. A later
+        // occurrence must surface a warning at its actual line number.
+        let script = "Some content\n\n--- variables\nint a = 1\n---";
+        let mut parser = Parser::new();
+        let (_database, warnings) = parser.parse(script).expect("parse should succeed");
+
+        let matched = warnings.iter().find(|w| {
+            w.message
+                .contains("'--- variables' block must appear at the start")
+        });
+        let warning = matched.expect("expected mid-file '--- variables' warning");
+        assert_eq!(warning.line, 3, "warning should point at line 3");
     }
 }
