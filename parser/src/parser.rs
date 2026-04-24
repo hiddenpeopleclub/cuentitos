@@ -98,6 +98,11 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    VariablesBlock {
+        message: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
     MultipleErrors {
         errors: Vec<ParseError>,
     },
@@ -246,6 +251,18 @@ impl fmt::Display for ParseError {
                     .unwrap_or("test.cuentitos");
                 write!(f, "{}:{}: ERROR: Options must have a parent", prefix, line)
             }
+            ParseError::VariablesBlock {
+                message,
+                file,
+                line,
+            } => {
+                let prefix = file
+                    .as_ref()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("test.cuentitos");
+                write!(f, "{}:{}: ERROR: {}", prefix, line, message)
+            }
             ParseError::MultipleErrors { errors } => {
                 for (i, error) in errors.iter().enumerate() {
                     write!(f, "{}", error)?;
@@ -321,8 +338,49 @@ impl Parser {
         self.last_block_at_level.push(start_id);
         self.last_section_at_level.push(start_id); // Start can be parent of top-level sections
 
-        // Iterate through each line
-        for line in script.as_ref().lines() {
+        // Collect lines so we can consume a leading `--- variables` block without
+        // disturbing line-number accounting for the rest of the script.
+        let collected: Vec<&str> = script.as_ref().lines().collect();
+        let mut skip_until_index: Option<usize> = None;
+
+        // Find the first non-empty, non-comment line. If it is `--- variables`,
+        // parse that block before the main pass. Only a leading variables block
+        // is supported; anything else is treated as regular content.
+        for (i, line) in collected.iter().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || Self::is_comment(line) {
+                continue;
+            }
+            if trimmed == "--- variables" {
+                match crate::parsers::variables_parser::parse_variables_block(
+                    &collected,
+                    i,
+                    &mut context.database,
+                    &self.file_path,
+                ) {
+                    Ok(result) => {
+                        skip_until_index = Some(i + result.consumed_lines);
+                    }
+                    Err(e) => {
+                        self.errors.push(e);
+                        // On malformed block (e.g. unterminated), skip the rest of the
+                        // file to avoid re-parsing the block body as narrative content.
+                        skip_until_index = Some(collected.len());
+                    }
+                }
+            }
+            break;
+        }
+
+        let skip_until_index = skip_until_index.unwrap_or(0);
+
+        // Iterate through each line, accounting for any block consumed above.
+        for (line_index, line) in collected.iter().enumerate() {
+            if line_index < skip_until_index {
+                context.current_line += 1;
+                continue;
+            }
+            let line = *line;
             // Skip comment lines
             if Self::is_comment(line) {
                 context.current_line += 1;

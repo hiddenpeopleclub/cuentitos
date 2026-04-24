@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use cuentitos_parser::Parser as CuentitosParser;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 /// Cuentitos - A narrative game engine with probability at its core
 
 #[derive(Parser, Debug)]
@@ -38,6 +38,8 @@ fn main() {
                 }
             };
 
+            // Keep a copy of the script path for CLI-side diagnostics (e.g. `?`).
+            let script_path_for_debug = script_path.clone();
             // Create parser with file path
             let mut parser = CuentitosParser::with_file(script_path);
 
@@ -70,6 +72,17 @@ fn main() {
                     if !input_string.is_empty() {
                         for input in input_string.split(',') {
                             let trimmed = input.trim();
+
+                            // `?` is a CLI-level debug command: print variables
+                            // (or warn if none) without advancing the program counter.
+                            if trimmed == "?" {
+                                // Flush any pending path (e.g. initial START) so the debug
+                                // output appears at the right position in the transcript.
+                                render_path_from(&runtime, last_rendered_idx);
+                                last_rendered_idx = runtime.current_path().len();
+                                print_debug_variables(&runtime, script_path_for_debug.as_path());
+                                continue;
+                            }
 
                             // Auto-step before processing to reach options/content
                             // This allows tests to use "1,s" or "q" instead of "n,1,s" or "n,q"
@@ -397,4 +410,24 @@ fn build_section_path(
     // Simply get the path from the section metadata
     let section = &runtime.database.sections[section_id];
     runtime.database.strings[section.path].clone()
+}
+
+/// Handle the `?` CLI input: print each declared variable's current value in
+/// declaration order, or emit a line-0 warning if no variables are declared.
+fn print_debug_variables(runtime: &cuentitos_runtime::Runtime, script_path: &Path) {
+    let file_name = script_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("test.cuentitos");
+
+    if runtime.database.variables.is_empty() {
+        println!("{}:0: WARNING: No variables declared.", file_name);
+        return;
+    }
+
+    let values = runtime.variable_values();
+    for (i, variable) in runtime.database.variables.iter().enumerate() {
+        let value = values.get(i).copied().unwrap_or(variable.default_value);
+        println!("{}: {}", variable.name, value);
+    }
 }

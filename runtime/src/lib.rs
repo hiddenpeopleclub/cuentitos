@@ -20,6 +20,9 @@ struct RuntimeState {
     waiting_for_option_selection: bool,
     current_options: Vec<BlockId>, // IDs of available option blocks
     last_error: Option<RuntimeError>,
+    /// Current integer variable values, aligned with `Database.variables`.
+    /// Populated on `reset()` from each variable's declared default.
+    variable_values: Vec<i64>,
 }
 
 impl RuntimeState {
@@ -32,6 +35,7 @@ impl RuntimeState {
             waiting_for_option_selection: false,
             current_options: Vec::new(),
             last_error: None,
+            variable_values: Vec::new(),
         }
     }
 
@@ -78,6 +82,39 @@ impl Runtime {
         } else {
             RuntimeState::new()
         };
+        // Initialize variable values from declared defaults.
+        self.state.variable_values = self
+            .database
+            .variables
+            .iter()
+            .map(|v| v.default_value)
+            .collect();
+    }
+
+    /// Returns the current value of every declared variable, in declaration order.
+    pub fn variable_values(&self) -> &[i64] {
+        &self.state.variable_values
+    }
+
+    /// Returns the current value of the variable with the given name.
+    pub fn variable_value(&self, name: &str) -> Option<i64> {
+        self.database
+            .variable_id(name)
+            .and_then(|id| self.state.variable_values.get(id).copied())
+    }
+
+    /// Sets a variable by name; returns an error if the variable does not exist.
+    /// (Introduced now so upcoming `set` implementations can mutate state here.)
+    pub fn set_variable_value(&mut self, name: &str, value: i64) -> Result<(), RuntimeError> {
+        match self.database.variable_id(name) {
+            Some(id) => {
+                self.state.variable_values[id] = value;
+                Ok(())
+            }
+            None => Err(RuntimeError::InvalidPath {
+                message: format!("Undefined variable: '{}'", name),
+            }),
+        }
     }
 
     /// Find a section by its path string, resolving relative paths from current context
@@ -600,6 +637,35 @@ mod test {
         let database = cuentitos_common::Database::default();
         let runtime = Runtime::new(database.clone());
         assert_eq!(runtime.database, database);
+    }
+
+    #[test]
+    fn variable_values_initialize_from_defaults_on_run() {
+        let script = "--- variables\nint a = 5\nint b\nint c = a + 2\n---\n\nStory.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        assert_eq!(database.variables.len(), 3);
+
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        assert_eq!(runtime.variable_values(), &[5, 0, 7]);
+        assert_eq!(runtime.variable_value("a"), Some(5));
+        assert_eq!(runtime.variable_value("b"), Some(0));
+        assert_eq!(runtime.variable_value("c"), Some(7));
+        assert_eq!(runtime.variable_value("missing"), None);
+    }
+
+    #[test]
+    fn set_variable_value_updates_state() {
+        let script = "--- variables\nint a = 5\n---\n\nStory.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        runtime.set_variable_value("a", 42).unwrap();
+        assert_eq!(runtime.variable_value("a"), Some(42));
+
+        assert!(runtime.set_variable_value("missing", 1).is_err());
     }
 
     #[test]
