@@ -65,7 +65,10 @@ impl TestRunner {
 
         let input_commands = test_case.input.split("\n").collect::<Vec<&str>>().join(",");
 
-        // Run the runtime with the script file and the input from the test case
+        // Run the runtime with the script file and the input from the test case.
+        // Concatenate stderr after stdout so runtime errors (printed to stderr
+        // by the CLI) appear in the captured transcript alongside narrative
+        // output.
         let result = match Command::new(&self.runtime_path)
             .arg("run")
             .arg(&temp_path)
@@ -73,7 +76,20 @@ impl TestRunner {
             .output()
         {
             Ok(result) => {
-                let output = String::from_utf8(result.stdout.clone()).unwrap_or_default();
+                let mut output = String::from_utf8(result.stdout.clone()).unwrap_or_default();
+                // Append only error-bearing stderr lines (e.g. RUNTIME ERROR)
+                // to the captured transcript. Informational stderr lines
+                // (lines starting with `Warning:`) aren't part of test
+                // expectations and would otherwise leak into every
+                // transcript that doesn't reach END.
+                let stderr = String::from_utf8(result.stderr.clone()).unwrap_or_default();
+                for line in stderr.lines() {
+                    if line.trim_start().starts_with("Warning:") {
+                        continue;
+                    }
+                    output.push_str(line);
+                    output.push('\n');
+                }
                 let output_trimmed = output.trim_end_matches(&['\r', '\n'][..]);
                 let expected_trimmed = test_case.result.trim_end_matches(&['\r', '\n'][..]);
 

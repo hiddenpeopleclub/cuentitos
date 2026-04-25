@@ -5,6 +5,7 @@ pub mod go_to_section_parser;
 pub mod line_parser;
 pub mod option_parser;
 pub mod section_parser;
+pub mod set_parser;
 pub mod variables_parser;
 
 /// Represents the shared context between different parsers

@@ -1,5 +1,6 @@
 use cuentitos_common::PathResolutionError;
 use std::fmt;
+use std::path::PathBuf;
 
 /// Errors that can occur during runtime execution
 #[derive(Debug, Clone, PartialEq)]
@@ -17,6 +18,12 @@ pub enum RuntimeError {
     /// Attempted to write a value whose variant doesn't match the variable's
     /// declared kind (e.g. assigning a string to an int).
     VariableTypeMismatch { name: String },
+    /// An arithmetic expression evaluated at runtime divided by zero. The
+    /// `line` is the source line that produced the error (used by the CLI
+    /// to format `<file>:<line>: RUNTIME ERROR: Division by zero.`).
+    DivisionByZero { file: Option<PathBuf>, line: usize },
+    /// An arithmetic expression evaluated at runtime overflowed an `i64`.
+    IntegerOverflow { file: Option<PathBuf>, line: usize },
 }
 
 impl fmt::Display for RuntimeError {
@@ -39,6 +46,22 @@ impl fmt::Display for RuntimeError {
             }
             RuntimeError::VariableTypeMismatch { name } => {
                 write!(f, "ERROR: Type mismatch assigning to variable '{}'", name)
+            }
+            RuntimeError::DivisionByZero { file, line } => {
+                let prefix = file
+                    .as_ref()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("<script>");
+                write!(f, "{}:{}: RUNTIME ERROR: Division by zero.", prefix, line)
+            }
+            RuntimeError::IntegerOverflow { file, line } => {
+                let prefix = file
+                    .as_ref()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("<script>");
+                write!(f, "{}:{}: RUNTIME ERROR: Integer overflow.", prefix, line)
             }
         }
     }

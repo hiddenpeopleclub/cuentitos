@@ -157,6 +157,20 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    MalformedSetExpression {
+        expr: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// A `set` referenced a variable whose declared kind isn't `Int`. Today
+    /// only `Int` exists, so this is unreachable; the variant is here so the
+    /// type check at parse time has somewhere to surface when bool/float/
+    /// string variants land.
+    NonIntegerVariableInSet {
+        name: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
     MultipleErrors {
         errors: Vec<ParseError>,
     },
@@ -418,6 +432,24 @@ impl fmt::Display for ParseError {
                     file_prefix(file),
                     line,
                     content
+                )
+            }
+            ParseError::MalformedSetExpression { expr, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Malformed 'set' statement: '{}'. ('set' is reserved at the start of a line; indent or rephrase to use it in narrative text.)",
+                    file_prefix(file),
+                    line,
+                    expr
+                )
+            }
+            ParseError::NonIntegerVariableInSet { name, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Variable '{}' is not an integer; 'set' arithmetic requires integer variables.",
+                    file_prefix(file),
+                    line,
+                    name
                 )
             }
             ParseError::MultipleErrors { errors } => {
@@ -792,31 +824,16 @@ impl Parser {
                         go_to_and_back_result.path
                     };
 
-                    // This is a go-to-section-and-back command
-                    // Find parent block: check if there's a section at this level first
-                    let parent_id = if level < self.last_section_at_level.len() {
-                        // There's a section at this level, use it as parent
-                        Some(self.last_section_at_level[level])
-                    } else if level == 0 {
-                        // At level 0 with no section, use first block (Start or a Section)
-                        self.last_block_at_level.first().copied()
-                    } else if level <= self.last_block_at_level.len() {
-                        // No section at this level, pop back to find parent
-                        while self.last_block_at_level.len() > level {
-                            self.last_block_at_level.pop();
-                        }
-                        self.last_block_at_level.last().copied()
-                    } else {
-                        self.collect_error_and_skip(
-                            ParseError::InvalidIndentation {
-                                message: format!("found {} spaces in: {}", level * 2, content),
-                                file: self.file_path.clone(),
-                                line: context.current_line,
-                            },
-                            &mut context,
-                        );
-                        continue;
-                    };
+                    // This is a go-to-section-and-back command. Resolve
+                    // the parent block via the shared helper.
+                    let parent_id =
+                        match self.resolve_parent_id(level, content, context.current_line) {
+                            Ok(parent_id) => parent_id,
+                            Err(err) => {
+                                self.collect_error_and_skip(err, &mut context);
+                                continue;
+                            }
+                        };
 
                     // Create GoToAndBack block with placeholder SectionId
                     // This will be resolved in the validation pass
@@ -915,6 +932,100 @@ impl Parser {
 
                         // Mark that parent has seen a non-option child
                         self.mark_non_option_child(parent_id);
+                    } else if Self::looks_like_set_line(content.trim()) {
+                        // Parse `set <var> <op> <expr>`. Resolve LHS / RHS
+                        // identifiers against declared variables; surface
+                        // malformed expressions and undeclared references
+                        // as parse-time errors.
+                        match crate::parsers::set_parser::parse_set(
+                            content.trim(),
+                            &context.database,
+                        ) {
+                            Ok(parsed) => {
+                                let parent_id = match self.resolve_parent_id(
+                                    level,
+                                    content,
+                                    context.current_line,
+                                ) {
+                                    Ok(parent_id) => parent_id,
+                                    Err(err) => {
+                                        self.collect_error_and_skip(err, &mut context);
+                                        continue;
+                                    }
+                                };
+
+                                let set_id =
+                                    context
+                                        .database
+                                        .add_set(cuentitos_common::SetStatement::new(
+                                            parsed.variable_id,
+                                            parsed.op,
+                                            parsed.expression,
+                                        ));
+                                let block = Block::with_line(
+                                    BlockType::Set(set_id),
+                                    parent_id,
+                                    level,
+                                    context.current_line,
+                                );
+                                let block_id = context.database.add_block(block);
+
+                                if level >= self.last_block_at_level.len() {
+                                    self.last_block_at_level.push(block_id);
+                                } else {
+                                    self.last_block_at_level[level] = block_id;
+                                }
+
+                                self.mark_non_option_child(parent_id);
+                            }
+                            Err(set_err) => {
+                                use crate::parsers::set_parser::SetParseError;
+                                let parse_error = match set_err {
+                                    SetParseError::UndefinedVariable { name } => {
+                                        ParseError::UndefinedVariableReference {
+                                            name,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    SetParseError::MalformedExpression { expression } => {
+                                        ParseError::MalformedSetExpression {
+                                            expr: expression,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    SetParseError::InvalidLhs { name } => {
+                                        ParseError::InvalidVariableName {
+                                            name,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    SetParseError::MissingLhs
+                                    | SetParseError::MissingAssignment
+                                    | SetParseError::MissingRhs => {
+                                        ParseError::MalformedSetExpression {
+                                            expr: content.trim().to_string(),
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    SetParseError::NonIntegerVariable { name } => {
+                                        ParseError::NonIntegerVariableInSet {
+                                            name,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    SetParseError::NotASetStatement => unreachable!(
+                                        "looks_like_set_line filter should preclude this"
+                                    ),
+                                };
+                                self.collect_error_and_skip(parse_error, &mut context);
+                                continue;
+                            }
+                        }
                     } else if OptionParser::is_option_line(content.trim()) {
                         // Parse as option
                         let result = match self.option_parser.parse(content.trim(), &mut context) {
@@ -1017,26 +1128,11 @@ impl Parser {
                         // Parse as regular string
                         let result = self.line_parser.parse(content.trim(), &mut context)?;
 
-                        // Find parent block: check if there's a section at this level first
-                        let parent_id = if level < self.last_section_at_level.len() {
-                            // There's a section at this level, use it as parent
-                            Some(self.last_section_at_level[level])
-                        } else if level == 0 {
-                            // At level 0 with no section, use first block (Start or a Section)
-                            self.last_block_at_level.first().copied()
-                        } else if level <= self.last_block_at_level.len() {
-                            // No section at this level, pop back to find parent
-                            while self.last_block_at_level.len() > level {
-                                self.last_block_at_level.pop();
-                            }
-                            self.last_block_at_level.last().copied()
-                        } else {
-                            return Err(ParseError::InvalidIndentation {
-                                message: format!("found {} spaces in: {}", level * 2, content),
-                                file: self.file_path.clone(),
-                                line: context.current_line,
-                            });
-                        };
+                        // Resolve parent via shared helper. The String branch
+                        // returns the indentation error directly (matching
+                        // historical behavior) rather than collecting it.
+                        let parent_id =
+                            self.resolve_parent_id(level, content, context.current_line)?;
 
                         // Create new block
                         let string_id = context.database.add_string(result.string);
@@ -1092,6 +1188,49 @@ impl Parser {
     /// Only line-level comments are supported; inline comments (// after content) are not detected.
     fn is_comment(line: &str) -> bool {
         line.trim_start().starts_with("//")
+    }
+
+    /// Cheap pre-filter: does this trimmed line begin with the `set` keyword?
+    /// Lines that pass through here are then handed to `set_parser::parse_set`
+    /// for full validation.
+    fn looks_like_set_line(content: &str) -> bool {
+        content == "set"
+            || content
+                .strip_prefix("set")
+                .map(|rest| rest.starts_with(' ') || rest.starts_with('\t'))
+                .unwrap_or(false)
+    }
+
+    /// Find the parent block for a non-section block at `level`. Mutates
+    /// `last_block_at_level` (pops back to the new level) so subsequent
+    /// blocks at the same level see the right ancestor. Returns
+    /// `Err(InvalidIndentation)` if the level skipped a step.
+    ///
+    /// Shared between the String, GoToAndBack, and Set branches; the
+    /// GoTo/Option branches keep a non-mutating `get(level - 1)` lookup
+    /// because they don't reset the level stack on visit.
+    fn resolve_parent_id(
+        &mut self,
+        level: usize,
+        content: &str,
+        line: usize,
+    ) -> Result<Option<BlockId>, ParseError> {
+        if level < self.last_section_at_level.len() {
+            Ok(Some(self.last_section_at_level[level]))
+        } else if level == 0 {
+            Ok(self.last_block_at_level.first().copied())
+        } else if level <= self.last_block_at_level.len() {
+            while self.last_block_at_level.len() > level {
+                self.last_block_at_level.pop();
+            }
+            Ok(self.last_block_at_level.last().copied())
+        } else {
+            Err(ParseError::InvalidIndentation {
+                message: format!("found {} spaces in: {}", level * 2, content),
+                file: self.file_path.clone(),
+                line,
+            })
+        }
     }
 
     fn parse_indentation<'a>(
@@ -1692,11 +1831,12 @@ impl Parser {
         Ok(())
     }
 
-    /// Check if a section has any content (String or Goto blocks), recursively
+    /// Check if a section has any content (String, Set, or Goto blocks), recursively
     fn section_has_content(database: &Database, section_id: BlockId) -> bool {
         for &child_id in &database.blocks[section_id].children {
             match &database.blocks[child_id].block_type {
                 BlockType::String(_)
+                | BlockType::Set(_)
                 | BlockType::GoTo(_)
                 | BlockType::GoToAndBack(_)
                 | BlockType::GoToStart

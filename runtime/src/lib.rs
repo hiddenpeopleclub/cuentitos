@@ -1,4 +1,5 @@
 use cuentitos_common::*;
+use std::path::PathBuf;
 
 pub mod error;
 pub use error::RuntimeError;
@@ -55,6 +56,10 @@ pub struct Runtime {
     pub database: Database,
     running: bool,
     state: RuntimeState,
+    /// Optional source path used to format runtime errors as
+    /// `<file>:<line>: RUNTIME ERROR: ...`. None when the database came from
+    /// an in-memory script (e.g. unit tests).
+    file_path: Option<PathBuf>,
 }
 
 impl Runtime {
@@ -63,6 +68,19 @@ impl Runtime {
             database,
             running: false,
             state: RuntimeState::new(),
+            file_path: None,
+        }
+    }
+
+    /// Construct a runtime that knows the source script path. Required for
+    /// runtime arithmetic errors to include `<file>:<line>:` prefixes that
+    /// match the parse-time error format.
+    pub fn with_file(database: Database, file_path: PathBuf) -> Self {
+        Self {
+            database,
+            running: false,
+            state: RuntimeState::new(),
+            file_path: Some(file_path),
         }
     }
 
@@ -245,6 +263,11 @@ impl Runtime {
     /// Returns and clears the last runtime error, if any
     pub fn take_last_error(&mut self) -> Option<RuntimeError> {
         self.state.last_error.take()
+    }
+
+    /// Non-consuming peek at the last runtime error.
+    pub fn has_error(&self) -> bool {
+        self.state.last_error.is_some()
     }
 
     /// Returns the block IDs of the current available options
@@ -472,25 +495,131 @@ impl Runtime {
     }
 
     pub fn step(&mut self) -> bool {
-        if self.can_continue() {
-            if let Some(next_id) = self.find_next_block() {
-                // Check if the next block is an option
-                if matches!(
-                    self.database.blocks[next_id].block_type,
-                    BlockType::Option(_)
-                ) {
-                    // Collect all option siblings
-                    self.collect_options_at(next_id);
-                    return false; // Stop stepping, wait for user choice
-                }
+        if !self.can_continue() {
+            return false;
+        }
+        // Advance one user-visible block. Silent side-effect blocks (today
+        // just `Set`; will include `Req` once it's implemented) are
+        // transparently traversed so a single `n` in the CLI lands on the
+        // next narratively-visible block.
+        let mut advanced = false;
+        loop {
+            let Some(next_id) = self.find_next_block() else {
+                return advanced;
+            };
 
-                self.state.previous_program_counter = self.state.program_counter;
-                self.state.program_counter = next_id;
-                self.state.current_path.push(next_id);
+            // Stop on options — the CLI must prompt the user.
+            if matches!(
+                self.database.blocks[next_id].block_type,
+                BlockType::Option(_)
+            ) {
+                self.collect_options_at(next_id);
+                return advanced;
+            }
+
+            // Apply `set` side effects when stepping *onto* the block.
+            // Arithmetic errors halt execution: jump PC to END (to
+            // terminate the outer loop) but do NOT push END onto
+            // current_path (so render_path_from won't print END).
+            if let BlockType::Set(set_id) = self.database.blocks[next_id].block_type {
+                let line = self.database.blocks[next_id].line;
+                if let Err(err) = self.apply_set(set_id, line) {
+                    self.state.last_error = Some(err);
+                    let end_id = self.database.blocks.len() - 1;
+                    self.state.previous_program_counter = self.state.program_counter;
+                    self.state.program_counter = end_id;
+                    return advanced;
+                }
+            }
+
+            self.state.previous_program_counter = self.state.program_counter;
+            self.state.program_counter = next_id;
+            self.state.current_path.push(next_id);
+            advanced = true;
+
+            // Continue past silent blocks so a single `step()` lands on the
+            // next visible block. Any non-silent block ends the step.
+            if !Self::is_silent_block(&self.database.blocks[next_id].block_type) {
                 return true;
             }
+            if !self.can_continue() {
+                return advanced;
+            }
         }
-        false
+    }
+
+    /// Blocks that produce no narrative output and should be traversed
+    /// transparently by a single `step()`. Today only `Set`; once `Req`
+    /// lands as a gating statement it joins this list.
+    fn is_silent_block(block_type: &BlockType) -> bool {
+        matches!(block_type, BlockType::Set(_))
+    }
+
+    /// Evaluate the RHS expression of a `set` against current variable values
+    /// and apply the assignment operator to the target variable.
+    fn apply_set(&mut self, set_id: SetId, line: usize) -> Result<(), RuntimeError> {
+        // Read inputs through immutable borrows so we don't clone the
+        // expression AST or the variable-values vector. The borrows end
+        // before the final write to `self.state.variable_values`.
+        let (op, var_id, rhs) = {
+            let stmt = &self.database.sets[set_id];
+            let values = &self.state.variable_values;
+            // Parser guarantees every variable referenced in the expression
+            // is declared with `VariableKind::Int`, so `as_int()` is total.
+            let rhs = match cuentitos_common::evaluate(&stmt.expression, &|id| {
+                values[id].as_int().expect(
+                    "set expression references a non-int variable; parser should have rejected this",
+                )
+            }) {
+                Ok(v) => v,
+                Err(EvalExprError::DivisionByZero) => {
+                    return Err(RuntimeError::DivisionByZero {
+                        file: self.file_path.clone(),
+                        line,
+                    });
+                }
+                Err(EvalExprError::Overflow) => {
+                    return Err(RuntimeError::IntegerOverflow {
+                        file: self.file_path.clone(),
+                        line,
+                    });
+                }
+            };
+            (stmt.op, stmt.variable_id, rhs)
+        };
+
+        let overflow = || RuntimeError::IntegerOverflow {
+            file: self.file_path.clone(),
+            line,
+        };
+        // Plain `Assign` overwrites the LHS unconditionally and never reads
+        // its prior value, so don't surface the LHS-is-int invariant in that
+        // path — only compound ops need `current`.
+        if matches!(op, AssignOp::Assign) {
+            self.state.variable_values[var_id] = VariableValue::Int(rhs);
+            return Ok(());
+        }
+        let current = self.state.variable_values[var_id]
+            .as_int()
+            .expect("set LHS is a non-int variable; parser should have rejected this");
+        let new_value = match op {
+            AssignOp::Assign => unreachable!("handled by the early return above"),
+            AssignOp::AddAssign => current.checked_add(rhs).ok_or_else(overflow)?,
+            AssignOp::SubAssign => current.checked_sub(rhs).ok_or_else(overflow)?,
+            AssignOp::MulAssign => current.checked_mul(rhs).ok_or_else(overflow)?,
+            AssignOp::DivAssign => {
+                if rhs == 0 {
+                    return Err(RuntimeError::DivisionByZero {
+                        file: self.file_path.clone(),
+                        line,
+                    });
+                }
+                current.checked_div(rhs).ok_or_else(overflow)?
+            }
+        };
+
+        self.state.variable_values[var_id] = VariableValue::Int(new_value);
+        Ok(())
     }
 
     /// Collect all option siblings starting from the first option
@@ -532,6 +661,12 @@ impl Runtime {
 
             // Stop if we're now waiting for option selection
             if self.state.waiting_for_option_selection {
+                break;
+            }
+
+            // Stop on a runtime error so the caller can surface it before
+            // any further blocks render.
+            if self.state.last_error.is_some() {
                 break;
             }
         }
@@ -734,6 +869,147 @@ mod test {
             .unwrap();
         runtime.run();
         assert_eq!(runtime.variable_value("a"), Some(&VariableValue::Int(5)));
+    }
+
+    /// Helper: parse `script`, run to END, return the final value of `name`.
+    fn run_and_read(script: &str, name: &str) -> Option<VariableValue> {
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+        runtime.skip();
+        runtime.variable_value(name).cloned()
+    }
+
+    #[test]
+    fn apply_set_plain_assign() {
+        let script = "--- variables\nint x = 0\n---\nset x = 7\nDone.";
+        assert_eq!(run_and_read(script, "x"), Some(VariableValue::Int(7)));
+    }
+
+    #[test]
+    fn apply_set_add_assign() {
+        let script = "--- variables\nint x = 5\n---\nset x += 3\nDone.";
+        assert_eq!(run_and_read(script, "x"), Some(VariableValue::Int(8)));
+    }
+
+    #[test]
+    fn apply_set_sub_assign() {
+        let script = "--- variables\nint x = 10\n---\nset x -= 4\nDone.";
+        assert_eq!(run_and_read(script, "x"), Some(VariableValue::Int(6)));
+    }
+
+    #[test]
+    fn apply_set_mul_assign() {
+        let script = "--- variables\nint x = 3\n---\nset x *= 4\nDone.";
+        assert_eq!(run_and_read(script, "x"), Some(VariableValue::Int(12)));
+    }
+
+    #[test]
+    fn apply_set_div_assign() {
+        let script = "--- variables\nint x = 20\n---\nset x /= 4\nDone.";
+        assert_eq!(run_and_read(script, "x"), Some(VariableValue::Int(5)));
+    }
+
+    #[test]
+    fn apply_set_div_by_zero_literal() {
+        let script = "--- variables\nint x = 10\n---\nset x /= 0\nDone.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+        runtime.skip();
+        assert!(matches!(
+            runtime.take_last_error(),
+            Some(RuntimeError::DivisionByZero { .. })
+        ));
+    }
+
+    #[test]
+    fn apply_set_div_by_zero_through_expression() {
+        let script = "--- variables\nint x = 10\nint y = 0\n---\nset x = x / y\nDone.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+        runtime.skip();
+        assert!(matches!(
+            runtime.take_last_error(),
+            Some(RuntimeError::DivisionByZero { .. })
+        ));
+    }
+
+    #[test]
+    fn apply_set_add_assign_overflow_at_i64_max() {
+        // x = i64::MAX, then x += 1 → overflow.
+        let script = "--- variables\nint x = 9223372036854775807\n---\nset x += 1\nDone.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+        runtime.skip();
+        assert!(matches!(
+            runtime.take_last_error(),
+            Some(RuntimeError::IntegerOverflow { .. })
+        ));
+    }
+
+    #[test]
+    fn apply_set_mul_assign_overflow_at_i64_max() {
+        let script = "--- variables\nint x = 9223372036854775807\n---\nset x *= 2\nDone.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+        runtime.skip();
+        assert!(matches!(
+            runtime.take_last_error(),
+            Some(RuntimeError::IntegerOverflow { .. })
+        ));
+    }
+
+    #[test]
+    fn apply_set_multi_read_uses_pre_assignment_value() {
+        // For `set x = x*2 + x` with x=3, every read of `x` on the RHS sees
+        // the pre-assignment value (3), so the result is 3*2 + 3 = 9 — not
+        // 6 + 6 = 12, which would imply the first read writes back before
+        // the second.
+        let script = "--- variables\nint x = 3\n---\nset x = x * 2 + x\nDone.";
+        assert_eq!(run_and_read(script, "x"), Some(VariableValue::Int(9)));
+    }
+
+    #[test]
+    fn apply_set_plain_assign_skips_lhs_read() {
+        // Plain `Assign` overwrites the LHS unconditionally and must not
+        // read its prior value (nor surface the LHS-is-int invariant) on
+        // this path. Today every `VariableValue` is `Int(_)` so `as_int()`
+        // is total and a regression here wouldn't immediately panic — but
+        // calling `apply_set` directly pins the unit-level contract so the
+        // skip survives future refactors and gates the panic check for
+        // when a non-`Int` `VariableValue` variant lands.
+        let script = "--- variables\nint x = 5\n---\nset x = 7\nDone.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        assert_eq!(runtime.database.sets.len(), 1);
+        runtime
+            .apply_set(0, 0)
+            .expect("plain assign should not error");
+        assert_eq!(runtime.variable_value("x"), Some(&VariableValue::Int(7)));
+    }
+
+    #[test]
+    fn apply_set_negation_of_i64_min_overflows_at_runtime() {
+        // `-9223372036854775808` is folded into `Lit(i64::MIN)` at parse
+        // time, but `-x` for `x = i64::MIN` is lowered to `0 - x` and must
+        // overflow at runtime. Pinning the parse/runtime split here so a
+        // future change to the lowering doesn't silently accept it.
+        let script =
+            "--- variables\nint x = 0\n---\nset x = -9223372036854775808\nset x = -x\nDone.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+        runtime.skip();
+        assert!(matches!(
+            runtime.take_last_error(),
+            Some(RuntimeError::IntegerOverflow { .. })
+        ));
     }
 
     #[test]
