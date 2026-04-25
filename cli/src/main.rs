@@ -357,10 +357,11 @@ fn handle_goto_command(
 }
 
 fn report_runtime_error(runtime: &mut cuentitos_runtime::Runtime) -> bool {
-    // Runtime errors render on stdout so they appear in the same stream as
-    // story output (the compatibility test runner only compares stdout).
+    // Runtime errors render on stderr (the conventional Unix stream for
+    // diagnostics). The compat test runner merges stderr into stdout
+    // when capturing output so tests still see the error in transcript.
     if let Some(err) = runtime.take_last_error() {
-        println!("{}", err);
+        eprintln!("{}", err);
         return true;
     }
     false
