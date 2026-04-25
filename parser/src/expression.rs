@@ -233,11 +233,8 @@ fn parse_primary(
             }
             Ok(Expr::Lit(n as i64))
         }
-        Some(Token::Ident(_)) => {
-            let name = match &tokens[*pos] {
-                Token::Ident(name) => name.clone(),
-                _ => unreachable!(),
-            };
+        Some(Token::Ident(name)) => {
+            let name = name.clone();
             *pos += 1;
             match resolver.resolve(&name) {
                 Some(id) => Ok(Expr::Var(id)),
