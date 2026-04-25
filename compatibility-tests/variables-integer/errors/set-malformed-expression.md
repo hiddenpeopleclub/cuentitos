@@ -19,5 +19,5 @@ s
 
 ## Result
 ```result
-set-malformed-expression.cuentitos:5: ERROR: Malformed expression in 'set': '5 +'.
+set-malformed-expression.cuentitos:5: ERROR: Malformed 'set' statement: '5 +'. ('set' is reserved at the start of a line; indent or rephrase to use it in narrative text.)
 ```

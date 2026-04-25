@@ -20,7 +20,7 @@ pub struct ParsedSet {
 ///
 /// `MalformedExpression` is returned for any syntactic problem in the RHS;
 /// the original RHS string is preserved so the caller can format an error
-/// message like `Malformed expression in 'set': '5 +'.`.
+/// message like `Malformed 'set' statement: '5 +'.`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetParseError {
     /// The line did not begin with `set ` followed by something parseable.

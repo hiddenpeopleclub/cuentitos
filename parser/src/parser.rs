@@ -437,7 +437,7 @@ impl fmt::Display for ParseError {
             ParseError::MalformedSetExpression { expr, file, line } => {
                 write!(
                     f,
-                    "{}:{}: ERROR: Malformed expression in 'set': '{}'.",
+                    "{}:{}: ERROR: Malformed 'set' statement: '{}'. ('set' is reserved at the start of a line; indent or rephrase to use it in narrative text.)",
                     file_prefix(file),
                     line,
                     expr
