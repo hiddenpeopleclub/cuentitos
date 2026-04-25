@@ -974,6 +974,45 @@ mod test {
     }
 
     #[test]
+    fn apply_set_plain_assign_skips_lhs_read() {
+        // Plain `Assign` overwrites the LHS unconditionally and must not
+        // read its prior value (nor surface the LHS-is-int invariant) on
+        // this path. Today every `VariableValue` is `Int(_)` so `as_int()`
+        // is total and a regression here wouldn't immediately panic — but
+        // calling `apply_set` directly pins the unit-level contract so the
+        // skip survives future refactors and gates the panic check for
+        // when a non-`Int` `VariableValue` variant lands.
+        let script = "--- variables\nint x = 5\n---\nset x = 7\nDone.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+
+        assert_eq!(runtime.database.sets.len(), 1);
+        runtime
+            .apply_set(0, 0)
+            .expect("plain assign should not error");
+        assert_eq!(runtime.variable_value("x"), Some(&VariableValue::Int(7)));
+    }
+
+    #[test]
+    fn apply_set_negation_of_i64_min_overflows_at_runtime() {
+        // `-9223372036854775808` is folded into `Lit(i64::MIN)` at parse
+        // time, but `-x` for `x = i64::MIN` is lowered to `0 - x` and must
+        // overflow at runtime. Pinning the parse/runtime split here so a
+        // future change to the lowering doesn't silently accept it.
+        let script =
+            "--- variables\nint x = 0\n---\nset x = -9223372036854775808\nset x = -x\nDone.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+        runtime.skip();
+        assert!(matches!(
+            runtime.take_last_error(),
+            Some(RuntimeError::IntegerOverflow { .. })
+        ));
+    }
+
+    #[test]
     fn variable_type_mismatch_error_displays_and_is_constructible() {
         // The `VariableTypeMismatch` branch of `set_variable_value` is
         // unreachable while `VariableValue` has a single variant — every
