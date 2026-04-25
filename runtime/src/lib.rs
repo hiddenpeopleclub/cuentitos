@@ -561,7 +561,7 @@ impl Runtime {
         // Read inputs through immutable borrows so we don't clone the
         // expression AST or the variable-values vector. The borrows end
         // before the final write to `self.state.variable_values`.
-        let (op, var_id, rhs, current) = {
+        let (op, var_id, rhs) = {
             let stmt = &self.database.sets[set_id];
             let values = &self.state.variable_values;
             // Parser guarantees every variable referenced in the expression
@@ -585,18 +585,25 @@ impl Runtime {
                     });
                 }
             };
-            let current = values[stmt.variable_id]
-                .as_int()
-                .expect("set LHS is a non-int variable; parser should have rejected this");
-            (stmt.op, stmt.variable_id, rhs, current)
+            (stmt.op, stmt.variable_id, rhs)
         };
 
         let overflow = || RuntimeError::IntegerOverflow {
             file: self.file_path.clone(),
             line,
         };
+        // Plain `Assign` overwrites the LHS unconditionally and never reads
+        // its prior value, so don't surface the LHS-is-int invariant in that
+        // path — only compound ops need `current`.
+        if matches!(op, AssignOp::Assign) {
+            self.state.variable_values[var_id] = VariableValue::Int(rhs);
+            return Ok(());
+        }
+        let current = self.state.variable_values[var_id]
+            .as_int()
+            .expect("set LHS is a non-int variable; parser should have rejected this");
         let new_value = match op {
-            AssignOp::Assign => rhs,
+            AssignOp::Assign => unreachable!("handled by the early return above"),
             AssignOp::AddAssign => current.checked_add(rhs).ok_or_else(overflow)?,
             AssignOp::SubAssign => current.checked_sub(rhs).ok_or_else(overflow)?,
             AssignOp::MulAssign => current.checked_mul(rhs).ok_or_else(overflow)?,
