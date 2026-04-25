@@ -25,8 +25,6 @@ Hello
 ## Input
 ```input
 n
-n
-n
 ?
 s
 ```

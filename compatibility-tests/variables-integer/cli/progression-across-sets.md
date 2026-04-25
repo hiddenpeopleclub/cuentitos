@@ -19,12 +19,9 @@ Third
 ## Input
 ```input
 n
-n
 ?
 n
-n
 ?
-n
 n
 ?
 s

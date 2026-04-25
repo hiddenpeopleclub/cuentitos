@@ -495,40 +495,64 @@ impl Runtime {
     }
 
     pub fn step(&mut self) -> bool {
-        if self.can_continue() {
-            if let Some(next_id) = self.find_next_block() {
-                // Check if the next block is an option
-                if matches!(
-                    self.database.blocks[next_id].block_type,
-                    BlockType::Option(_)
-                ) {
-                    // Collect all option siblings
-                    self.collect_options_at(next_id);
-                    return false; // Stop stepping, wait for user choice
-                }
+        if !self.can_continue() {
+            return false;
+        }
+        // Advance one user-visible block. Silent side-effect blocks (today
+        // just `Set`; will include `Req` once it's implemented) are
+        // transparently traversed so a single `n` in the CLI lands on the
+        // next narratively-visible block.
+        let mut advanced = false;
+        loop {
+            let Some(next_id) = self.find_next_block() else {
+                return advanced;
+            };
 
-                // Apply `set` side effects when stepping *onto* the block.
-                // Arithmetic errors halt execution: jump PC to END (to
-                // terminate the loop) but do NOT push END onto current_path
-                // (so render_path_from won't print END).
-                if let BlockType::Set(set_id) = self.database.blocks[next_id].block_type {
-                    let line = self.database.blocks[next_id].line;
-                    if let Err(err) = self.apply_set(set_id, line) {
-                        self.state.last_error = Some(err);
-                        let end_id = self.database.blocks.len() - 1;
-                        self.state.previous_program_counter = self.state.program_counter;
-                        self.state.program_counter = end_id;
-                        return false;
-                    }
-                }
+            // Stop on options — the CLI must prompt the user.
+            if matches!(
+                self.database.blocks[next_id].block_type,
+                BlockType::Option(_)
+            ) {
+                self.collect_options_at(next_id);
+                return advanced;
+            }
 
-                self.state.previous_program_counter = self.state.program_counter;
-                self.state.program_counter = next_id;
-                self.state.current_path.push(next_id);
+            // Apply `set` side effects when stepping *onto* the block.
+            // Arithmetic errors halt execution: jump PC to END (to
+            // terminate the outer loop) but do NOT push END onto
+            // current_path (so render_path_from won't print END).
+            if let BlockType::Set(set_id) = self.database.blocks[next_id].block_type {
+                let line = self.database.blocks[next_id].line;
+                if let Err(err) = self.apply_set(set_id, line) {
+                    self.state.last_error = Some(err);
+                    let end_id = self.database.blocks.len() - 1;
+                    self.state.previous_program_counter = self.state.program_counter;
+                    self.state.program_counter = end_id;
+                    return advanced;
+                }
+            }
+
+            self.state.previous_program_counter = self.state.program_counter;
+            self.state.program_counter = next_id;
+            self.state.current_path.push(next_id);
+            advanced = true;
+
+            // Continue past silent blocks so a single `step()` lands on the
+            // next visible block. Any non-silent block ends the step.
+            if !Self::is_silent_block(&self.database.blocks[next_id].block_type) {
                 return true;
             }
+            if !self.can_continue() {
+                return advanced;
+            }
         }
-        false
+    }
+
+    /// Blocks that produce no narrative output and should be traversed
+    /// transparently by a single `step()`. Today only `Set`; once `Req`
+    /// lands as a gating statement it joins this list.
+    fn is_silent_block(block_type: &BlockType) -> bool {
+        matches!(block_type, BlockType::Set(_))
     }
 
     /// Evaluate the RHS expression of a `set` against current variable values
