@@ -498,15 +498,38 @@ impl Runtime {
         if !self.can_continue() {
             return false;
         }
-        // Advance one user-visible block. Silent side-effect blocks (today
-        // just `Set`; will include `Req` once it's implemented) are
-        // transparently traversed so a single `n` in the CLI lands on the
-        // next narratively-visible block.
+        // Advance one user-visible block. Silent side-effect blocks
+        // (`Set`, `Req`) are transparently traversed so a single `n` in
+        // the CLI lands on the next narratively-visible block.
         let mut advanced = false;
         loop {
             let Some(next_id) = self.find_next_block() else {
                 return advanced;
             };
+
+            // Before entering `next_id`, evaluate any `req` children that
+            // gate it. A failing `req` skips `next_id` and its entire
+            // subtree without rendering anything; an evaluation error
+            // (overflow, div-by-zero) propagates as a runtime error.
+            match self.evaluate_req_gating(next_id) {
+                Ok(true) => {}
+                Ok(false) => {
+                    let skip_to = self.last_descendant(next_id);
+                    self.state.previous_program_counter = self.state.program_counter;
+                    self.state.program_counter = skip_to;
+                    if !self.can_continue() {
+                        return advanced;
+                    }
+                    continue;
+                }
+                Err(err) => {
+                    self.state.last_error = Some(err);
+                    let end_id = self.database.blocks.len() - 1;
+                    self.state.previous_program_counter = self.state.program_counter;
+                    self.state.program_counter = end_id;
+                    return advanced;
+                }
+            }
 
             // Stop on options — the CLI must prompt the user.
             if matches!(
@@ -549,10 +572,68 @@ impl Runtime {
     }
 
     /// Blocks that produce no narrative output and should be traversed
-    /// transparently by a single `step()`. Today only `Set`; once `Req`
-    /// lands as a gating statement it joins this list.
+    /// transparently by a single `step()`. `Set` mutates a variable;
+    /// `Req` gates its parent and is itself never rendered.
     fn is_silent_block(block_type: &BlockType) -> bool {
-        matches!(block_type, BlockType::Set(_))
+        matches!(block_type, BlockType::Set(_) | BlockType::Req(_))
+    }
+
+    /// Walk to the rightmost descendant of `block_id` so we can land
+    /// `program_counter` past a gated subtree. The next call to
+    /// `find_next_block` then resumes traversal at the gated block's
+    /// next sibling.
+    fn last_descendant(&self, block_id: BlockId) -> BlockId {
+        let mut current = block_id;
+        loop {
+            let block = &self.database.blocks[current];
+            match block.children.last() {
+                Some(&last_child) => current = last_child,
+                None => return current,
+            }
+        }
+    }
+
+    /// Evaluate every `req` child of `block_id` against the current
+    /// variable values. Multiple `req` siblings act as implicit AND;
+    /// short-circuits on the first failure so trailing `req`s with
+    /// runtime errors don't fire when an earlier sibling already
+    /// disqualified the parent.
+    fn evaluate_req_gating(&self, block_id: BlockId) -> Result<bool, RuntimeError> {
+        let children = self.database.blocks[block_id].children.clone();
+        for child_id in children {
+            let BlockType::Req(req_id) = self.database.blocks[child_id].block_type else {
+                continue;
+            };
+            let stmt = &self.database.req_statements[req_id];
+            let line = self.database.blocks[child_id].line;
+            let values = &self.state.variable_values;
+            let lhs = values[stmt.variable_id]
+                .as_int()
+                .expect("req LHS is a non-int variable; parser should have rejected this");
+            let rhs = match cuentitos_common::evaluate(&stmt.expression, &|id| {
+                values[id].as_int().expect(
+                    "req expression references a non-int variable; parser should have rejected this",
+                )
+            }) {
+                Ok(v) => v,
+                Err(EvalExprError::DivisionByZero) => {
+                    return Err(RuntimeError::DivisionByZero {
+                        file: self.file_path.clone(),
+                        line,
+                    });
+                }
+                Err(EvalExprError::Overflow) => {
+                    return Err(RuntimeError::IntegerOverflow {
+                        file: self.file_path.clone(),
+                        line,
+                    });
+                }
+            };
+            if !stmt.op.apply(lhs, rhs) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     /// Evaluate the RHS expression of a `set` against current variable values
@@ -1010,6 +1091,123 @@ mod test {
             runtime.take_last_error(),
             Some(RuntimeError::IntegerOverflow { .. })
         ));
+    }
+
+    /// Helper: parse `script`, run to skip, and collect every visible
+    /// `String` block on the rendered path. Lets req-gating tests make
+    /// black-box assertions about which lines actually rendered.
+    fn run_and_collect_strings(script: &str) -> Vec<String> {
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+        runtime.skip();
+        runtime
+            .current_blocks()
+            .into_iter()
+            .filter_map(|b| match b.block_type {
+                BlockType::String(id) => Some(runtime.database.strings[id].clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn req_passing_shows_parent() {
+        let script = "--- variables\nint x = 1\n---\nGated.\n  req x = 1\nAfter.";
+        assert_eq!(run_and_collect_strings(script), vec!["Gated.", "After."]);
+    }
+
+    #[test]
+    fn req_failing_skips_parent() {
+        let script = "--- variables\nint x = 0\n---\nGated.\n  req x = 1\nAfter.";
+        assert_eq!(run_and_collect_strings(script), vec!["After."]);
+    }
+
+    #[test]
+    fn req_failing_skips_descendants() {
+        let script =
+            "--- variables\nint x = 0\n---\nParent.\n  req x = 1\n  Child.\n  Other child.\nAfter.";
+        assert_eq!(run_and_collect_strings(script), vec!["After."]);
+    }
+
+    #[test]
+    fn req_multiple_siblings_act_as_and() {
+        let script = "--- variables\nint x = 5\n---\n\
+            Both pass.\n  req x > 0\n  req x < 10\n\
+            One fails.\n  req x > 0\n  req x > 100\n\
+            All three pass.\n  req x >= 5\n  req x <= 5\n  req x != 0\n";
+        assert_eq!(
+            run_and_collect_strings(script),
+            vec!["Both pass.", "All three pass."]
+        );
+    }
+
+    #[test]
+    fn req_short_circuits_failing_parent() {
+        // The inner `req inner = 10 / inner` would div-by-zero if
+        // evaluated. The outer parent's failing `req` must skip the
+        // entire subtree without ever entering the inner block — so the
+        // inner `req` is never evaluated and no runtime error fires.
+        let script = "--- variables\nint outer = 0\nint inner = 0\n---\n\
+            Outer fails.\n  req outer = 1\n  Never shown.\n    req inner = 10 / inner\n\
+            After.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+        runtime.skip();
+        assert!(runtime.take_last_error().is_none());
+        let visible: Vec<String> = runtime
+            .current_blocks()
+            .into_iter()
+            .filter_map(|b| match b.block_type {
+                BlockType::String(id) => Some(runtime.database.strings[id].clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(visible, vec!["After."]);
+    }
+
+    #[test]
+    fn req_set_flips_outcome() {
+        // `set` mutates the variable mid-script, flipping which `req`
+        // passes from "before" to "after".
+        let script = "--- variables\nint flag = 0\n---\n\
+            Before zero.\n  req flag = 0\n\
+            Before one.\n  req flag = 1\n\
+            set flag = 1\n\
+            After zero.\n  req flag = 0\n\
+            After one.\n  req flag = 1\n";
+        assert_eq!(
+            run_and_collect_strings(script),
+            vec!["Before zero.", "After one."]
+        );
+    }
+
+    #[test]
+    fn req_division_by_zero_at_runtime() {
+        let script = "--- variables\nint x = 0\nint y = 0\n---\n\
+            Gated.\n  req x = 10 / y\n\
+            After.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+        runtime.skip();
+        assert!(matches!(
+            runtime.take_last_error(),
+            Some(RuntimeError::DivisionByZero { .. })
+        ));
+    }
+
+    #[test]
+    fn req_negative_literal_rhs_compares_correctly() {
+        let script = "--- variables\nint balance = -5\n---\n\
+            Above bound.\n  req balance > -10\n\
+            Equals minus five.\n  req balance = -5\n\
+            Above zero.\n  req balance > 0\n";
+        assert_eq!(
+            run_and_collect_strings(script),
+            vec!["Above bound.", "Equals minus five."]
+        );
     }
 
     #[test]
