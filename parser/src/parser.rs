@@ -826,17 +826,14 @@ impl Parser {
 
                     // This is a go-to-section-and-back command. Resolve
                     // the parent block via the shared helper.
-                    let parent_id = match self.resolve_parent_id(
-                        level,
-                        &content,
-                        context.current_line,
-                    ) {
-                        Ok(parent_id) => parent_id,
-                        Err(err) => {
-                            self.collect_error_and_skip(err, &mut context);
-                            continue;
-                        }
-                    };
+                    let parent_id =
+                        match self.resolve_parent_id(level, content, context.current_line) {
+                            Ok(parent_id) => parent_id,
+                            Err(err) => {
+                                self.collect_error_and_skip(err, &mut context);
+                                continue;
+                            }
+                        };
 
                     // Create GoToAndBack block with placeholder SectionId
                     // This will be resolved in the validation pass
@@ -947,7 +944,7 @@ impl Parser {
                             Ok(parsed) => {
                                 let parent_id = match self.resolve_parent_id(
                                     level,
-                                    &content,
+                                    content,
                                     context.current_line,
                                 ) {
                                     Ok(parent_id) => parent_id,
@@ -1135,7 +1132,7 @@ impl Parser {
                         // returns the indentation error directly (matching
                         // historical behavior) rather than collecting it.
                         let parent_id =
-                            self.resolve_parent_id(level, &content, context.current_line)?;
+                            self.resolve_parent_id(level, content, context.current_line)?;
 
                         // Create new block
                         let string_id = context.database.add_string(result.string);
