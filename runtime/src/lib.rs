@@ -880,6 +880,108 @@ mod test {
         assert_eq!(runtime.variable_value("a"), Some(&VariableValue::Int(5)));
     }
 
+    /// Helper: parse `script`, run to END, return the final value of `name`.
+    fn run_and_read(script: &str, name: &str) -> Option<VariableValue> {
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+        runtime.skip();
+        runtime.variable_value(name).cloned()
+    }
+
+    #[test]
+    fn apply_set_plain_assign() {
+        let script = "--- variables\nint x = 0\n---\nset x = 7\nDone.";
+        assert_eq!(run_and_read(script, "x"), Some(VariableValue::Int(7)));
+    }
+
+    #[test]
+    fn apply_set_add_assign() {
+        let script = "--- variables\nint x = 5\n---\nset x += 3\nDone.";
+        assert_eq!(run_and_read(script, "x"), Some(VariableValue::Int(8)));
+    }
+
+    #[test]
+    fn apply_set_sub_assign() {
+        let script = "--- variables\nint x = 10\n---\nset x -= 4\nDone.";
+        assert_eq!(run_and_read(script, "x"), Some(VariableValue::Int(6)));
+    }
+
+    #[test]
+    fn apply_set_mul_assign() {
+        let script = "--- variables\nint x = 3\n---\nset x *= 4\nDone.";
+        assert_eq!(run_and_read(script, "x"), Some(VariableValue::Int(12)));
+    }
+
+    #[test]
+    fn apply_set_div_assign() {
+        let script = "--- variables\nint x = 20\n---\nset x /= 4\nDone.";
+        assert_eq!(run_and_read(script, "x"), Some(VariableValue::Int(5)));
+    }
+
+    #[test]
+    fn apply_set_div_by_zero_literal() {
+        let script = "--- variables\nint x = 10\n---\nset x /= 0\nDone.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+        runtime.skip();
+        assert!(matches!(
+            runtime.take_last_error(),
+            Some(RuntimeError::DivisionByZero { .. })
+        ));
+    }
+
+    #[test]
+    fn apply_set_div_by_zero_through_expression() {
+        let script = "--- variables\nint x = 10\nint y = 0\n---\nset x = x / y\nDone.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+        runtime.skip();
+        assert!(matches!(
+            runtime.take_last_error(),
+            Some(RuntimeError::DivisionByZero { .. })
+        ));
+    }
+
+    #[test]
+    fn apply_set_add_assign_overflow_at_i64_max() {
+        // x = i64::MAX, then x += 1 → overflow.
+        let script = "--- variables\nint x = 9223372036854775807\n---\nset x += 1\nDone.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+        runtime.skip();
+        assert!(matches!(
+            runtime.take_last_error(),
+            Some(RuntimeError::IntegerOverflow { .. })
+        ));
+    }
+
+    #[test]
+    fn apply_set_mul_assign_overflow_at_i64_max() {
+        let script = "--- variables\nint x = 9223372036854775807\n---\nset x *= 2\nDone.";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+        runtime.skip();
+        assert!(matches!(
+            runtime.take_last_error(),
+            Some(RuntimeError::IntegerOverflow { .. })
+        ));
+    }
+
+    #[test]
+    fn apply_set_multi_read_uses_pre_assignment_value() {
+        // For `set x = x*2 + x` with x=3, every read of `x` on the RHS sees
+        // the pre-assignment value (3), so the result is 3*2 + 3 = 9 — not
+        // 6 + 6 = 12, which would imply the first read writes back before
+        // the second.
+        let script = "--- variables\nint x = 3\n---\nset x = x * 2 + x\nDone.";
+        assert_eq!(run_and_read(script, "x"), Some(VariableValue::Int(9)));
+    }
+
     #[test]
     fn variable_type_mismatch_error_displays_and_is_constructible() {
         // The `VariableTypeMismatch` branch of `set_variable_value` is
