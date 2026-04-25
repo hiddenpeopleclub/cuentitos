@@ -7,6 +7,7 @@
 use cuentitos_common::{AssignOp, Database, Expr, VariableId, VariableKind};
 
 use crate::expression::{parse_expression, ParseExprError, VariableResolver};
+use crate::parsers::variables_parser::is_valid_identifier;
 
 /// Result of parsing a `set` line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -183,18 +184,6 @@ fn split_lhs_op_rhs(rest: &str) -> Result<(&str, AssignOp, &str), SetParseError>
         i += 1;
     }
     Err(SetParseError::MissingAssignment)
-}
-
-fn is_valid_identifier(name: &str) -> bool {
-    if name.is_empty() {
-        return false;
-    }
-    let mut chars = name.chars();
-    let first = chars.next().expect("non-empty checked above");
-    if !(first.is_ascii_alphabetic() || first == '_') {
-        return false;
-    }
-    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 #[cfg(test)]
