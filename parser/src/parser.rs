@@ -824,30 +824,18 @@ impl Parser {
                         go_to_and_back_result.path
                     };
 
-                    // This is a go-to-section-and-back command
-                    // Find parent block: check if there's a section at this level first
-                    let parent_id = if level < self.last_section_at_level.len() {
-                        // There's a section at this level, use it as parent
-                        Some(self.last_section_at_level[level])
-                    } else if level == 0 {
-                        // At level 0 with no section, use first block (Start or a Section)
-                        self.last_block_at_level.first().copied()
-                    } else if level <= self.last_block_at_level.len() {
-                        // No section at this level, pop back to find parent
-                        while self.last_block_at_level.len() > level {
-                            self.last_block_at_level.pop();
+                    // This is a go-to-section-and-back command. Resolve
+                    // the parent block via the shared helper.
+                    let parent_id = match self.resolve_parent_id(
+                        level,
+                        &content,
+                        context.current_line,
+                    ) {
+                        Ok(parent_id) => parent_id,
+                        Err(err) => {
+                            self.collect_error_and_skip(err, &mut context);
+                            continue;
                         }
-                        self.last_block_at_level.last().copied()
-                    } else {
-                        self.collect_error_and_skip(
-                            ParseError::InvalidIndentation {
-                                message: format!("found {} spaces in: {}", level * 2, content),
-                                file: self.file_path.clone(),
-                                line: context.current_line,
-                            },
-                            &mut context,
-                        );
-                        continue;
                     };
 
                     // Create GoToAndBack block with placeholder SectionId
@@ -957,31 +945,16 @@ impl Parser {
                             &context.database,
                         ) {
                             Ok(parsed) => {
-                                // Find parent block: same logic as the
-                                // String-block branch below.
-                                let parent_id = if level < self.last_section_at_level.len() {
-                                    Some(self.last_section_at_level[level])
-                                } else if level == 0 {
-                                    self.last_block_at_level.first().copied()
-                                } else if level <= self.last_block_at_level.len() {
-                                    while self.last_block_at_level.len() > level {
-                                        self.last_block_at_level.pop();
+                                let parent_id = match self.resolve_parent_id(
+                                    level,
+                                    &content,
+                                    context.current_line,
+                                ) {
+                                    Ok(parent_id) => parent_id,
+                                    Err(err) => {
+                                        self.collect_error_and_skip(err, &mut context);
+                                        continue;
                                     }
-                                    self.last_block_at_level.last().copied()
-                                } else {
-                                    self.collect_error_and_skip(
-                                        ParseError::InvalidIndentation {
-                                            message: format!(
-                                                "found {} spaces in: {}",
-                                                level * 2,
-                                                content
-                                            ),
-                                            file: self.file_path.clone(),
-                                            line: context.current_line,
-                                        },
-                                        &mut context,
-                                    );
-                                    continue;
                                 };
 
                                 let set_id =
@@ -1158,26 +1131,11 @@ impl Parser {
                         // Parse as regular string
                         let result = self.line_parser.parse(content.trim(), &mut context)?;
 
-                        // Find parent block: check if there's a section at this level first
-                        let parent_id = if level < self.last_section_at_level.len() {
-                            // There's a section at this level, use it as parent
-                            Some(self.last_section_at_level[level])
-                        } else if level == 0 {
-                            // At level 0 with no section, use first block (Start or a Section)
-                            self.last_block_at_level.first().copied()
-                        } else if level <= self.last_block_at_level.len() {
-                            // No section at this level, pop back to find parent
-                            while self.last_block_at_level.len() > level {
-                                self.last_block_at_level.pop();
-                            }
-                            self.last_block_at_level.last().copied()
-                        } else {
-                            return Err(ParseError::InvalidIndentation {
-                                message: format!("found {} spaces in: {}", level * 2, content),
-                                file: self.file_path.clone(),
-                                line: context.current_line,
-                            });
-                        };
+                        // Resolve parent via shared helper. The String branch
+                        // returns the indentation error directly (matching
+                        // historical behavior) rather than collecting it.
+                        let parent_id =
+                            self.resolve_parent_id(level, &content, context.current_line)?;
 
                         // Create new block
                         let string_id = context.database.add_string(result.string);
@@ -1244,6 +1202,38 @@ impl Parser {
                 .strip_prefix("set")
                 .map(|rest| rest.starts_with(' ') || rest.starts_with('\t'))
                 .unwrap_or(false)
+    }
+
+    /// Find the parent block for a non-section block at `level`. Mutates
+    /// `last_block_at_level` (pops back to the new level) so subsequent
+    /// blocks at the same level see the right ancestor. Returns
+    /// `Err(InvalidIndentation)` if the level skipped a step.
+    ///
+    /// Shared between the String, GoToAndBack, and Set branches; the
+    /// GoTo/Option branches keep a non-mutating `get(level - 1)` lookup
+    /// because they don't reset the level stack on visit.
+    fn resolve_parent_id(
+        &mut self,
+        level: usize,
+        content: &str,
+        line: usize,
+    ) -> Result<Option<BlockId>, ParseError> {
+        if level < self.last_section_at_level.len() {
+            Ok(Some(self.last_section_at_level[level]))
+        } else if level == 0 {
+            Ok(self.last_block_at_level.first().copied())
+        } else if level <= self.last_block_at_level.len() {
+            while self.last_block_at_level.len() > level {
+                self.last_block_at_level.pop();
+            }
+            Ok(self.last_block_at_level.last().copied())
+        } else {
+            Err(ParseError::InvalidIndentation {
+                message: format!("found {} spaces in: {}", level * 2, content),
+                file: self.file_path.clone(),
+                line,
+            })
+        }
     }
 
     fn parse_indentation<'a>(
