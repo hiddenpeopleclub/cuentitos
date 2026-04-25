@@ -130,6 +130,7 @@ The test runner compares CLI output against the Result section.
 
 - **Write clear, idiomatic Rust code**
 - **Use expressive variable names** (e.g., `is_ready`, `has_data`)
+- **Use descriptive names, no abbreviations** — prefer `Expression` over `Expr`, `BinaryOperator` over `BinOp`, `RequirementStatement` over `ReqStatement`, `evaluate_expression` over `eval_expr`. Applies to types, functions, fields, locals, and module names alike. Domain words (`req`, `set`) used as language keywords stay short in source syntax, but their Rust identifiers should be spelled out.
 - **Follow Rust naming conventions**: snake_case for functions/variables, PascalCase for types
 - **Embrace ownership and the type system**
 - **Avoid code duplication**
