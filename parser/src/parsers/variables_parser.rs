@@ -228,7 +228,7 @@ fn parse_one_declaration(
 
     declared_lines.insert(name.to_string(), line_number);
     declared_values.insert(name.to_string(), value);
-    database.add_variable(Variable::new_int(name, value));
+    database.add_variable(Variable::new_integer(name, value));
     Ok(())
 }
 
@@ -654,7 +654,8 @@ mod tests {
         assert_eq!(outcome.consumed_lines, 3);
         assert_eq!(db.variables.len(), 1);
         assert_eq!(db.variables[0].name, "five");
-        assert_eq!(db.variables[0].kind, cuentitos_common::VariableKind::Int(5));
+        assert_eq!(db.variables[0].kind, cuentitos_common::ValueKind::Integer);
+        assert_eq!(db.variables[0].default, cuentitos_common::Value::Integer(5));
     }
 
     #[test]
@@ -664,7 +665,7 @@ mod tests {
         let mut db = Database::new();
         let outcome = parse_variables_block(&lines, 0, &mut db, &None);
         assert!(outcome.errors.is_empty());
-        assert_eq!(db.variables[0].kind, cuentitos_common::VariableKind::Int(0));
+        assert_eq!(db.variables[0].default, cuentitos_common::Value::Integer(0));
     }
 
     #[test]
@@ -675,7 +676,7 @@ mod tests {
         let outcome = parse_variables_block(&lines, 0, &mut db, &None);
         assert!(outcome.errors.is_empty());
         assert_eq!(db.variables.len(), 2);
-        assert_eq!(db.variables[1].kind, cuentitos_common::VariableKind::Int(4));
+        assert_eq!(db.variables[1].default, cuentitos_common::Value::Integer(4));
     }
 
     #[test]
@@ -851,8 +852,8 @@ mod tests {
         let outcome = parse_variables_block(&lines, 0, &mut db, &None);
         assert!(outcome.errors.is_empty());
         assert_eq!(
-            db.variables[0].kind,
-            cuentitos_common::VariableKind::Int(i64::MIN)
+            db.variables[0].default,
+            cuentitos_common::Value::Integer(i64::MIN)
         );
     }
 }

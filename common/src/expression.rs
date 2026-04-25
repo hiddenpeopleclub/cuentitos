@@ -1,66 +1,104 @@
-//! Integer expression AST shared by the parser, runtime, and any future
+//! Polymorphic expression AST shared by the parser, runtime, and any future
 //! consumer of `set`/`req` statements.
 //!
 //! Identifiers are resolved to [`crate::VariableId`]s at parse time; the AST
 //! stored here is therefore self-contained and can be evaluated against a
 //! variable-value lookup without re-resolving names.
+//!
+//! The AST and the evaluator are polymorphic over [`Value`] kinds. Today only
+//! `Value::Integer` exists; adding `Boolean`/`Float`/`String` is additive —
+//! new arms in [`BinaryOperator::apply`], new arms in [`evaluate`], no
+//! restructuring at the call sites.
 
+use crate::value::{Value, ValueKind};
 use crate::VariableId;
 
 /// Operator carried by a binary expression node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BinOp {
+pub enum BinaryOperator {
     Add,
-    Sub,
-    Mul,
-    Div,
+    Subtract,
+    Multiply,
+    Divide,
 }
 
-/// Parsed integer expression with all identifiers resolved to declared
-/// [`VariableId`]s.
+impl BinaryOperator {
+    /// Apply this operator to two values. Today every operator requires both
+    /// operands to be `Integer`; mixed or non-numeric operands return
+    /// [`EvaluationError::TypeMismatch`]. Adding `Float` later means adding
+    /// a `(Float, Float)` arm and a numeric-promotion rule.
+    pub fn apply(self, left: Value, right: Value) -> Result<Value, EvaluationError> {
+        match (self, &left, &right) {
+            (BinaryOperator::Add, Value::Integer(l), Value::Integer(r)) => l
+                .checked_add(*r)
+                .map(Value::Integer)
+                .ok_or(EvaluationError::Overflow),
+            (BinaryOperator::Subtract, Value::Integer(l), Value::Integer(r)) => l
+                .checked_sub(*r)
+                .map(Value::Integer)
+                .ok_or(EvaluationError::Overflow),
+            (BinaryOperator::Multiply, Value::Integer(l), Value::Integer(r)) => l
+                .checked_mul(*r)
+                .map(Value::Integer)
+                .ok_or(EvaluationError::Overflow),
+            (BinaryOperator::Divide, Value::Integer(l), Value::Integer(r)) => {
+                if *r == 0 {
+                    Err(EvaluationError::DivisionByZero)
+                } else {
+                    l.checked_div(*r)
+                        .map(Value::Integer)
+                        .ok_or(EvaluationError::Overflow)
+                }
+            }
+        }
+    }
+}
+
+/// Parsed expression with all identifiers resolved to declared
+/// [`VariableId`]s. Polymorphic over [`Value`] kinds.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Expr {
-    Lit(i64),
-    Var(VariableId),
+pub enum Expression {
+    Literal(Value),
+    Variable(VariableId),
     Binary {
-        op: BinOp,
-        left: Box<Expr>,
-        right: Box<Expr>,
+        operator: BinaryOperator,
+        left: Box<Expression>,
+        right: Box<Expression>,
     },
 }
 
 /// Errors produced while evaluating a parsed expression at runtime.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EvalExprError {
+pub enum EvaluationError {
     DivisionByZero,
     Overflow,
+    /// A binary operator was applied to operands of incompatible kinds. Today
+    /// unreachable through normal parsing because parse-time inference rejects
+    /// type-mismatched expressions; carried so the error surface is ready for
+    /// future operators that take cross-kind operands.
+    TypeMismatch {
+        expected: ValueKind,
+        found: ValueKind,
+    },
 }
 
-/// Evaluate `expr` against the supplied per-variable lookup function.
-pub fn evaluate(expr: &Expr, lookup: &dyn Fn(VariableId) -> i64) -> Result<i64, EvalExprError> {
-    match expr {
-        Expr::Lit(n) => Ok(*n),
-        Expr::Var(id) => Ok(lookup(*id)),
-        Expr::Binary { op, left, right } => {
-            let l = evaluate(left, lookup)?;
-            let r = evaluate(right, lookup)?;
-            apply_binop(*op, l, r)
-        }
-    }
-}
-
-/// Apply a binary operator with overflow + divide-by-zero checks.
-pub fn apply_binop(op: BinOp, left: i64, right: i64) -> Result<i64, EvalExprError> {
-    match op {
-        BinOp::Add => left.checked_add(right).ok_or(EvalExprError::Overflow),
-        BinOp::Sub => left.checked_sub(right).ok_or(EvalExprError::Overflow),
-        BinOp::Mul => left.checked_mul(right).ok_or(EvalExprError::Overflow),
-        BinOp::Div => {
-            if right == 0 {
-                Err(EvalExprError::DivisionByZero)
-            } else {
-                left.checked_div(right).ok_or(EvalExprError::Overflow)
-            }
+/// Evaluate `expression` against the supplied per-variable lookup. The lookup
+/// returns the current [`Value`] for a [`VariableId`].
+pub fn evaluate(
+    expression: &Expression,
+    lookup: &dyn Fn(VariableId) -> Value,
+) -> Result<Value, EvaluationError> {
+    match expression {
+        Expression::Literal(value) => Ok(value.clone()),
+        Expression::Variable(id) => Ok(lookup(*id)),
+        Expression::Binary {
+            operator,
+            left,
+            right,
+        } => {
+            let left_value = evaluate(left, lookup)?;
+            let right_value = evaluate(right, lookup)?;
+            operator.apply(left_value, right_value)
         }
     }
 }

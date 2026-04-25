@@ -1,0 +1,79 @@
+use crate::expression::Expression;
+use crate::value::Value;
+
+/// The comparison operator used by a `req` statement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComparisonOperator {
+    Equal,
+    NotEqual,
+    Less,
+    LessOrEqual,
+    Greater,
+    GreaterOrEqual,
+}
+
+impl ComparisonOperator {
+    /// True for the four ordering operators (`< <= > >=`). Equality
+    /// (`= !=`) works on any kind that supports `PartialEq`; ordering
+    /// requires the kind to additionally be totally ordered.
+    #[must_use]
+    pub fn requires_ordering(self) -> bool {
+        matches!(
+            self,
+            ComparisonOperator::Less
+                | ComparisonOperator::LessOrEqual
+                | ComparisonOperator::Greater
+                | ComparisonOperator::GreaterOrEqual
+        )
+    }
+
+    /// Apply this comparison to two integer operands. Future numeric kinds
+    /// will get their own `apply_*` helpers; the runtime dispatches on the
+    /// `Value` variants of the evaluated operands and picks the right one.
+    #[must_use]
+    pub fn apply_integer(self, left: i64, right: i64) -> bool {
+        match self {
+            ComparisonOperator::Equal => left == right,
+            ComparisonOperator::NotEqual => left != right,
+            ComparisonOperator::Less => left < right,
+            ComparisonOperator::LessOrEqual => left <= right,
+            ComparisonOperator::Greater => left > right,
+            ComparisonOperator::GreaterOrEqual => left >= right,
+        }
+    }
+
+    /// Apply this comparison to two values of the same kind. Returns
+    /// `None` if the operands have different kinds — parse-time type
+    /// inference is expected to make that unreachable. Today only integer
+    /// comparisons are implemented.
+    #[must_use]
+    pub fn apply(self, left: &Value, right: &Value) -> Option<bool> {
+        match (left, right) {
+            (Value::Integer(l), Value::Integer(r)) => Some(self.apply_integer(*l, *r)),
+        }
+    }
+}
+
+/// Per-`req` statement metadata. Stored in `Database.requirements`;
+/// referenced from a [`crate::BlockType::Requirement`] block via its index.
+///
+/// The data model is symmetric — both sides are full [`Expression`]s. The
+/// current parser only accepts `<var> <op> <expr>` (and wraps the LHS as
+/// [`Expression::Variable`]), but relaxing the grammar to accept arbitrary
+/// expressions on both sides is purely a parser change.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequirementStatement {
+    pub left: Expression,
+    pub operator: ComparisonOperator,
+    pub right: Expression,
+}
+
+impl RequirementStatement {
+    pub fn new(left: Expression, operator: ComparisonOperator, right: Expression) -> Self {
+        Self {
+            left,
+            operator,
+            right,
+        }
+    }
+}

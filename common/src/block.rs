@@ -1,4 +1,4 @@
-use crate::{ReqId, SectionId, SetId, StringId};
+use crate::{RequirementId, SectionId, SetId, StringId};
 
 pub type BlockId = usize;
 
@@ -14,7 +14,7 @@ pub enum BlockType {
     GoToRestart,
     GoToEnd,
     Set(SetId),
-    Req(ReqId),
+    Requirement(RequirementId),
     End,
 }
 

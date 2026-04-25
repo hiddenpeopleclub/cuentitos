@@ -396,7 +396,7 @@ fn render_path_from(runtime: &cuentitos_runtime::Runtime, start_idx: usize) {
                 // `set` is a side-effecting statement: stepping over it
                 // mutates a variable but emits no narrative output.
             }
-            cuentitos_common::BlockType::Req(_) => {
+            cuentitos_common::BlockType::Requirement(_) => {
                 // `req` is a parent-gating statement: it never renders, and
                 // when it fails the runtime skips the parent so this branch
                 // is only reached on the (also-silent) passing case.
@@ -456,6 +456,12 @@ fn print_debug_variables(runtime: &cuentitos_runtime::Runtime, script_path: &Pat
     let values = runtime.variable_values();
     debug_assert_eq!(values.len(), runtime.database.variables.len());
     for (variable, value) in runtime.database.variables.iter().zip(values) {
-        println!("{}: {}", variable.name, value);
+        // Dispatch on the `Value` variant so each kind controls its own
+        // textual rendering. New variants (Boolean/Float/String) just add
+        // a match arm here.
+        let formatted = match value {
+            cuentitos_common::Value::Integer(n) => format!("{n}"),
+        };
+        println!("{}: {}", variable.name, formatted);
     }
 }

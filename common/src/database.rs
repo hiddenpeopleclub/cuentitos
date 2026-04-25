@@ -1,9 +1,9 @@
 use crate::block::{Block, BlockId};
-use crate::req_statement::ReqStatement;
+use crate::requirement_statement::RequirementStatement;
 use crate::section::Section;
 use crate::set_statement::SetStatement;
 use crate::variable::Variable;
-use crate::{ReqId, SectionId, SetId, StringId, VariableId};
+use crate::{RequirementId, SectionId, SetId, StringId, VariableId};
 use std::collections::HashMap;
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -15,7 +15,7 @@ pub struct Database {
     pub variables: Vec<Variable>,
     pub variable_registry: HashMap<String, VariableId>,
     pub sets: Vec<SetStatement>,
-    pub req_statements: Vec<ReqStatement>,
+    pub requirements: Vec<RequirementStatement>,
 }
 
 impl Database {
@@ -28,7 +28,7 @@ impl Database {
             variables: Vec::new(),
             variable_registry: HashMap::new(),
             sets: Vec::new(),
-            req_statements: Vec::new(),
+            requirements: Vec::new(),
         }
     }
 
@@ -38,10 +38,10 @@ impl Database {
         set_id
     }
 
-    pub fn add_req_statement(&mut self, req: ReqStatement) -> ReqId {
-        let req_id = self.req_statements.len();
-        self.req_statements.push(req);
-        req_id
+    pub fn add_requirement(&mut self, requirement: RequirementStatement) -> RequirementId {
+        let requirement_id = self.requirements.len();
+        self.requirements.push(requirement);
+        requirement_id
     }
 
     pub fn add_variable(&mut self, variable: Variable) -> VariableId {

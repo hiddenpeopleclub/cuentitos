@@ -1,30 +1,47 @@
-use crate::expression::Expr;
+use crate::expression::Expression;
 use crate::VariableId;
 
 /// The assignment operator used by a `set` statement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AssignOp {
+pub enum AssignmentOperator {
     Assign,
     AddAssign,
-    SubAssign,
-    MulAssign,
-    DivAssign,
+    SubtractAssign,
+    MultiplyAssign,
+    DivideAssign,
 }
 
-/// Per-set statement metadata. Stored in `Database.sets`; referenced from a
+impl AssignmentOperator {
+    /// True for compound operators that read the LHS before writing.
+    /// Plain `Assign` overwrites unconditionally and never reads.
+    #[must_use]
+    pub fn is_compound(self) -> bool {
+        !matches!(self, AssignmentOperator::Assign)
+    }
+}
+
+/// Per-`set` statement metadata. Stored in `Database.sets`; referenced from a
 /// [`crate::BlockType::Set`] block via its index.
+///
+/// `variable_id` is an *lvalue* — the assignment target — so it stays a bare
+/// [`VariableId`] rather than an [`Expression`]. The expression on the right
+/// is the *rvalue*, which is what gets evaluated.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SetStatement {
     pub variable_id: VariableId,
-    pub op: AssignOp,
-    pub expression: Expr,
+    pub operator: AssignmentOperator,
+    pub expression: Expression,
 }
 
 impl SetStatement {
-    pub fn new(variable_id: VariableId, op: AssignOp, expression: Expr) -> Self {
+    pub fn new(
+        variable_id: VariableId,
+        operator: AssignmentOperator,
+        expression: Expression,
+    ) -> Self {
         Self {
             variable_id,
-            op,
+            operator,
             expression,
         }
     }

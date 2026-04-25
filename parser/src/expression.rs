@@ -1,6 +1,6 @@
-//! Shared integer expression parser.
+//! Shared expression parser.
 //!
-//! Used by `set` (and later `req`) statements. Identifiers are resolved to
+//! Used by `set` and `req` statements. Identifiers are resolved to
 //! [`VariableId`]s at parse time via the supplied [`VariableResolver`]; the
 //! resulting AST is then stored on the block and evaluated at runtime
 //! (see [`cuentitos_common::evaluate`]).
@@ -9,11 +9,11 @@
 //! that constant-folds at parse time and never produces an AST — see
 //! `parsers::variables_parser::evaluate_expression`.
 
-use cuentitos_common::{BinOp, Expr, VariableId};
+use cuentitos_common::{BinaryOperator, Expression, Value, VariableId};
 
 /// Errors produced while parsing or resolving an expression at parse time.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ParseExprError {
+pub enum ParseExpressionError {
     /// Tokenization failed or the grammar didn't accept the input.
     Malformed,
     /// Identifier was not found in the supplied resolver.
@@ -38,17 +38,17 @@ impl<F: Fn(&str) -> Option<VariableId>> VariableResolver for F {
 pub fn parse_expression(
     input: &str,
     resolver: &dyn VariableResolver,
-) -> Result<Expr, ParseExprError> {
-    let tokens = tokenize(input).map_err(|_| ParseExprError::Malformed)?;
+) -> Result<Expression, ParseExpressionError> {
+    let tokens = tokenize(input).map_err(|_| ParseExpressionError::Malformed)?;
     if tokens.is_empty() {
-        return Err(ParseExprError::Malformed);
+        return Err(ParseExpressionError::Malformed);
     }
     let mut pos = 0;
-    let expr = parse_additive(&tokens, &mut pos, resolver)?;
+    let expression = parse_additive(&tokens, &mut pos, resolver)?;
     if pos != tokens.len() {
-        return Err(ParseExprError::Malformed);
+        return Err(ParseExpressionError::Malformed);
     }
-    Ok(expr)
+    Ok(expression)
 }
 
 // ---------------------------------------------------------------------------
@@ -145,18 +145,18 @@ fn parse_additive(
     tokens: &[Token],
     pos: &mut usize,
     resolver: &dyn VariableResolver,
-) -> Result<Expr, ParseExprError> {
+) -> Result<Expression, ParseExpressionError> {
     let mut left = parse_multiplicative(tokens, pos, resolver)?;
     loop {
-        let op = match tokens.get(*pos) {
-            Some(Token::Plus) => BinOp::Add,
-            Some(Token::Minus) => BinOp::Sub,
+        let operator = match tokens.get(*pos) {
+            Some(Token::Plus) => BinaryOperator::Add,
+            Some(Token::Minus) => BinaryOperator::Subtract,
             _ => break,
         };
         *pos += 1;
         let right = parse_multiplicative(tokens, pos, resolver)?;
-        left = Expr::Binary {
-            op,
+        left = Expression::Binary {
+            operator,
             left: Box::new(left),
             right: Box::new(right),
         };
@@ -168,18 +168,18 @@ fn parse_multiplicative(
     tokens: &[Token],
     pos: &mut usize,
     resolver: &dyn VariableResolver,
-) -> Result<Expr, ParseExprError> {
+) -> Result<Expression, ParseExpressionError> {
     let mut left = parse_unary(tokens, pos, resolver)?;
     loop {
-        let op = match tokens.get(*pos) {
-            Some(Token::Star) => BinOp::Mul,
-            Some(Token::Slash) => BinOp::Div,
+        let operator = match tokens.get(*pos) {
+            Some(Token::Star) => BinaryOperator::Multiply,
+            Some(Token::Slash) => BinaryOperator::Divide,
             _ => break,
         };
         *pos += 1;
         let right = parse_unary(tokens, pos, resolver)?;
-        left = Expr::Binary {
-            op,
+        left = Expression::Binary {
+            operator,
             left: Box::new(left),
             right: Box::new(right),
         };
@@ -191,7 +191,7 @@ fn parse_unary(
     tokens: &[Token],
     pos: &mut usize,
     resolver: &dyn VariableResolver,
-) -> Result<Expr, ParseExprError> {
+) -> Result<Expression, ParseExpressionError> {
     match tokens.get(*pos) {
         Some(Token::Minus) => {
             *pos += 1;
@@ -199,15 +199,15 @@ fn parse_unary(
             // (whose magnitude doesn't fit in `i64`) is representable.
             if let Some(Token::Int(n)) = tokens.get(*pos) {
                 *pos += 1;
-                return negate_u64_literal(*n).map(Expr::Lit);
+                return negate_u64_literal(*n).map(|n| Expression::Literal(Value::Integer(n)));
             }
             let inner = parse_unary(tokens, pos, resolver)?;
             // For non-literal unary minus, lower to `0 - inner` so that
             // overflow-checked subtraction at runtime catches the `-i64::MIN`
             // edge case.
-            Ok(Expr::Binary {
-                op: BinOp::Sub,
-                left: Box::new(Expr::Lit(0)),
+            Ok(Expression::Binary {
+                operator: BinaryOperator::Subtract,
+                left: Box::new(Expression::Literal(Value::Integer(0))),
                 right: Box::new(inner),
             })
         }
@@ -223,45 +223,45 @@ fn parse_primary(
     tokens: &[Token],
     pos: &mut usize,
     resolver: &dyn VariableResolver,
-) -> Result<Expr, ParseExprError> {
+) -> Result<Expression, ParseExpressionError> {
     match tokens.get(*pos) {
         Some(Token::Int(n)) => {
             let n = *n;
             *pos += 1;
             if n > i64::MAX as u64 {
-                return Err(ParseExprError::Overflow);
+                return Err(ParseExpressionError::Overflow);
             }
-            Ok(Expr::Lit(n as i64))
+            Ok(Expression::Literal(Value::Integer(n as i64)))
         }
         Some(Token::Ident(name)) => {
             let name = name.clone();
             *pos += 1;
             match resolver.resolve(&name) {
-                Some(id) => Ok(Expr::Var(id)),
-                None => Err(ParseExprError::UndefinedVariable { name }),
+                Some(id) => Ok(Expression::Variable(id)),
+                None => Err(ParseExpressionError::UndefinedVariable { name }),
             }
         }
         Some(Token::LParen) => {
             *pos += 1;
-            let expr = parse_additive(tokens, pos, resolver)?;
+            let expression = parse_additive(tokens, pos, resolver)?;
             match tokens.get(*pos) {
                 Some(Token::RParen) => {
                     *pos += 1;
-                    Ok(expr)
+                    Ok(expression)
                 }
-                _ => Err(ParseExprError::Malformed),
+                _ => Err(ParseExpressionError::Malformed),
             }
         }
-        _ => Err(ParseExprError::Malformed),
+        _ => Err(ParseExpressionError::Malformed),
     }
 }
 
 /// Compute `-(n as i64)` without intermediate overflow. Handles the unique
 /// case of `i64::MIN`, whose absolute value is `(i64::MAX as u64) + 1`.
-fn negate_u64_literal(n: u64) -> Result<i64, ParseExprError> {
+fn negate_u64_literal(n: u64) -> Result<i64, ParseExpressionError> {
     const ABS_MIN: u64 = (i64::MAX as u64) + 1;
     if n > ABS_MIN {
-        return Err(ParseExprError::Overflow);
+        return Err(ParseExpressionError::Overflow);
     }
     if n == ABS_MIN {
         return Ok(i64::MIN);
@@ -272,7 +272,7 @@ fn negate_u64_literal(n: u64) -> Result<i64, ParseExprError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cuentitos_common::{evaluate, EvalExprError};
+    use cuentitos_common::{evaluate, EvaluationError};
     use std::collections::HashMap;
 
     fn make_resolver(pairs: &[(&str, VariableId)]) -> impl VariableResolver {
@@ -285,25 +285,36 @@ mod tests {
         |_: &str| None
     }
 
-    fn parse_and_eval(input: &str, vars: &[(&str, VariableId, i64)]) -> Result<i64, EvalExprError> {
+    fn parse_and_eval(
+        input: &str,
+        vars: &[(&str, VariableId, i64)],
+    ) -> Result<i64, EvaluationError> {
         let resolver_pairs: Vec<(&str, VariableId)> =
             vars.iter().map(|(n, id, _)| (*n, *id)).collect();
         let resolver = make_resolver(&resolver_pairs);
-        let expr = parse_expression(input, &resolver).expect("parse should succeed");
+        let expression = parse_expression(input, &resolver).expect("parse should succeed");
         let values: HashMap<VariableId, i64> = vars.iter().map(|(_, id, v)| (*id, *v)).collect();
-        evaluate(&expr, &|id| values[&id])
+        match evaluate(&expression, &|id| Value::Integer(values[&id]))? {
+            Value::Integer(n) => Ok(n),
+        }
     }
 
     #[test]
     fn parses_literal() {
         let resolver = no_vars();
-        assert_eq!(parse_expression("42", &resolver).unwrap(), Expr::Lit(42));
+        assert_eq!(
+            parse_expression("42", &resolver).unwrap(),
+            Expression::Literal(Value::Integer(42))
+        );
     }
 
     #[test]
     fn parses_negative_literal() {
         let resolver = no_vars();
-        assert_eq!(parse_expression("-5", &resolver).unwrap(), Expr::Lit(-5));
+        assert_eq!(
+            parse_expression("-5", &resolver).unwrap(),
+            Expression::Literal(Value::Integer(-5))
+        );
     }
 
     #[test]
@@ -311,7 +322,7 @@ mod tests {
         let resolver = no_vars();
         assert_eq!(
             parse_expression("-9223372036854775808", &resolver).unwrap(),
-            Expr::Lit(i64::MIN)
+            Expression::Literal(Value::Integer(i64::MIN))
         );
     }
 
@@ -320,7 +331,7 @@ mod tests {
         let resolver = no_vars();
         assert_eq!(
             parse_expression("-9223372036854775809", &resolver).unwrap_err(),
-            ParseExprError::Overflow
+            ParseExpressionError::Overflow
         );
     }
 
@@ -329,7 +340,7 @@ mod tests {
         let resolver = no_vars();
         assert_eq!(
             parse_expression("missing", &resolver).unwrap_err(),
-            ParseExprError::UndefinedVariable {
+            ParseExpressionError::UndefinedVariable {
                 name: "missing".to_string()
             }
         );
@@ -338,7 +349,10 @@ mod tests {
     #[test]
     fn parses_resolved_variable() {
         let resolver = make_resolver(&[("a", 7)]);
-        assert_eq!(parse_expression("a", &resolver).unwrap(), Expr::Var(7));
+        assert_eq!(
+            parse_expression("a", &resolver).unwrap(),
+            Expression::Variable(7)
+        );
     }
 
     #[test]
@@ -346,7 +360,7 @@ mod tests {
         let resolver = no_vars();
         assert_eq!(
             parse_expression("5 +", &resolver).unwrap_err(),
-            ParseExprError::Malformed
+            ParseExpressionError::Malformed
         );
     }
 
@@ -355,7 +369,7 @@ mod tests {
         let resolver = no_vars();
         assert_eq!(
             parse_expression("(1 + 2", &resolver).unwrap_err(),
-            ParseExprError::Malformed
+            ParseExpressionError::Malformed
         );
     }
 
@@ -364,11 +378,11 @@ mod tests {
         let resolver = no_vars();
         assert_eq!(
             parse_expression("", &resolver).unwrap_err(),
-            ParseExprError::Malformed
+            ParseExpressionError::Malformed
         );
         assert_eq!(
             parse_expression("   ", &resolver).unwrap_err(),
-            ParseExprError::Malformed
+            ParseExpressionError::Malformed
         );
     }
 
@@ -399,7 +413,7 @@ mod tests {
     fn evaluates_division_by_zero() {
         assert_eq!(
             parse_and_eval("10 / 0", &[]).unwrap_err(),
-            EvalExprError::DivisionByZero
+            EvaluationError::DivisionByZero
         );
     }
 
@@ -407,7 +421,7 @@ mod tests {
     fn evaluates_division_by_zero_through_variable() {
         assert_eq!(
             parse_and_eval("10 / x", &[("x", 0, 0)]).unwrap_err(),
-            EvalExprError::DivisionByZero
+            EvaluationError::DivisionByZero
         );
     }
 
@@ -415,20 +429,20 @@ mod tests {
     fn evaluates_overflow_through_variable() {
         assert_eq!(
             parse_and_eval("big + 1", &[("big", 0, i64::MAX)]).unwrap_err(),
-            EvalExprError::Overflow
+            EvaluationError::Overflow
         );
     }
 
     #[test]
     fn negation_of_variable_lowered_to_zero_minus() {
         let resolver = make_resolver(&[("x", 0)]);
-        let expr = parse_expression("-x", &resolver).unwrap();
+        let expression = parse_expression("-x", &resolver).unwrap();
         assert_eq!(
-            expr,
-            Expr::Binary {
-                op: BinOp::Sub,
-                left: Box::new(Expr::Lit(0)),
-                right: Box::new(Expr::Var(0)),
+            expression,
+            Expression::Binary {
+                operator: BinaryOperator::Subtract,
+                left: Box::new(Expression::Literal(Value::Integer(0))),
+                right: Box::new(Expression::Variable(0)),
             }
         );
     }
@@ -436,11 +450,11 @@ mod tests {
     #[test]
     fn negation_of_i64_min_value_at_runtime_overflows() {
         let resolver = make_resolver(&[("x", 0)]);
-        let expr = parse_expression("-x", &resolver).unwrap();
+        let expression = parse_expression("-x", &resolver).unwrap();
         let values = std::iter::once((0_usize, i64::MIN)).collect::<HashMap<_, _>>();
         assert_eq!(
-            evaluate(&expr, &|id| values[&id]).unwrap_err(),
-            EvalExprError::Overflow
+            evaluate(&expression, &|id| Value::Integer(values[&id])).unwrap_err(),
+            EvaluationError::Overflow
         );
     }
 }

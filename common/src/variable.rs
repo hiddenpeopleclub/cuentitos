@@ -1,75 +1,39 @@
+use crate::value::{Value, ValueKind};
+
 /// What type a declared variable has, together with its declared default.
 ///
-/// Kept separate from [`VariableValue`] so that adding new runtime types
-/// (e.g. `Bool`, `Float`, `String`) only requires extending two enums — no
-/// storage migration for either the database or the runtime state.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum VariableKind {
-    /// 64-bit signed integer with the given default.
-    Int(i64),
-    // Future variants: Bool(bool), Float(f64), String(String).
-}
-
-impl VariableKind {
-    /// Produce the initial [`VariableValue`] for this kind.
-    pub fn initial_value(&self) -> VariableValue {
-        match self {
-            VariableKind::Int(n) => VariableValue::Int(*n),
-        }
-    }
-}
-
-/// The *current* value of a declared variable at runtime.
-///
-/// Mirrors [`VariableKind`] variant-for-variant. Equality with another
-/// `VariableValue` only holds when both the variant *and* the payload match;
-/// use [`VariableValue::same_kind`] for variant-only comparisons (needed by
-/// the typed setter).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum VariableValue {
-    Int(i64),
-}
-
-impl VariableValue {
-    /// Extract the integer payload if this value is an `Int`, else `None`.
-    pub fn as_int(&self) -> Option<i64> {
-        match self {
-            VariableValue::Int(n) => Some(*n),
-        }
-    }
-
-    /// True when `self` and `other` share the same variant (regardless of
-    /// payload). Used by setters to reject type-mismatched writes.
-    pub fn same_kind(&self, other: &VariableValue) -> bool {
-        std::mem::discriminant(self) == std::mem::discriminant(other)
-    }
-}
-
-impl std::fmt::Display for VariableValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            VariableValue::Int(n) => write!(f, "{}", n),
-        }
-    }
-}
-
+/// `kind` is the static [`ValueKind`] used by parse-time inference; `default`
+/// is the [`Value`] handed to the runtime as the initial cell value. Adding a
+/// new type means: extend [`Value`]/[`ValueKind`], add a constructor here,
+/// and dispatch on the new variant where needed — no storage migration for
+/// either the database or the runtime state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variable {
     pub name: String,
-    pub kind: VariableKind,
+    pub kind: ValueKind,
+    pub default: Value,
 }
 
 impl Variable {
-    pub fn new<S: Into<String>>(name: S, kind: VariableKind) -> Self {
+    /// Construct a variable from a name and a declared default. The variable's
+    /// [`ValueKind`] is taken from the default.
+    pub fn new<S: Into<String>>(name: S, default: Value) -> Self {
         Self {
             name: name.into(),
-            kind,
+            kind: default.kind(),
+            default,
         }
     }
 
     /// Convenience constructor for integer variables.
-    pub fn new_int<S: Into<String>>(name: S, default: i64) -> Self {
-        Self::new(name, VariableKind::Int(default))
+    pub fn new_integer<S: Into<String>>(name: S, default: i64) -> Self {
+        Self::new(name, Value::Integer(default))
+    }
+
+    /// Produce the runtime value cell for this variable's declared default.
+    #[must_use]
+    pub fn initial_value(&self) -> Value {
+        self.default.clone()
     }
 }
 
@@ -78,29 +42,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn new_int_builds_variable() {
-        let v = Variable::new_int("an_integer", 42);
+    fn new_integer_builds_variable() {
+        let v = Variable::new_integer("an_integer", 42);
         assert_eq!(v.name, "an_integer");
-        assert_eq!(v.kind, VariableKind::Int(42));
+        assert_eq!(v.kind, ValueKind::Integer);
+        assert_eq!(v.default, Value::Integer(42));
     }
 
     #[test]
-    fn kind_initial_value_matches_variant() {
-        assert_eq!(VariableKind::Int(7).initial_value(), VariableValue::Int(7));
-    }
-
-    #[test]
-    fn value_as_int_extracts_payload() {
-        assert_eq!(VariableValue::Int(3).as_int(), Some(3));
-    }
-
-    #[test]
-    fn same_kind_ignores_payload() {
-        assert!(VariableValue::Int(1).same_kind(&VariableValue::Int(999)));
-    }
-
-    #[test]
-    fn value_display_formats_payload() {
-        assert_eq!(format!("{}", VariableValue::Int(-5)), "-5");
+    fn initial_value_clones_default() {
+        let v = Variable::new_integer("x", 7);
+        assert_eq!(v.initial_value(), Value::Integer(7));
     }
 }

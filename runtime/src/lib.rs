@@ -26,9 +26,9 @@ struct RuntimeState {
     /// variable declared at position `i`. Always reinitialized from declared
     /// defaults on every `reset()` (and therefore on every `run()`).
     ///
-    /// Typed so that adding new `VariableValue` variants (bool, float, string)
+    /// Typed so that adding new `Value` variants (bool, float, string)
     /// is strictly additive — no storage migration needed.
-    variable_values: Vec<VariableValue>,
+    variable_values: Vec<Value>,
 }
 
 impl RuntimeState {
@@ -113,17 +113,17 @@ impl Runtime {
             .database
             .variables
             .iter()
-            .map(|v| v.kind.initial_value())
+            .map(|v| v.initial_value())
             .collect();
     }
 
     /// Returns the current value of every declared variable, in declaration order.
-    pub fn variable_values(&self) -> &[VariableValue] {
+    pub fn variable_values(&self) -> &[Value] {
         &self.state.variable_values
     }
 
     /// Returns the current value of the variable with the given name.
-    pub fn variable_value(&self, name: &str) -> Option<&VariableValue> {
+    pub fn variable_value(&self, name: &str) -> Option<&Value> {
         self.database
             .variable_id(name)
             .and_then(|id| self.state.variable_values.get(id))
@@ -132,26 +132,22 @@ impl Runtime {
     /// Sets a variable by name; returns
     /// [`RuntimeError::UndefinedVariable`] if no variable with that name has
     /// been declared, or [`RuntimeError::VariableTypeMismatch`] if `value`'s
-    /// variant differs from the variable's declared kind.
+    /// kind differs from the variable's declared kind.
     ///
-    /// This is introduced now so upcoming `set` implementations have a stable
-    /// mutation point. Not yet called from runtime execution itself.
-    pub fn set_variable_value(
-        &mut self,
-        name: &str,
-        value: VariableValue,
-    ) -> Result<(), RuntimeError> {
+    /// This is introduced now so `set` execution and external mutations share
+    /// a single stable mutation point.
+    pub fn set_variable_value(&mut self, name: &str, value: Value) -> Result<(), RuntimeError> {
         let id =
             self.database
                 .variable_id(name)
                 .ok_or_else(|| RuntimeError::UndefinedVariable {
                     name: name.to_string(),
                 })?;
-        // Reject writes that don't match the declared variant. Today there's
-        // only one variant, so this is unreachable — it exists as a guard for
-        // future types (bool/float/string) so the setter can't silently clobber
-        // the declared kind.
-        if !self.state.variable_values[id].same_kind(&value) {
+        // Reject writes that don't match the declared kind. Today there's
+        // only one `Value` variant, so this is unreachable — it exists as a
+        // guard for future kinds (bool/float/string) so the setter can't
+        // silently clobber the declared kind.
+        if self.state.variable_values[id].kind() != value.kind() {
             return Err(RuntimeError::VariableTypeMismatch {
                 name: name.to_string(),
             });
@@ -511,7 +507,7 @@ impl Runtime {
             // gate it. A failing `req` skips `next_id` and its entire
             // subtree without rendering anything; an evaluation error
             // (overflow, div-by-zero) propagates as a runtime error.
-            match self.evaluate_req_gating(next_id) {
+            match self.evaluate_requirement_gating(next_id) {
                 Ok(true) => {}
                 Ok(false) => {
                     let skip_to = self.last_descendant(next_id);
@@ -573,9 +569,9 @@ impl Runtime {
 
     /// Blocks that produce no narrative output and should be traversed
     /// transparently by a single `step()`. `Set` mutates a variable;
-    /// `Req` gates its parent and is itself never rendered.
+    /// `Requirement` gates its parent and is itself never rendered.
     fn is_silent_block(block_type: &BlockType) -> bool {
-        matches!(block_type, BlockType::Set(_) | BlockType::Req(_))
+        matches!(block_type, BlockType::Set(_) | BlockType::Requirement(_))
     }
 
     /// Walk to the rightmost descendant of `block_id` so we can land
@@ -598,42 +594,63 @@ impl Runtime {
     /// short-circuits on the first failure so trailing `req`s with
     /// runtime errors don't fire when an earlier sibling already
     /// disqualified the parent.
-    fn evaluate_req_gating(&self, block_id: BlockId) -> Result<bool, RuntimeError> {
-        let children = self.database.blocks[block_id].children.clone();
-        for child_id in children {
-            let BlockType::Req(req_id) = self.database.blocks[child_id].block_type else {
+    ///
+    /// Note: gating runs before the `Option` stop in `step()`, so failing-req
+    /// options are silently filtered out of the choice list — the runtime
+    /// walks past them and either presents the next passing option or, if
+    /// none remain, lands on the post-options content.
+    fn evaluate_requirement_gating(&self, block_id: BlockId) -> Result<bool, RuntimeError> {
+        for &child_id in &self.database.blocks[block_id].children {
+            let BlockType::Requirement(requirement_id) = self.database.blocks[child_id].block_type
+            else {
                 continue;
             };
-            let stmt = &self.database.req_statements[req_id];
+            let statement = &self.database.requirements[requirement_id];
             let line = self.database.blocks[child_id].line;
             let values = &self.state.variable_values;
-            let lhs = values[stmt.variable_id]
-                .as_int()
-                .expect("req LHS is a non-int variable; parser should have rejected this");
-            let rhs = match cuentitos_common::evaluate(&stmt.expression, &|id| {
-                values[id].as_int().expect(
-                    "req expression references a non-int variable; parser should have rejected this",
-                )
-            }) {
-                Ok(v) => v,
-                Err(EvalExprError::DivisionByZero) => {
-                    return Err(RuntimeError::DivisionByZero {
-                        file: self.file_path.clone(),
-                        line,
-                    });
-                }
-                Err(EvalExprError::Overflow) => {
-                    return Err(RuntimeError::IntegerOverflow {
-                        file: self.file_path.clone(),
-                        line,
-                    });
-                }
+            let lookup = |id: VariableId| values[id].clone();
+            let left = match cuentitos_common::evaluate(&statement.left, &lookup) {
+                Ok(value) => value,
+                Err(err) => return Err(self.evaluation_error_to_runtime(err, line)),
             };
-            if !stmt.op.apply(lhs, rhs) {
+            let right = match cuentitos_common::evaluate(&statement.right, &lookup) {
+                Ok(value) => value,
+                Err(err) => return Err(self.evaluation_error_to_runtime(err, line)),
+            };
+            // Parser-time inference guarantees both sides have the same kind
+            // and that ordering operators only apply to ordered kinds, so
+            // `apply` is total here.
+            let outcome = statement.operator.apply(&left, &right).expect(
+                "requirement operands have mismatched kinds; parser should have rejected this",
+            );
+            if !outcome {
                 return Ok(false);
             }
         }
         Ok(true)
+    }
+
+    /// Translate an [`EvaluationError`] into a [`RuntimeError`] using the
+    /// file/line context for this runtime. Today only `DivisionByZero` and
+    /// `Overflow` are reachable through normal scripts; `TypeMismatch` is
+    /// surfaced if it ever fires (parser-time inference makes it
+    /// unreachable today).
+    fn evaluation_error_to_runtime(&self, err: EvaluationError, line: usize) -> RuntimeError {
+        match err {
+            EvaluationError::DivisionByZero => RuntimeError::DivisionByZero {
+                file: self.file_path.clone(),
+                line,
+            },
+            EvaluationError::Overflow => RuntimeError::IntegerOverflow {
+                file: self.file_path.clone(),
+                line,
+            },
+            EvaluationError::TypeMismatch { .. } => {
+                unreachable!(
+                    "type-checked at parse time; binary operators reject mixed-kind operands"
+                )
+            }
+        }
     }
 
     /// Evaluate the RHS expression of a `set` against current variable values
@@ -642,64 +659,37 @@ impl Runtime {
         // Read inputs through immutable borrows so we don't clone the
         // expression AST or the variable-values vector. The borrows end
         // before the final write to `self.state.variable_values`.
-        let (op, var_id, rhs) = {
-            let stmt = &self.database.sets[set_id];
+        let (operator, variable_id, rhs_value) = {
+            let statement = &self.database.sets[set_id];
             let values = &self.state.variable_values;
-            // Parser guarantees every variable referenced in the expression
-            // is declared with `VariableKind::Int`, so `as_int()` is total.
-            let rhs = match cuentitos_common::evaluate(&stmt.expression, &|id| {
-                values[id].as_int().expect(
-                    "set expression references a non-int variable; parser should have rejected this",
-                )
-            }) {
-                Ok(v) => v,
-                Err(EvalExprError::DivisionByZero) => {
-                    return Err(RuntimeError::DivisionByZero {
-                        file: self.file_path.clone(),
-                        line,
-                    });
-                }
-                Err(EvalExprError::Overflow) => {
-                    return Err(RuntimeError::IntegerOverflow {
-                        file: self.file_path.clone(),
-                        line,
-                    });
-                }
-            };
-            (stmt.op, stmt.variable_id, rhs)
+            let rhs =
+                match cuentitos_common::evaluate(&statement.expression, &|id| values[id].clone()) {
+                    Ok(value) => value,
+                    Err(err) => return Err(self.evaluation_error_to_runtime(err, line)),
+                };
+            (statement.operator, statement.variable_id, rhs)
         };
 
-        let overflow = || RuntimeError::IntegerOverflow {
-            file: self.file_path.clone(),
-            line,
-        };
         // Plain `Assign` overwrites the LHS unconditionally and never reads
-        // its prior value, so don't surface the LHS-is-int invariant in that
-        // path — only compound ops need `current`.
-        if matches!(op, AssignOp::Assign) {
-            self.state.variable_values[var_id] = VariableValue::Int(rhs);
+        // its prior value. Compound operators read the LHS, then reduce the
+        // pair via `BinaryOperator::apply` so checked arithmetic is shared
+        // with `Expression::Binary`.
+        if !operator.is_compound() {
+            self.state.variable_values[variable_id] = rhs_value;
             return Ok(());
         }
-        let current = self.state.variable_values[var_id]
-            .as_int()
-            .expect("set LHS is a non-int variable; parser should have rejected this");
-        let new_value = match op {
-            AssignOp::Assign => unreachable!("handled by the early return above"),
-            AssignOp::AddAssign => current.checked_add(rhs).ok_or_else(overflow)?,
-            AssignOp::SubAssign => current.checked_sub(rhs).ok_or_else(overflow)?,
-            AssignOp::MulAssign => current.checked_mul(rhs).ok_or_else(overflow)?,
-            AssignOp::DivAssign => {
-                if rhs == 0 {
-                    return Err(RuntimeError::DivisionByZero {
-                        file: self.file_path.clone(),
-                        line,
-                    });
-                }
-                current.checked_div(rhs).ok_or_else(overflow)?
-            }
+        let current = self.state.variable_values[variable_id].clone();
+        let binary_operator = match operator {
+            AssignmentOperator::Assign => unreachable!("handled by the early return above"),
+            AssignmentOperator::AddAssign => BinaryOperator::Add,
+            AssignmentOperator::SubtractAssign => BinaryOperator::Subtract,
+            AssignmentOperator::MultiplyAssign => BinaryOperator::Multiply,
+            AssignmentOperator::DivideAssign => BinaryOperator::Divide,
         };
-
-        self.state.variable_values[var_id] = VariableValue::Int(new_value);
+        let new_value = binary_operator
+            .apply(current, rhs_value)
+            .map_err(|err| self.evaluation_error_to_runtime(err, line))?;
+        self.state.variable_values[variable_id] = new_value;
         Ok(())
     }
 
@@ -891,15 +881,11 @@ mod test {
 
         assert_eq!(
             runtime.variable_values(),
-            &[
-                VariableValue::Int(5),
-                VariableValue::Int(0),
-                VariableValue::Int(7),
-            ]
+            &[Value::Integer(5), Value::Integer(0), Value::Integer(7),]
         );
-        assert_eq!(runtime.variable_value("a"), Some(&VariableValue::Int(5)));
-        assert_eq!(runtime.variable_value("b"), Some(&VariableValue::Int(0)));
-        assert_eq!(runtime.variable_value("c"), Some(&VariableValue::Int(7)));
+        assert_eq!(runtime.variable_value("a"), Some(&Value::Integer(5)));
+        assert_eq!(runtime.variable_value("b"), Some(&Value::Integer(0)));
+        assert_eq!(runtime.variable_value("c"), Some(&Value::Integer(7)));
         assert_eq!(runtime.variable_value("missing"), None);
     }
 
@@ -910,13 +896,11 @@ mod test {
         let mut runtime = Runtime::new(database);
         runtime.run();
 
-        runtime
-            .set_variable_value("a", VariableValue::Int(42))
-            .unwrap();
-        assert_eq!(runtime.variable_value("a"), Some(&VariableValue::Int(42)));
+        runtime.set_variable_value("a", Value::Integer(42)).unwrap();
+        assert_eq!(runtime.variable_value("a"), Some(&Value::Integer(42)));
 
         assert!(matches!(
-            runtime.set_variable_value("missing", VariableValue::Int(1)),
+            runtime.set_variable_value("missing", Value::Integer(1)),
             Err(RuntimeError::UndefinedVariable { .. })
         ));
     }
@@ -931,29 +915,25 @@ mod test {
         let mut runtime = Runtime::new(database);
         runtime.run();
 
-        runtime
-            .set_variable_value("a", VariableValue::Int(99))
-            .unwrap();
-        runtime
-            .set_variable_value("b", VariableValue::Int(-1))
-            .unwrap();
-        assert_eq!(runtime.variable_value("a"), Some(&VariableValue::Int(99)));
-        assert_eq!(runtime.variable_value("b"), Some(&VariableValue::Int(-1)));
+        runtime.set_variable_value("a", Value::Integer(99)).unwrap();
+        runtime.set_variable_value("b", Value::Integer(-1)).unwrap();
+        assert_eq!(runtime.variable_value("a"), Some(&Value::Integer(99)));
+        assert_eq!(runtime.variable_value("b"), Some(&Value::Integer(-1)));
 
         runtime.reset();
 
-        assert_eq!(runtime.variable_value("a"), Some(&VariableValue::Int(5)));
-        assert_eq!(runtime.variable_value("b"), Some(&VariableValue::Int(10)));
+        assert_eq!(runtime.variable_value("a"), Some(&Value::Integer(5)));
+        assert_eq!(runtime.variable_value("b"), Some(&Value::Integer(10)));
 
         runtime
-            .set_variable_value("a", VariableValue::Int(123))
+            .set_variable_value("a", Value::Integer(123))
             .unwrap();
         runtime.run();
-        assert_eq!(runtime.variable_value("a"), Some(&VariableValue::Int(5)));
+        assert_eq!(runtime.variable_value("a"), Some(&Value::Integer(5)));
     }
 
     /// Helper: parse `script`, run to END, return the final value of `name`.
-    fn run_and_read(script: &str, name: &str) -> Option<VariableValue> {
+    fn run_and_read(script: &str, name: &str) -> Option<Value> {
         let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
         let mut runtime = Runtime::new(database);
         runtime.run();
@@ -964,31 +944,31 @@ mod test {
     #[test]
     fn apply_set_plain_assign() {
         let script = "--- variables\nint x = 0\n---\nset x = 7\nDone.";
-        assert_eq!(run_and_read(script, "x"), Some(VariableValue::Int(7)));
+        assert_eq!(run_and_read(script, "x"), Some(Value::Integer(7)));
     }
 
     #[test]
     fn apply_set_add_assign() {
         let script = "--- variables\nint x = 5\n---\nset x += 3\nDone.";
-        assert_eq!(run_and_read(script, "x"), Some(VariableValue::Int(8)));
+        assert_eq!(run_and_read(script, "x"), Some(Value::Integer(8)));
     }
 
     #[test]
     fn apply_set_sub_assign() {
         let script = "--- variables\nint x = 10\n---\nset x -= 4\nDone.";
-        assert_eq!(run_and_read(script, "x"), Some(VariableValue::Int(6)));
+        assert_eq!(run_and_read(script, "x"), Some(Value::Integer(6)));
     }
 
     #[test]
     fn apply_set_mul_assign() {
         let script = "--- variables\nint x = 3\n---\nset x *= 4\nDone.";
-        assert_eq!(run_and_read(script, "x"), Some(VariableValue::Int(12)));
+        assert_eq!(run_and_read(script, "x"), Some(Value::Integer(12)));
     }
 
     #[test]
     fn apply_set_div_assign() {
         let script = "--- variables\nint x = 20\n---\nset x /= 4\nDone.";
-        assert_eq!(run_and_read(script, "x"), Some(VariableValue::Int(5)));
+        assert_eq!(run_and_read(script, "x"), Some(Value::Integer(5)));
     }
 
     #[test]
@@ -1051,18 +1031,16 @@ mod test {
         // 6 + 6 = 12, which would imply the first read writes back before
         // the second.
         let script = "--- variables\nint x = 3\n---\nset x = x * 2 + x\nDone.";
-        assert_eq!(run_and_read(script, "x"), Some(VariableValue::Int(9)));
+        assert_eq!(run_and_read(script, "x"), Some(Value::Integer(9)));
     }
 
     #[test]
     fn apply_set_plain_assign_skips_lhs_read() {
         // Plain `Assign` overwrites the LHS unconditionally and must not
-        // read its prior value (nor surface the LHS-is-int invariant) on
-        // this path. Today every `VariableValue` is `Int(_)` so `as_int()`
-        // is total and a regression here wouldn't immediately panic — but
-        // calling `apply_set` directly pins the unit-level contract so the
-        // skip survives future refactors and gates the panic check for
-        // when a non-`Int` `VariableValue` variant lands.
+        // read its prior value. Today every `Value` is `Integer(_)` so the
+        // distinction is invisible — calling `apply_set` directly pins the
+        // unit-level contract so the skip survives future refactors and
+        // gates the kind-mismatch check once a second `Value` variant lands.
         let script = "--- variables\nint x = 5\n---\nset x = 7\nDone.";
         let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
         let mut runtime = Runtime::new(database);
@@ -1072,7 +1050,7 @@ mod test {
         runtime
             .apply_set(0, 0)
             .expect("plain assign should not error");
-        assert_eq!(runtime.variable_value("x"), Some(&VariableValue::Int(7)));
+        assert_eq!(runtime.variable_value("x"), Some(&Value::Integer(7)));
     }
 
     #[test]
@@ -1213,12 +1191,12 @@ mod test {
     #[test]
     fn variable_type_mismatch_error_displays_and_is_constructible() {
         // The `VariableTypeMismatch` branch of `set_variable_value` is
-        // unreachable while `VariableValue` has a single variant — every
+        // unreachable while `Value` has a single variant — every
         // value trivially shares its kind with the declared one. This test
         // pins the user-facing error contract (variant exists, carries the
         // variable name, and renders a clear message) so the wiring is
         // verified today and the branch becomes triggerable as soon as a
-        // second `VariableValue` variant is introduced.
+        // second `Value` variant is introduced.
         let err = RuntimeError::VariableTypeMismatch {
             name: "x".to_string(),
         };
