@@ -162,6 +162,15 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    /// A `set` referenced a variable whose declared kind isn't `Int`. Today
+    /// only `Int` exists, so this is unreachable; the variant is here so the
+    /// type check at parse time has somewhere to surface when bool/float/
+    /// string variants land.
+    NonIntegerVariableInSet {
+        name: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
     MultipleErrors {
         errors: Vec<ParseError>,
     },
@@ -432,6 +441,15 @@ impl fmt::Display for ParseError {
                     file_prefix(file),
                     line,
                     expr
+                )
+            }
+            ParseError::NonIntegerVariableInSet { name, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Variable '{}' is not an integer; 'set' arithmetic requires integer variables.",
+                    file_prefix(file),
+                    line,
+                    name
                 )
             }
             ParseError::MultipleErrors { errors } => {
@@ -1019,6 +1037,13 @@ impl Parser {
                                     | SetParseError::MissingRhs => {
                                         ParseError::MalformedSetExpression {
                                             expr: content.trim().to_string(),
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    SetParseError::NonIntegerVariable { name } => {
+                                        ParseError::NonIntegerVariableInSet {
+                                            name,
                                             file: self.file_path.clone(),
                                             line: context.current_line,
                                         }

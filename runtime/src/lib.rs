@@ -560,8 +560,12 @@ impl Runtime {
     fn apply_set(&mut self, set_id: SetId, line: usize) -> Result<(), RuntimeError> {
         let stmt = self.database.sets[set_id].clone();
         let values = self.state.variable_values.clone();
+        // Parser guarantees every variable referenced in the expression is
+        // declared with `VariableKind::Int`, so `as_int()` is total.
         let rhs = match cuentitos_common::evaluate(&stmt.expression, &|id| {
-            values[id].as_int().unwrap_or(0)
+            values[id]
+                .as_int()
+                .expect("set expression references a non-int variable; parser should have rejected this")
         }) {
             Ok(v) => v,
             Err(EvalExprError::DivisionByZero) => {
@@ -580,7 +584,7 @@ impl Runtime {
 
         let current = self.state.variable_values[stmt.variable_id]
             .as_int()
-            .unwrap_or(0);
+            .expect("set LHS is a non-int variable; parser should have rejected this");
         let new_value = match stmt.op {
             AssignOp::Assign => rhs,
             AssignOp::AddAssign => {

@@ -4,7 +4,7 @@
 //! operator, and the parsed expression AST. Identifier resolution happens at
 //! parse time; the expression is evaluated later by the runtime.
 
-use cuentitos_common::{AssignOp, Database, Expr, VariableId};
+use cuentitos_common::{AssignOp, Database, Expr, VariableId, VariableKind};
 
 use crate::expression::{parse_expression, ParseExprError, VariableResolver};
 
@@ -39,6 +39,11 @@ pub enum SetParseError {
     MissingAssignment,
     /// RHS was empty (e.g. `set x = `).
     MissingRhs,
+    /// LHS or an RHS variable reference was declared with a non-integer
+    /// kind. Today this is unreachable (only `VariableKind::Int` exists),
+    /// but the check is wired so adding `Bool`/`Float`/`String` doesn't
+    /// silently produce wrong arithmetic at runtime.
+    NonIntegerVariable { name: String },
 }
 
 /// Try to parse `content` as a `set` statement.
@@ -80,6 +85,12 @@ pub fn parse_set(content: &str, database: &Database) -> Result<ParsedSet, SetPar
                 name: lhs.to_string(),
             })?;
 
+    if !matches!(database.variables[variable_id].kind, VariableKind::Int(_)) {
+        return Err(SetParseError::NonIntegerVariable {
+            name: lhs.to_string(),
+        });
+    }
+
     if rhs.is_empty() {
         return Err(SetParseError::MissingRhs);
     }
@@ -97,11 +108,35 @@ pub fn parse_set(content: &str, database: &Database) -> Result<ParsedSet, SetPar
         }
     };
 
+    check_int_only(&expression, database)?;
+
     Ok(ParsedSet {
         variable_id,
         op,
         expression,
     })
+}
+
+/// Walk `expr` and reject any `Expr::Var(id)` whose declared kind isn't
+/// `Int`. Lets `apply_set` use `as_int().expect(...)` at runtime instead
+/// of silently coercing future non-int variants to zero.
+fn check_int_only(expr: &Expr, database: &Database) -> Result<(), SetParseError> {
+    match expr {
+        Expr::Lit(_) => Ok(()),
+        Expr::Var(id) => {
+            if matches!(database.variables[*id].kind, VariableKind::Int(_)) {
+                Ok(())
+            } else {
+                Err(SetParseError::NonIntegerVariable {
+                    name: database.variables[*id].name.clone(),
+                })
+            }
+        }
+        Expr::Binary { left, right, .. } => {
+            check_int_only(left, database)?;
+            check_int_only(right, database)
+        }
+    }
 }
 
 struct DatabaseResolver<'a> {
