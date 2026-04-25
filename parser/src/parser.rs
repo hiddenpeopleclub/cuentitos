@@ -171,6 +171,31 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    /// `req` had a syntactically incomplete RHS expression.
+    MalformedReqExpression {
+        expr: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// `req` used a comparison operator that isn't one of the supported set.
+    UnknownCompareOperator {
+        op: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// `req` appeared at the top level (level 0 with no enclosing block to
+    /// gate). `req` only makes sense as a child of the block it gates.
+    ReqAtTopLevel {
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// `req` referenced a variable whose declared kind isn't `Int`. Today
+    /// unreachable; mirrors `NonIntegerVariableInSet`.
+    NonIntegerVariableInReq {
+        name: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
     MultipleErrors {
         errors: Vec<ParseError>,
     },
@@ -447,6 +472,41 @@ impl fmt::Display for ParseError {
                 write!(
                     f,
                     "{}:{}: ERROR: Variable '{}' is not an integer; 'set' arithmetic requires integer variables.",
+                    file_prefix(file),
+                    line,
+                    name
+                )
+            }
+            ParseError::MalformedReqExpression { expr, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Malformed expression in 'req': '{}'.",
+                    file_prefix(file),
+                    line,
+                    expr
+                )
+            }
+            ParseError::UnknownCompareOperator { op, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Unknown comparison operator: '{}'.",
+                    file_prefix(file),
+                    line,
+                    op
+                )
+            }
+            ParseError::ReqAtTopLevel { file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Top-level 'req' has no parent block.",
+                    file_prefix(file),
+                    line
+                )
+            }
+            ParseError::NonIntegerVariableInReq { name, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Variable '{}' is not an integer; 'req' comparisons require integer variables.",
                     file_prefix(file),
                     line,
                     name
@@ -1026,6 +1086,117 @@ impl Parser {
                                 continue;
                             }
                         }
+                    } else if Self::looks_like_req_line(content.trim()) {
+                        // `req` is a parent-gating statement: parse the
+                        // condition, resolve identifiers, and surface
+                        // malformed/undeclared/unknown-operator errors at
+                        // parse time. A `req` at level 0 has no narrative
+                        // block to gate (its only ancestor is START), so
+                        // it's a parse-time error.
+                        if level == 0 {
+                            self.collect_error_and_skip(
+                                ParseError::ReqAtTopLevel {
+                                    file: self.file_path.clone(),
+                                    line: context.current_line,
+                                },
+                                &mut context,
+                            );
+                            continue;
+                        }
+
+                        match crate::parsers::req_parser::parse_req(
+                            content.trim(),
+                            &context.database,
+                        ) {
+                            Ok(parsed) => {
+                                let parent_id = match self.resolve_parent_id(
+                                    level,
+                                    content,
+                                    context.current_line,
+                                ) {
+                                    Ok(parent_id) => parent_id,
+                                    Err(err) => {
+                                        self.collect_error_and_skip(err, &mut context);
+                                        continue;
+                                    }
+                                };
+
+                                let req_id = context.database.add_req_statement(
+                                    cuentitos_common::ReqStatement::new(
+                                        parsed.variable_id,
+                                        parsed.op,
+                                        parsed.expression,
+                                    ),
+                                );
+                                let block = Block::with_line(
+                                    BlockType::Req(req_id),
+                                    parent_id,
+                                    level,
+                                    context.current_line,
+                                );
+                                let block_id = context.database.add_block(block);
+
+                                if level >= self.last_block_at_level.len() {
+                                    self.last_block_at_level.push(block_id);
+                                } else {
+                                    self.last_block_at_level[level] = block_id;
+                                }
+
+                                self.mark_non_option_child(parent_id);
+                            }
+                            Err(req_err) => {
+                                use crate::parsers::req_parser::ReqParseError;
+                                let parse_error = match req_err {
+                                    ReqParseError::UndefinedVariable { name } => {
+                                        ParseError::UndefinedVariableReference {
+                                            name,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    ReqParseError::MalformedExpression { expression } => {
+                                        ParseError::MalformedReqExpression {
+                                            expr: expression,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    ReqParseError::InvalidLhs { name } => {
+                                        ParseError::InvalidVariableName {
+                                            name,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    ReqParseError::MissingLhs => {
+                                        ParseError::MalformedReqExpression {
+                                            expr: content.trim().to_string(),
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    ReqParseError::UnknownOperator { op } => {
+                                        ParseError::UnknownCompareOperator {
+                                            op,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    ReqParseError::NonIntegerVariable { name } => {
+                                        ParseError::NonIntegerVariableInReq {
+                                            name,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    ReqParseError::NotAReqStatement => unreachable!(
+                                        "looks_like_req_line filter should preclude this"
+                                    ),
+                                };
+                                self.collect_error_and_skip(parse_error, &mut context);
+                                continue;
+                            }
+                        }
                     } else if OptionParser::is_option_line(content.trim()) {
                         // Parse as option
                         let result = match self.option_parser.parse(content.trim(), &mut context) {
@@ -1197,6 +1368,17 @@ impl Parser {
         content == "set"
             || content
                 .strip_prefix("set")
+                .map(|rest| rest.starts_with(' ') || rest.starts_with('\t'))
+                .unwrap_or(false)
+    }
+
+    /// Cheap pre-filter: does this trimmed line begin with the `req` keyword?
+    /// Lines that pass through here are then handed to `req_parser::parse_req`
+    /// for full validation.
+    fn looks_like_req_line(content: &str) -> bool {
+        content == "req"
+            || content
+                .strip_prefix("req")
                 .map(|rest| rest.starts_with(' ') || rest.starts_with('\t'))
                 .unwrap_or(false)
     }

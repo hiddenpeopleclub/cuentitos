@@ -4,6 +4,7 @@ pub mod go_to_section_and_back_parser;
 pub mod go_to_section_parser;
 pub mod line_parser;
 pub mod option_parser;
+pub mod req_parser;
 pub mod section_parser;
 pub mod set_parser;
 pub mod variables_parser;
