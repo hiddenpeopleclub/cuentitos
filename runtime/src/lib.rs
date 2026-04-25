@@ -558,59 +558,48 @@ impl Runtime {
     /// Evaluate the RHS expression of a `set` against current variable values
     /// and apply the assignment operator to the target variable.
     fn apply_set(&mut self, set_id: SetId, line: usize) -> Result<(), RuntimeError> {
-        let stmt = self.database.sets[set_id].clone();
-        let values = self.state.variable_values.clone();
-        // Parser guarantees every variable referenced in the expression is
-        // declared with `VariableKind::Int`, so `as_int()` is total.
-        let rhs = match cuentitos_common::evaluate(&stmt.expression, &|id| {
-            values[id]
+        // Read inputs through immutable borrows so we don't clone the
+        // expression AST or the variable-values vector. The borrows end
+        // before the final write to `self.state.variable_values`.
+        let (op, var_id, rhs, current) = {
+            let stmt = &self.database.sets[set_id];
+            let values = &self.state.variable_values;
+            // Parser guarantees every variable referenced in the expression
+            // is declared with `VariableKind::Int`, so `as_int()` is total.
+            let rhs = match cuentitos_common::evaluate(&stmt.expression, &|id| {
+                values[id].as_int().expect(
+                    "set expression references a non-int variable; parser should have rejected this",
+                )
+            }) {
+                Ok(v) => v,
+                Err(EvalExprError::DivisionByZero) => {
+                    return Err(RuntimeError::DivisionByZero {
+                        file: self.file_path.clone(),
+                        line,
+                    });
+                }
+                Err(EvalExprError::Overflow) => {
+                    return Err(RuntimeError::IntegerOverflow {
+                        file: self.file_path.clone(),
+                        line,
+                    });
+                }
+            };
+            let current = values[stmt.variable_id]
                 .as_int()
-                .expect("set expression references a non-int variable; parser should have rejected this")
-        }) {
-            Ok(v) => v,
-            Err(EvalExprError::DivisionByZero) => {
-                return Err(RuntimeError::DivisionByZero {
-                    file: self.file_path.clone(),
-                    line,
-                });
-            }
-            Err(EvalExprError::Overflow) => {
-                return Err(RuntimeError::IntegerOverflow {
-                    file: self.file_path.clone(),
-                    line,
-                });
-            }
+                .expect("set LHS is a non-int variable; parser should have rejected this");
+            (stmt.op, stmt.variable_id, rhs, current)
         };
 
-        let current = self.state.variable_values[stmt.variable_id]
-            .as_int()
-            .expect("set LHS is a non-int variable; parser should have rejected this");
-        let new_value = match stmt.op {
+        let overflow = || RuntimeError::IntegerOverflow {
+            file: self.file_path.clone(),
+            line,
+        };
+        let new_value = match op {
             AssignOp::Assign => rhs,
-            AssignOp::AddAssign => {
-                current
-                    .checked_add(rhs)
-                    .ok_or(RuntimeError::IntegerOverflow {
-                        file: self.file_path.clone(),
-                        line,
-                    })?
-            }
-            AssignOp::SubAssign => {
-                current
-                    .checked_sub(rhs)
-                    .ok_or(RuntimeError::IntegerOverflow {
-                        file: self.file_path.clone(),
-                        line,
-                    })?
-            }
-            AssignOp::MulAssign => {
-                current
-                    .checked_mul(rhs)
-                    .ok_or(RuntimeError::IntegerOverflow {
-                        file: self.file_path.clone(),
-                        line,
-                    })?
-            }
+            AssignOp::AddAssign => current.checked_add(rhs).ok_or_else(overflow)?,
+            AssignOp::SubAssign => current.checked_sub(rhs).ok_or_else(overflow)?,
+            AssignOp::MulAssign => current.checked_mul(rhs).ok_or_else(overflow)?,
             AssignOp::DivAssign => {
                 if rhs == 0 {
                     return Err(RuntimeError::DivisionByZero {
@@ -618,16 +607,11 @@ impl Runtime {
                         line,
                     });
                 }
-                current
-                    .checked_div(rhs)
-                    .ok_or(RuntimeError::IntegerOverflow {
-                        file: self.file_path.clone(),
-                        line,
-                    })?
+                current.checked_div(rhs).ok_or_else(overflow)?
             }
         };
 
-        self.state.variable_values[stmt.variable_id] = VariableValue::Int(new_value);
+        self.state.variable_values[var_id] = VariableValue::Int(new_value);
         Ok(())
     }
 
