@@ -61,7 +61,10 @@ fn main() {
                     }
 
                     // Run in runtime
-                    let mut runtime = cuentitos_runtime::Runtime::new(database);
+                    let mut runtime = cuentitos_runtime::Runtime::with_file(
+                        database,
+                        script_path_for_debug.clone(),
+                    );
                     runtime.run();
 
                     // Track what we've rendered to avoid duplicates
@@ -97,14 +100,13 @@ fn main() {
                                 && !runtime.has_ended();
 
                             if should_auto_step {
-                                // Keep stepping until we hit options or can't continue
+                                // Keep stepping until we hit options, can't continue,
+                                // or surface a runtime error.
                                 while !runtime.is_waiting_for_option()
                                     && !runtime.has_ended()
+                                    && !runtime.has_error()
                                     && runtime.step()
                                 {
-                                    if report_runtime_error(&mut runtime) {
-                                        break;
-                                    }
                                     // If we hit options after stepping, break
                                     if runtime.is_waiting_for_option() {
                                         break;
@@ -114,6 +116,13 @@ fn main() {
                                 // Render new blocks that were stepped over
                                 render_path_from(&runtime, last_rendered_idx);
                                 last_rendered_idx = runtime.current_path().len();
+
+                                // Surface any runtime error *after* rendering so
+                                // story output already on stdout precedes the
+                                // error message.
+                                if report_runtime_error(&mut runtime) {
+                                    break;
+                                }
 
                                 // If we hit options, display them
                                 if runtime.is_waiting_for_option() {
@@ -142,6 +151,12 @@ fn main() {
                             render_path_from(&runtime, last_rendered_idx);
                             last_rendered_idx = runtime.current_path().len();
 
+                            // Runtime errors render *after* story output, on
+                            // stdout, then halt the input loop.
+                            if report_runtime_error(&mut runtime) {
+                                break;
+                            }
+
                             // After processing, check if we're at options
                             // Include parent text only if we were already at options (invalid input case)
                             if runtime.is_waiting_for_option() {
@@ -152,6 +167,7 @@ fn main() {
 
                     // Final render - show any remaining blocks
                     render_path_from(&runtime, last_rendered_idx);
+                    report_runtime_error(&mut runtime);
 
                     // If still waiting for options and we didn't quit, display them
                     if runtime.is_waiting_for_option() && !quit_requested {
@@ -238,7 +254,6 @@ fn process_input(input: &str, runtime: &mut cuentitos_runtime::Runtime) -> bool 
         "n" => {
             if runtime.can_continue() {
                 runtime.step();
-                report_runtime_error(runtime);
                 true
             } else {
                 println!("Cannot continue - reached the end of the script.");
@@ -248,7 +263,6 @@ fn process_input(input: &str, runtime: &mut cuentitos_runtime::Runtime) -> bool 
         "s" => {
             if runtime.can_continue() {
                 runtime.skip();
-                report_runtime_error(runtime);
                 true
             } else {
                 println!("Cannot skip - reached the end of the script.");
@@ -343,8 +357,10 @@ fn handle_goto_command(
 }
 
 fn report_runtime_error(runtime: &mut cuentitos_runtime::Runtime) -> bool {
+    // Runtime errors render on stdout so they appear in the same stream as
+    // story output (the compatibility test runner only compares stdout).
     if let Some(err) = runtime.take_last_error() {
-        eprintln!("{}", err);
+        println!("{}", err);
         return true;
     }
     false
@@ -374,6 +390,10 @@ fn render_path_from(runtime: &cuentitos_runtime::Runtime, start_idx: usize) {
             cuentitos_common::BlockType::Option(_) => {
                 // Option blocks are not rendered in normal flow
                 // They are displayed via display_options() when waiting for selection
+            }
+            cuentitos_common::BlockType::Set(_) => {
+                // `set` is a side-effecting statement: stepping over it
+                // mutates a variable but emits no narrative output.
             }
             cuentitos_common::BlockType::End => println!("END"),
         }

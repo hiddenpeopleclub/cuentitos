@@ -1,4 +1,5 @@
 use cuentitos_common::*;
+use std::path::PathBuf;
 
 pub mod error;
 pub use error::RuntimeError;
@@ -55,6 +56,10 @@ pub struct Runtime {
     pub database: Database,
     running: bool,
     state: RuntimeState,
+    /// Optional source path used to format runtime errors as
+    /// `<file>:<line>: RUNTIME ERROR: ...`. None when the database came from
+    /// an in-memory script (e.g. unit tests).
+    file_path: Option<PathBuf>,
 }
 
 impl Runtime {
@@ -63,6 +68,19 @@ impl Runtime {
             database,
             running: false,
             state: RuntimeState::new(),
+            file_path: None,
+        }
+    }
+
+    /// Construct a runtime that knows the source script path. Required for
+    /// runtime arithmetic errors to include `<file>:<line>:` prefixes that
+    /// match the parse-time error format.
+    pub fn with_file(database: Database, file_path: PathBuf) -> Self {
+        Self {
+            database,
+            running: false,
+            state: RuntimeState::new(),
+            file_path: Some(file_path),
         }
     }
 
@@ -245,6 +263,11 @@ impl Runtime {
     /// Returns and clears the last runtime error, if any
     pub fn take_last_error(&mut self) -> Option<RuntimeError> {
         self.state.last_error.take()
+    }
+
+    /// Non-consuming peek at the last runtime error.
+    pub fn has_error(&self) -> bool {
+        self.state.last_error.is_some()
     }
 
     /// Returns the block IDs of the current available options
@@ -484,6 +507,21 @@ impl Runtime {
                     return false; // Stop stepping, wait for user choice
                 }
 
+                // Apply `set` side effects when stepping *onto* the block.
+                // Arithmetic errors halt execution: jump PC to END (to
+                // terminate the loop) but do NOT push END onto current_path
+                // (so render_path_from won't print END).
+                if let BlockType::Set(set_id) = self.database.blocks[next_id].block_type {
+                    let line = self.database.blocks[next_id].line;
+                    if let Err(err) = self.apply_set(set_id, line) {
+                        self.state.last_error = Some(err);
+                        let end_id = self.database.blocks.len() - 1;
+                        self.state.previous_program_counter = self.state.program_counter;
+                        self.state.program_counter = end_id;
+                        return false;
+                    }
+                }
+
                 self.state.previous_program_counter = self.state.program_counter;
                 self.state.program_counter = next_id;
                 self.state.current_path.push(next_id);
@@ -491,6 +529,78 @@ impl Runtime {
             }
         }
         false
+    }
+
+    /// Evaluate the RHS expression of a `set` against current variable values
+    /// and apply the assignment operator to the target variable.
+    fn apply_set(&mut self, set_id: SetId, line: usize) -> Result<(), RuntimeError> {
+        let stmt = self.database.sets[set_id].clone();
+        let values = self.state.variable_values.clone();
+        let rhs = match cuentitos_common::evaluate(&stmt.expression, &|id| {
+            values[id].as_int().unwrap_or(0)
+        }) {
+            Ok(v) => v,
+            Err(EvalExprError::DivisionByZero) => {
+                return Err(RuntimeError::DivisionByZero {
+                    file: self.file_path.clone(),
+                    line,
+                });
+            }
+            Err(EvalExprError::Overflow) => {
+                return Err(RuntimeError::IntegerOverflow {
+                    file: self.file_path.clone(),
+                    line,
+                });
+            }
+        };
+
+        let current = self.state.variable_values[stmt.variable_id]
+            .as_int()
+            .unwrap_or(0);
+        let new_value = match stmt.op {
+            AssignOp::Assign => rhs,
+            AssignOp::AddAssign => {
+                current
+                    .checked_add(rhs)
+                    .ok_or(RuntimeError::IntegerOverflow {
+                        file: self.file_path.clone(),
+                        line,
+                    })?
+            }
+            AssignOp::SubAssign => {
+                current
+                    .checked_sub(rhs)
+                    .ok_or(RuntimeError::IntegerOverflow {
+                        file: self.file_path.clone(),
+                        line,
+                    })?
+            }
+            AssignOp::MulAssign => {
+                current
+                    .checked_mul(rhs)
+                    .ok_or(RuntimeError::IntegerOverflow {
+                        file: self.file_path.clone(),
+                        line,
+                    })?
+            }
+            AssignOp::DivAssign => {
+                if rhs == 0 {
+                    return Err(RuntimeError::DivisionByZero {
+                        file: self.file_path.clone(),
+                        line,
+                    });
+                }
+                current
+                    .checked_div(rhs)
+                    .ok_or(RuntimeError::IntegerOverflow {
+                        file: self.file_path.clone(),
+                        line,
+                    })?
+            }
+        };
+
+        self.state.variable_values[stmt.variable_id] = VariableValue::Int(new_value);
+        Ok(())
     }
 
     /// Collect all option siblings starting from the first option
@@ -532,6 +642,12 @@ impl Runtime {
 
             // Stop if we're now waiting for option selection
             if self.state.waiting_for_option_selection {
+                break;
+            }
+
+            // Stop on a runtime error so the caller can surface it before
+            // any further blocks render.
+            if self.state.last_error.is_some() {
                 break;
             }
         }

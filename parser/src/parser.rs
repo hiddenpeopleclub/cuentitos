@@ -157,6 +157,11 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    MalformedSetExpression {
+        expr: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
     MultipleErrors {
         errors: Vec<ParseError>,
     },
@@ -418,6 +423,15 @@ impl fmt::Display for ParseError {
                     file_prefix(file),
                     line,
                     content
+                )
+            }
+            ParseError::MalformedSetExpression { expr, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Malformed expression in 'set': '{}'.",
+                    file_prefix(file),
+                    line,
+                    expr
                 )
             }
             ParseError::MultipleErrors { errors } => {
@@ -915,6 +929,108 @@ impl Parser {
 
                         // Mark that parent has seen a non-option child
                         self.mark_non_option_child(parent_id);
+                    } else if Self::looks_like_set_line(content.trim()) {
+                        // Parse `set <var> <op> <expr>`. Resolve LHS / RHS
+                        // identifiers against declared variables; surface
+                        // malformed expressions and undeclared references
+                        // as parse-time errors.
+                        match crate::parsers::set_parser::parse_set(
+                            content.trim(),
+                            &context.database,
+                        ) {
+                            Ok(parsed) => {
+                                // Find parent block: same logic as the
+                                // String-block branch below.
+                                let parent_id = if level < self.last_section_at_level.len() {
+                                    Some(self.last_section_at_level[level])
+                                } else if level == 0 {
+                                    self.last_block_at_level.first().copied()
+                                } else if level <= self.last_block_at_level.len() {
+                                    while self.last_block_at_level.len() > level {
+                                        self.last_block_at_level.pop();
+                                    }
+                                    self.last_block_at_level.last().copied()
+                                } else {
+                                    self.collect_error_and_skip(
+                                        ParseError::InvalidIndentation {
+                                            message: format!(
+                                                "found {} spaces in: {}",
+                                                level * 2,
+                                                content
+                                            ),
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        },
+                                        &mut context,
+                                    );
+                                    continue;
+                                };
+
+                                let set_id =
+                                    context
+                                        .database
+                                        .add_set(cuentitos_common::SetStatement::new(
+                                            parsed.variable_id,
+                                            parsed.op,
+                                            parsed.expression,
+                                        ));
+                                let block = Block::with_line(
+                                    BlockType::Set(set_id),
+                                    parent_id,
+                                    level,
+                                    context.current_line,
+                                );
+                                let block_id = context.database.add_block(block);
+
+                                if level >= self.last_block_at_level.len() {
+                                    self.last_block_at_level.push(block_id);
+                                } else {
+                                    self.last_block_at_level[level] = block_id;
+                                }
+
+                                self.mark_non_option_child(parent_id);
+                            }
+                            Err(set_err) => {
+                                use crate::parsers::set_parser::SetParseError;
+                                let parse_error = match set_err {
+                                    SetParseError::UndefinedVariable { name } => {
+                                        ParseError::UndefinedVariableReference {
+                                            name,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    SetParseError::MalformedExpression { expression } => {
+                                        ParseError::MalformedSetExpression {
+                                            expr: expression,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    SetParseError::InvalidLhs { name } => {
+                                        ParseError::InvalidVariableName {
+                                            name,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    SetParseError::MissingLhs
+                                    | SetParseError::MissingAssignment
+                                    | SetParseError::MissingRhs => {
+                                        ParseError::MalformedSetExpression {
+                                            expr: content.trim().to_string(),
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    SetParseError::NotASetStatement => unreachable!(
+                                        "looks_like_set_line filter should preclude this"
+                                    ),
+                                };
+                                self.collect_error_and_skip(parse_error, &mut context);
+                                continue;
+                            }
+                        }
                     } else if OptionParser::is_option_line(content.trim()) {
                         // Parse as option
                         let result = match self.option_parser.parse(content.trim(), &mut context) {
@@ -1092,6 +1208,17 @@ impl Parser {
     /// Only line-level comments are supported; inline comments (// after content) are not detected.
     fn is_comment(line: &str) -> bool {
         line.trim_start().starts_with("//")
+    }
+
+    /// Cheap pre-filter: does this trimmed line begin with the `set` keyword?
+    /// Lines that pass through here are then handed to `set_parser::parse_set`
+    /// for full validation.
+    fn looks_like_set_line(content: &str) -> bool {
+        content == "set"
+            || content
+                .strip_prefix("set")
+                .map(|rest| rest.starts_with(' ') || rest.starts_with('\t'))
+                .unwrap_or(false)
     }
 
     fn parse_indentation<'a>(
@@ -1692,11 +1819,12 @@ impl Parser {
         Ok(())
     }
 
-    /// Check if a section has any content (String or Goto blocks), recursively
+    /// Check if a section has any content (String, Set, or Goto blocks), recursively
     fn section_has_content(database: &Database, section_id: BlockId) -> bool {
         for &child_id in &database.blocks[section_id].children {
             match &database.blocks[child_id].block_type {
                 BlockType::String(_)
+                | BlockType::Set(_)
                 | BlockType::GoTo(_)
                 | BlockType::GoToAndBack(_)
                 | BlockType::GoToStart

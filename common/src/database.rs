@@ -1,7 +1,8 @@
 use crate::block::{Block, BlockId};
 use crate::section::Section;
+use crate::set_statement::SetStatement;
 use crate::variable::Variable;
-use crate::{SectionId, StringId, VariableId};
+use crate::{SectionId, SetId, StringId, VariableId};
 use std::collections::HashMap;
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -12,6 +13,7 @@ pub struct Database {
     pub section_registry: HashMap<String, SectionId>,
     pub variables: Vec<Variable>,
     pub variable_registry: HashMap<String, VariableId>,
+    pub sets: Vec<SetStatement>,
 }
 
 impl Database {
@@ -23,7 +25,14 @@ impl Database {
             section_registry: HashMap::new(),
             variables: Vec::new(),
             variable_registry: HashMap::new(),
+            sets: Vec::new(),
         }
+    }
+
+    pub fn add_set(&mut self, set: SetStatement) -> SetId {
+        let set_id = self.sets.len();
+        self.sets.push(set);
+        set_id
     }
 
     pub fn add_variable(&mut self, variable: Variable) -> VariableId {
