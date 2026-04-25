@@ -396,6 +396,11 @@ fn render_path_from(runtime: &cuentitos_runtime::Runtime, start_idx: usize) {
                 // `set` is a side-effecting statement: stepping over it
                 // mutates a variable but emits no narrative output.
             }
+            cuentitos_common::BlockType::Req(_) => {
+                // `req` is a parent-gating statement: it never renders, and
+                // when it fails the runtime skips the parent so this branch
+                // is only reached on the (also-silent) passing case.
+            }
             cuentitos_common::BlockType::End => println!("END"),
         }
     }
