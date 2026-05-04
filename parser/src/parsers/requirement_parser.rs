@@ -259,6 +259,7 @@ fn leading_symbol_token(s: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    // TODO: when Float/Boolean ValueKinds land, add type-mismatch coverage here.
     use super::*;
     use cuentitos_common::{Value, Variable};
 
@@ -409,14 +410,4 @@ mod tests {
             );
         }
     }
-
-    /// Once a non-`Integer` `ValueKind` exists, this test will be unblocked:
-    /// build an `Expression::Literal(Value::<NewKind>(...))` and assign it
-    /// to an integer variable; `parse_set` (here, `parse_requirement`'s
-    /// sibling) should reject it with `TypeMismatch`. We cannot exercise
-    /// the path today because there is only one variant, and faking a
-    /// second variant just for the test would defeat the point.
-    #[test]
-    #[ignore = "unblocked by second ValueKind variant"]
-    fn type_mismatch_is_reachable_for_future_kinds() {}
 }
