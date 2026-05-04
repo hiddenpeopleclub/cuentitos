@@ -618,11 +618,14 @@ impl Runtime {
                 Err(err) => return Err(self.evaluation_error_to_runtime(err, line)),
             };
             // Parser-time inference guarantees both sides have the same kind
-            // and that ordering operators only apply to ordered kinds, so
-            // `apply` is total here.
-            let outcome = statement.operator.apply(&left, &right).expect(
-                "requirement operands have mismatched kinds; parser should have rejected this",
-            );
+            // and that ordering operators only apply to ordered kinds, so a
+            // `TypeMismatch` here is unreachable today; if a future operator
+            // can produce one, it propagates through the same channel as
+            // arithmetic errors.
+            let outcome = match statement.operator.apply(&left, &right) {
+                Ok(value) => value,
+                Err(err) => return Err(self.evaluation_error_to_runtime(err, line)),
+            };
             if !outcome {
                 return Ok(false);
             }

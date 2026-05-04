@@ -1,4 +1,4 @@
-use crate::expression::Expression;
+use crate::expression::{EvaluationError, Expression};
 use crate::value::Value;
 
 /// The comparison operator used by a `req` statement.
@@ -28,13 +28,12 @@ impl ComparisonOperator {
     }
 
     /// Apply this comparison to two values of the same kind. Returns
-    /// `None` if the operands have different kinds — parse-time type
-    /// inference is expected to make that unreachable. Today only integer
-    /// comparisons are implemented.
-    #[must_use]
-    pub fn apply(self, left: &Value, right: &Value) -> Option<bool> {
+    /// [`EvaluationError::TypeMismatch`] if the operands have different
+    /// kinds — parse-time type inference is expected to make that
+    /// unreachable. Today only integer comparisons are implemented.
+    pub fn apply(self, left: &Value, right: &Value) -> Result<bool, EvaluationError> {
         match (left, right) {
-            (Value::Integer(l), Value::Integer(r)) => Some(match self {
+            (Value::Integer(l), Value::Integer(r)) => Ok(match self {
                 ComparisonOperator::Equal => l == r,
                 ComparisonOperator::NotEqual => l != r,
                 ComparisonOperator::Less => l < r,

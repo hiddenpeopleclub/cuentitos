@@ -401,7 +401,7 @@ mod tests {
         for (op, l, r, expected) in cases {
             assert_eq!(
                 op.apply(&Value::Integer(l), &Value::Integer(r)),
-                Some(expected),
+                Ok(expected),
                 "op={:?}, l={}, r={}",
                 op,
                 l,
