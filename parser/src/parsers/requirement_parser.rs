@@ -386,16 +386,28 @@ mod tests {
     }
 
     #[test]
-    fn evaluates_compare_op_via_apply_integer() {
-        assert!(ComparisonOperator::Greater.apply_integer(2, 1));
-        assert!(!ComparisonOperator::Greater.apply_integer(1, 1));
-        assert!(ComparisonOperator::GreaterOrEqual.apply_integer(1, 1));
-        assert!(ComparisonOperator::LessOrEqual.apply_integer(1, 1));
-        assert!(ComparisonOperator::Less.apply_integer(0, 1));
-        assert!(ComparisonOperator::Equal.apply_integer(5, 5));
-        assert!(!ComparisonOperator::Equal.apply_integer(5, 4));
-        assert!(ComparisonOperator::NotEqual.apply_integer(5, 4));
-        assert!(!ComparisonOperator::NotEqual.apply_integer(5, 5));
+    fn evaluates_compare_op_on_integers() {
+        let cases = [
+            (ComparisonOperator::Greater, 2, 1, true),
+            (ComparisonOperator::Greater, 1, 1, false),
+            (ComparisonOperator::GreaterOrEqual, 1, 1, true),
+            (ComparisonOperator::LessOrEqual, 1, 1, true),
+            (ComparisonOperator::Less, 0, 1, true),
+            (ComparisonOperator::Equal, 5, 5, true),
+            (ComparisonOperator::Equal, 5, 4, false),
+            (ComparisonOperator::NotEqual, 5, 4, true),
+            (ComparisonOperator::NotEqual, 5, 5, false),
+        ];
+        for (op, l, r, expected) in cases {
+            assert_eq!(
+                op.apply(&Value::Integer(l), &Value::Integer(r)),
+                Some(expected),
+                "op={:?}, l={}, r={}",
+                op,
+                l,
+                r,
+            );
+        }
     }
 
     /// Once a non-`Integer` `ValueKind` exists, this test will be unblocked:

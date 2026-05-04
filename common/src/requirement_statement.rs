@@ -27,21 +27,6 @@ impl ComparisonOperator {
         )
     }
 
-    /// Apply this comparison to two integer operands. Future numeric kinds
-    /// will get their own `apply_*` helpers; the runtime dispatches on the
-    /// `Value` variants of the evaluated operands and picks the right one.
-    #[must_use]
-    pub fn apply_integer(self, left: i64, right: i64) -> bool {
-        match self {
-            ComparisonOperator::Equal => left == right,
-            ComparisonOperator::NotEqual => left != right,
-            ComparisonOperator::Less => left < right,
-            ComparisonOperator::LessOrEqual => left <= right,
-            ComparisonOperator::Greater => left > right,
-            ComparisonOperator::GreaterOrEqual => left >= right,
-        }
-    }
-
     /// Apply this comparison to two values of the same kind. Returns
     /// `None` if the operands have different kinds — parse-time type
     /// inference is expected to make that unreachable. Today only integer
@@ -49,7 +34,14 @@ impl ComparisonOperator {
     #[must_use]
     pub fn apply(self, left: &Value, right: &Value) -> Option<bool> {
         match (left, right) {
-            (Value::Integer(l), Value::Integer(r)) => Some(self.apply_integer(*l, *r)),
+            (Value::Integer(l), Value::Integer(r)) => Some(match self {
+                ComparisonOperator::Equal => l == r,
+                ComparisonOperator::NotEqual => l != r,
+                ComparisonOperator::Less => l < r,
+                ComparisonOperator::LessOrEqual => l <= r,
+                ComparisonOperator::Greater => l > r,
+                ComparisonOperator::GreaterOrEqual => l >= r,
+            }),
         }
     }
 }
