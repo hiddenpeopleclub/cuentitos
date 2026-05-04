@@ -1,20 +1,22 @@
 //! Parser for `set <var> <op> <expr>` statements.
 //!
 //! Returns a `ParsedSet` carrying the resolved variable id, the assignment
-//! operator, and the parsed expression AST. Identifier resolution happens at
-//! parse time; the expression is evaluated later by the runtime.
+//! operator, and the parsed expression AST. Identifier resolution and type
+//! inference happen at parse time; the expression is evaluated later by the
+//! runtime.
 
-use cuentitos_common::{AssignOp, Database, Expr, VariableId, VariableKind};
+use cuentitos_common::{AssignmentOperator, Database, Expression, ValueKind, VariableId};
 
-use crate::expression::{parse_expression, ParseExprError, VariableResolver};
+use crate::expression::{parse_expression, ParseExpressionError, VariableResolver};
+use crate::parsers::type_inference::{infer_type, TypeInferenceError};
 use crate::parsers::variables_parser::is_valid_identifier;
 
 /// Result of parsing a `set` line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedSet {
     pub variable_id: VariableId,
-    pub op: AssignOp,
-    pub expression: Expr,
+    pub operator: AssignmentOperator,
+    pub expression: Expression,
 }
 
 /// Errors specific to parsing a `set` statement.
@@ -40,33 +42,29 @@ pub enum SetParseError {
     MissingAssignment,
     /// RHS was empty (e.g. `set x = `).
     MissingRhs,
-    /// LHS or an RHS variable reference was declared with a non-integer
-    /// kind. Today this is unreachable (only `VariableKind::Int` exists),
-    /// but the check is wired so adding `Bool`/`Float`/`String` doesn't
-    /// silently produce wrong arithmetic at runtime.
-    NonIntegerVariable { name: String },
+    /// RHS expression's inferred kind doesn't match the LHS variable's kind.
+    TypeMismatch {
+        variable: String,
+        expected: ValueKind,
+        found: ValueKind,
+    },
+    /// A compound assignment (`+=` etc.) targets a non-numeric variable.
+    NonNumericAssignment { variable: String, kind: ValueKind },
 }
 
 /// Try to parse `content` as a `set` statement.
 ///
 /// `content` should already have indentation stripped. Returns
-/// `Err(NotASetStatement)` if the line doesn't begin with the `set ` keyword
+/// `Err(NotASetStatement)` if the line doesn't begin with the `set` keyword
 /// — callers fall through to other parsers in that case.
 pub fn parse_set(content: &str, database: &Database) -> Result<ParsedSet, SetParseError> {
-    let rest = match content.strip_prefix("set ") {
-        Some(rest) => rest,
-        None => {
-            // Allow `set` as a bare keyword line to surface a targeted error
-            // rather than being treated as a String. Other shapes fall
-            // through.
-            if content == "set" {
-                return Err(SetParseError::MissingLhs);
-            }
-            return Err(SetParseError::NotASetStatement);
-        }
+    let rest = match strip_keyword(content, "set") {
+        StripResult::Stripped(rest) => rest,
+        StripResult::BareKeyword => return Err(SetParseError::MissingLhs),
+        StripResult::NotKeyword => return Err(SetParseError::NotASetStatement),
     };
 
-    let (lhs_raw, op, rhs_raw) = split_lhs_op_rhs(rest)?;
+    let (lhs_raw, operator, rhs_raw) = split_lhs_op_rhs(rest)?;
     let lhs = lhs_raw.trim();
     let rhs = rhs_raw.trim();
 
@@ -86,57 +84,87 @@ pub fn parse_set(content: &str, database: &Database) -> Result<ParsedSet, SetPar
                 name: lhs.to_string(),
             })?;
 
-    if !matches!(database.variables[variable_id].kind, VariableKind::Int(_)) {
-        return Err(SetParseError::NonIntegerVariable {
-            name: lhs.to_string(),
-        });
-    }
-
     if rhs.is_empty() {
         return Err(SetParseError::MissingRhs);
     }
 
     let resolver = DatabaseResolver { database };
     let expression = match parse_expression(rhs, &resolver) {
-        Ok(expr) => expr,
-        Err(ParseExprError::UndefinedVariable { name }) => {
+        Ok(expression) => expression,
+        Err(ParseExpressionError::UndefinedVariable { name }) => {
             return Err(SetParseError::UndefinedVariable { name });
         }
-        Err(ParseExprError::Malformed) | Err(ParseExprError::Overflow) => {
+        Err(ParseExpressionError::Malformed) | Err(ParseExpressionError::Overflow) => {
             return Err(SetParseError::MalformedExpression {
                 expression: rhs.to_string(),
             });
         }
     };
 
-    check_int_only(&expression, database)?;
+    let lhs_kind = database.variables[variable_id].kind();
+    let rhs_kind = match infer_type(&expression, database) {
+        Ok(kind) => kind,
+        Err(TypeInferenceError::Mismatch { left, right, .. }) => {
+            return Err(SetParseError::TypeMismatch {
+                variable: lhs.to_string(),
+                expected: left,
+                found: right,
+            });
+        }
+        Err(TypeInferenceError::NonNumericArithmetic { kind, .. }) => {
+            return Err(SetParseError::NonNumericAssignment {
+                variable: lhs.to_string(),
+                kind,
+            });
+        }
+    };
+
+    if lhs_kind != rhs_kind {
+        return Err(SetParseError::TypeMismatch {
+            variable: lhs.to_string(),
+            expected: lhs_kind,
+            found: rhs_kind,
+        });
+    }
+
+    if operator.is_compound() && !lhs_kind.is_numeric() {
+        return Err(SetParseError::NonNumericAssignment {
+            variable: lhs.to_string(),
+            kind: lhs_kind,
+        });
+    }
 
     Ok(ParsedSet {
         variable_id,
-        op,
+        operator,
         expression,
     })
 }
 
-/// Walk `expr` and reject any `Expr::Var(id)` whose declared kind isn't
-/// `Int`. Lets `apply_set` use `as_int().expect(...)` at runtime instead
-/// of silently coercing future non-int variants to zero.
-fn check_int_only(expr: &Expr, database: &Database) -> Result<(), SetParseError> {
-    match expr {
-        Expr::Lit(_) => Ok(()),
-        Expr::Var(id) => {
-            if matches!(database.variables[*id].kind, VariableKind::Int(_)) {
-                Ok(())
-            } else {
-                Err(SetParseError::NonIntegerVariable {
-                    name: database.variables[*id].name.clone(),
-                })
-            }
+enum StripResult<'a> {
+    Stripped(&'a str),
+    BareKeyword,
+    NotKeyword,
+}
+
+/// Strip a leading keyword followed by ASCII whitespace. Tolerates either a
+/// space or a tab between the keyword and the rest of the content so that
+/// `set\tx = 5` doesn't silently fall through to the String parser. Returns
+/// `BareKeyword` when the line is exactly the keyword (caller surfaces a
+/// targeted "missing LHS" error).
+fn strip_keyword<'a>(content: &'a str, keyword: &str) -> StripResult<'a> {
+    if content == keyword {
+        return StripResult::BareKeyword;
+    }
+    let Some(rest) = content.strip_prefix(keyword) else {
+        return StripResult::NotKeyword;
+    };
+    let mut chars = rest.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_whitespace() => {
+            StripResult::Stripped(rest[c.len_utf8()..].trim_start())
         }
-        Expr::Binary { left, right, .. } => {
-            check_int_only(left, database)?;
-            check_int_only(right, database)
-        }
+        _ => StripResult::NotKeyword,
     }
 }
 
@@ -152,7 +180,9 @@ impl VariableResolver for DatabaseResolver<'_> {
 
 /// Locate the assignment operator and split into `(lhs, op, rhs)`. Compound
 /// operators (`+=`, `-=`, `*=`, `/=`) take precedence over plain `=`.
-fn split_lhs_op_rhs(rest: &str) -> Result<(&str, AssignOp, &str), SetParseError> {
+fn split_lhs_op_rhs(rest: &str) -> Result<(&str, AssignmentOperator, &str), SetParseError> {
+    // Safe to byte-index: is_valid_identifier rejects non-ASCII LHS,
+    // and the operator characters we look for are all single-byte ASCII.
     let bytes = rest.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
@@ -160,16 +190,16 @@ fn split_lhs_op_rhs(rest: &str) -> Result<(&str, AssignOp, &str), SetParseError>
         if c == b'+' || c == b'-' || c == b'*' || c == b'/' {
             // Only treat as compound assignment if followed by `=`.
             if bytes.get(i + 1).copied() == Some(b'=') {
-                let op = match c {
-                    b'+' => AssignOp::AddAssign,
-                    b'-' => AssignOp::SubAssign,
-                    b'*' => AssignOp::MulAssign,
-                    b'/' => AssignOp::DivAssign,
+                let operator = match c {
+                    b'+' => AssignmentOperator::AddAssign,
+                    b'-' => AssignmentOperator::SubtractAssign,
+                    b'*' => AssignmentOperator::MultiplyAssign,
+                    b'/' => AssignmentOperator::DivideAssign,
                     _ => unreachable!(),
                 };
                 let lhs = &rest[..i];
                 let rhs = &rest[i + 2..];
-                return Ok((lhs, op, rhs));
+                return Ok((lhs, operator, rhs));
             }
             // A bare `+`/`-`/`*`/`/` in the LHS is invalid as an assignment;
             // no compound op found here, keep scanning for `=`.
@@ -179,7 +209,7 @@ fn split_lhs_op_rhs(rest: &str) -> Result<(&str, AssignOp, &str), SetParseError>
         if c == b'=' {
             let lhs = &rest[..i];
             let rhs = &rest[i + 1..];
-            return Ok((lhs, AssignOp::Assign, rhs));
+            return Ok((lhs, AssignmentOperator::Assign, rhs));
         }
         i += 1;
     }
@@ -189,12 +219,12 @@ fn split_lhs_op_rhs(rest: &str) -> Result<(&str, AssignOp, &str), SetParseError>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cuentitos_common::Variable;
+    use cuentitos_common::{Expression, Value, Variable};
 
     fn db_with(vars: &[&str]) -> Database {
         let mut db = Database::new();
         for name in vars {
-            db.add_variable(Variable::new_int(*name, 0));
+            db.add_variable(Variable::new_integer(*name, 0));
         }
         db
     }
@@ -204,21 +234,21 @@ mod tests {
         let db = db_with(&["x"]);
         let parsed = parse_set("set x = 5", &db).unwrap();
         assert_eq!(parsed.variable_id, 0);
-        assert_eq!(parsed.op, AssignOp::Assign);
-        assert_eq!(parsed.expression, Expr::Lit(5));
+        assert_eq!(parsed.operator, AssignmentOperator::Assign);
+        assert_eq!(parsed.expression, Expression::Literal(Value::Integer(5)));
     }
 
     #[test]
     fn parses_compound_assignment() {
         let db = db_with(&["x"]);
-        for (input, expected_op) in [
-            ("set x += 1", AssignOp::AddAssign),
-            ("set x -= 1", AssignOp::SubAssign),
-            ("set x *= 1", AssignOp::MulAssign),
-            ("set x /= 1", AssignOp::DivAssign),
+        for (input, expected_operator) in [
+            ("set x += 1", AssignmentOperator::AddAssign),
+            ("set x -= 1", AssignmentOperator::SubtractAssign),
+            ("set x *= 1", AssignmentOperator::MultiplyAssign),
+            ("set x /= 1", AssignmentOperator::DivideAssign),
         ] {
             let parsed = parse_set(input, &db).unwrap();
-            assert_eq!(parsed.op, expected_op, "input: {}", input);
+            assert_eq!(parsed.operator, expected_operator, "input: {input}");
         }
     }
 
@@ -226,8 +256,8 @@ mod tests {
     fn parses_compound_with_no_whitespace() {
         let db = db_with(&["x"]);
         let parsed = parse_set("set x+=1", &db).unwrap();
-        assert_eq!(parsed.op, AssignOp::AddAssign);
-        assert_eq!(parsed.expression, Expr::Lit(1));
+        assert_eq!(parsed.operator, AssignmentOperator::AddAssign);
+        assert_eq!(parsed.expression, Expression::Literal(Value::Integer(1)));
     }
 
     #[test]
@@ -279,6 +309,18 @@ mod tests {
     fn negative_literal_rhs_parses() {
         let db = db_with(&["x"]);
         let parsed = parse_set("set x = -50", &db).unwrap();
-        assert_eq!(parsed.expression, Expr::Lit(-50));
+        assert_eq!(parsed.expression, Expression::Literal(Value::Integer(-50)));
+    }
+
+    #[test]
+    fn tab_after_keyword_parses() {
+        // Regression: previously `set\tx = 5` slipped past the parser's
+        // `looks_like_set_line` filter but failed `strip_prefix("set ")`
+        // and triggered an `unreachable!()` panic. The keyword stripper
+        // now accepts any ASCII whitespace.
+        let db = db_with(&["x"]);
+        let parsed = parse_set("set\tx = 5", &db).unwrap();
+        assert_eq!(parsed.variable_id, 0);
+        assert_eq!(parsed.expression, Expression::Literal(Value::Integer(5)));
     }
 }

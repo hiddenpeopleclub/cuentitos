@@ -158,16 +158,63 @@ pub enum ParseError {
         line: usize,
     },
     MalformedSetExpression {
-        expr: String,
+        expression: String,
         file: Option<PathBuf>,
         line: usize,
     },
-    /// A `set` referenced a variable whose declared kind isn't `Int`. Today
-    /// only `Int` exists, so this is unreachable; the variant is here so the
-    /// type check at parse time has somewhere to surface when bool/float/
-    /// string variants land.
-    NonIntegerVariableInSet {
-        name: String,
+    /// A `set` assigned a value of one kind to a variable of a different
+    /// declared kind, or a compound assignment targeted a non-numeric
+    /// variable.
+    SetTypeMismatch {
+        variable: String,
+        expected: cuentitos_common::ValueKind,
+        found: cuentitos_common::ValueKind,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// A compound `set` operator (`+= -= *= /=`) targeted a non-numeric
+    /// variable.
+    NonNumericAssignment {
+        variable: String,
+        kind: cuentitos_common::ValueKind,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// `req` had a syntactically incomplete expression.
+    MalformedRequirementExpression {
+        expression: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// `req` used a comparison operator that isn't one of the supported set.
+    UnknownComparisonOperator {
+        operator: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// `req` appeared at the top level (level 0 with no enclosing block to
+    /// gate). `req` only makes sense as a child of the block it gates.
+    RequirementAtTopLevel {
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// `req` compared two expressions of different declared kinds.
+    RequirementTypeMismatch {
+        left: cuentitos_common::ValueKind,
+        right: cuentitos_common::ValueKind,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// `req` used an ordering operator (`< <= > >=`) on a kind that doesn't
+    /// support ordering.
+    NonOrderedComparison {
+        kind: cuentitos_common::ValueKind,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// An arithmetic subexpression operates on a non-numeric kind.
+    NonNumericArithmetic {
+        kind: cuentitos_common::ValueKind,
         file: Option<PathBuf>,
         line: usize,
     },
@@ -434,22 +481,116 @@ impl fmt::Display for ParseError {
                     content
                 )
             }
-            ParseError::MalformedSetExpression { expr, file, line } => {
+            ParseError::MalformedSetExpression {
+                expression,
+                file,
+                line,
+            } => {
                 write!(
                     f,
                     "{}:{}: ERROR: Malformed 'set' statement: '{}'. ('set' is reserved at the start of a line; indent or rephrase to use it in narrative text.)",
                     file_prefix(file),
                     line,
-                    expr
+                    expression
                 )
             }
-            ParseError::NonIntegerVariableInSet { name, file, line } => {
+            ParseError::SetTypeMismatch {
+                variable,
+                expected,
+                found,
+                file,
+                line,
+            } => {
                 write!(
                     f,
-                    "{}:{}: ERROR: Variable '{}' is not an integer; 'set' arithmetic requires integer variables.",
+                    "{}:{}: ERROR: Type mismatch in 'set': variable '{}' has type {} but expression has type {}.",
                     file_prefix(file),
                     line,
-                    name
+                    variable,
+                    expected,
+                    found
+                )
+            }
+            ParseError::NonNumericAssignment {
+                variable,
+                kind,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Compound assignment requires a numeric variable; '{}' has type {}.",
+                    file_prefix(file),
+                    line,
+                    variable,
+                    kind
+                )
+            }
+            ParseError::MalformedRequirementExpression {
+                expression,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Malformed expression in 'req': '{}'.",
+                    file_prefix(file),
+                    line,
+                    expression
+                )
+            }
+            ParseError::UnknownComparisonOperator {
+                operator,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Unknown comparison operator: '{}'.",
+                    file_prefix(file),
+                    line,
+                    operator
+                )
+            }
+            ParseError::RequirementAtTopLevel { file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Top-level 'req' has no parent block.",
+                    file_prefix(file),
+                    line
+                )
+            }
+            ParseError::RequirementTypeMismatch {
+                left,
+                right,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Type mismatch in 'req': left side has type {} but right side has type {}.",
+                    file_prefix(file),
+                    line,
+                    left,
+                    right
+                )
+            }
+            ParseError::NonOrderedComparison { kind, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Ordering comparison ('<', '<=', '>', '>=') is not supported for type {}.",
+                    file_prefix(file),
+                    line,
+                    kind
+                )
+            }
+            ParseError::NonNumericArithmetic { kind, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Arithmetic operator is not supported for type {}.",
+                    file_prefix(file),
+                    line,
+                    kind
                 )
             }
             ParseError::MultipleErrors { errors } => {
@@ -959,7 +1100,7 @@ impl Parser {
                                         .database
                                         .add_set(cuentitos_common::SetStatement::new(
                                             parsed.variable_id,
-                                            parsed.op,
+                                            parsed.operator,
                                             parsed.expression,
                                         ));
                                 let block = Block::with_line(
@@ -990,7 +1131,7 @@ impl Parser {
                                     }
                                     SetParseError::MalformedExpression { expression } => {
                                         ParseError::MalformedSetExpression {
-                                            expr: expression,
+                                            expression,
                                             file: self.file_path.clone(),
                                             line: context.current_line,
                                         }
@@ -1006,14 +1147,26 @@ impl Parser {
                                     | SetParseError::MissingAssignment
                                     | SetParseError::MissingRhs => {
                                         ParseError::MalformedSetExpression {
-                                            expr: content.trim().to_string(),
+                                            expression: content.trim().to_string(),
                                             file: self.file_path.clone(),
                                             line: context.current_line,
                                         }
                                     }
-                                    SetParseError::NonIntegerVariable { name } => {
-                                        ParseError::NonIntegerVariableInSet {
-                                            name,
+                                    SetParseError::TypeMismatch {
+                                        variable,
+                                        expected,
+                                        found,
+                                    } => ParseError::SetTypeMismatch {
+                                        variable,
+                                        expected,
+                                        found,
+                                        file: self.file_path.clone(),
+                                        line: context.current_line,
+                                    },
+                                    SetParseError::NonNumericAssignment { variable, kind } => {
+                                        ParseError::NonNumericAssignment {
+                                            variable,
+                                            kind,
                                             file: self.file_path.clone(),
                                             line: context.current_line,
                                         }
@@ -1021,6 +1174,134 @@ impl Parser {
                                     SetParseError::NotASetStatement => unreachable!(
                                         "looks_like_set_line filter should preclude this"
                                     ),
+                                };
+                                self.collect_error_and_skip(parse_error, &mut context);
+                                continue;
+                            }
+                        }
+                    } else if Self::looks_like_requirement_line(content.trim()) {
+                        // `req` is a parent-gating statement: parse the
+                        // condition, resolve identifiers, and surface
+                        // malformed/undeclared/unknown-operator errors at
+                        // parse time. A `req` at level 0 has no narrative
+                        // block to gate (its only ancestor is START), so
+                        // it's a parse-time error.
+                        if level == 0 {
+                            self.collect_error_and_skip(
+                                ParseError::RequirementAtTopLevel {
+                                    file: self.file_path.clone(),
+                                    line: context.current_line,
+                                },
+                                &mut context,
+                            );
+                            continue;
+                        }
+
+                        match crate::parsers::requirement_parser::parse_requirement(
+                            content.trim(),
+                            &context.database,
+                        ) {
+                            Ok(parsed) => {
+                                let parent_id = match self.resolve_parent_id(
+                                    level,
+                                    content,
+                                    context.current_line,
+                                ) {
+                                    Ok(parent_id) => parent_id,
+                                    Err(err) => {
+                                        self.collect_error_and_skip(err, &mut context);
+                                        continue;
+                                    }
+                                };
+
+                                let requirement_id = context.database.add_requirement(
+                                    cuentitos_common::RequirementStatement::new(
+                                        parsed.left,
+                                        parsed.operator,
+                                        parsed.right,
+                                    ),
+                                );
+                                let block = Block::with_line(
+                                    BlockType::Requirement(requirement_id),
+                                    parent_id,
+                                    level,
+                                    context.current_line,
+                                );
+                                let block_id = context.database.add_block(block);
+
+                                if level >= self.last_block_at_level.len() {
+                                    self.last_block_at_level.push(block_id);
+                                } else {
+                                    self.last_block_at_level[level] = block_id;
+                                }
+
+                                self.mark_non_option_child(parent_id);
+                            }
+                            Err(requirement_err) => {
+                                use crate::parsers::requirement_parser::RequirementParseError;
+                                let parse_error = match requirement_err {
+                                    RequirementParseError::UndefinedVariable { name } => {
+                                        ParseError::UndefinedVariableReference {
+                                            name,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    RequirementParseError::MalformedExpression { expression } => {
+                                        ParseError::MalformedRequirementExpression {
+                                            expression,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    RequirementParseError::InvalidLhs { name } => {
+                                        ParseError::InvalidVariableName {
+                                            name,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    RequirementParseError::MissingLhs => {
+                                        ParseError::MalformedRequirementExpression {
+                                            expression: content.trim().to_string(),
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    RequirementParseError::UnknownOperator { op } => {
+                                        ParseError::UnknownComparisonOperator {
+                                            operator: op,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    RequirementParseError::TypeMismatch { left, right } => {
+                                        ParseError::RequirementTypeMismatch {
+                                            left,
+                                            right,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    RequirementParseError::NonOrderedComparison {
+                                        kind, ..
+                                    } => ParseError::NonOrderedComparison {
+                                        kind,
+                                        file: self.file_path.clone(),
+                                        line: context.current_line,
+                                    },
+                                    RequirementParseError::NonNumericArithmetic { kind } => {
+                                        ParseError::NonNumericArithmetic {
+                                            kind,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    RequirementParseError::NotARequirementStatement => {
+                                        unreachable!(
+                                            "looks_like_requirement_line filter should preclude this"
+                                        )
+                                    }
                                 };
                                 self.collect_error_and_skip(parse_error, &mut context);
                                 continue;
@@ -1197,6 +1478,17 @@ impl Parser {
         content == "set"
             || content
                 .strip_prefix("set")
+                .map(|rest| rest.starts_with(' ') || rest.starts_with('\t'))
+                .unwrap_or(false)
+    }
+
+    /// Cheap pre-filter: does this trimmed line begin with the `req` keyword?
+    /// Lines that pass through here are then handed to
+    /// `requirement_parser::parse_requirement` for full validation.
+    fn looks_like_requirement_line(content: &str) -> bool {
+        content == "req"
+            || content
+                .strip_prefix("req")
                 .map(|rest| rest.starts_with(' ') || rest.starts_with('\t'))
                 .unwrap_or(false)
     }
