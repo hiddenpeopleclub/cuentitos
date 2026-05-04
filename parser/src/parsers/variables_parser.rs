@@ -654,7 +654,7 @@ mod tests {
         assert_eq!(outcome.consumed_lines, 3);
         assert_eq!(db.variables.len(), 1);
         assert_eq!(db.variables[0].name, "five");
-        assert_eq!(db.variables[0].kind, cuentitos_common::ValueKind::Integer);
+        assert_eq!(db.variables[0].kind(), cuentitos_common::ValueKind::Integer);
         assert_eq!(db.variables[0].default, cuentitos_common::Value::Integer(5));
     }
 

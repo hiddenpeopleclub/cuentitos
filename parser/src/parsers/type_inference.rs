@@ -35,7 +35,7 @@ pub fn infer_type(
 ) -> Result<ValueKind, TypeInferenceError> {
     match expression {
         Expression::Literal(value) => Ok(literal_kind(value)),
-        Expression::Variable(id) => Ok(database.variables[*id].kind),
+        Expression::Variable(id) => Ok(database.variables[*id].kind()),
         Expression::Binary {
             operator,
             left,

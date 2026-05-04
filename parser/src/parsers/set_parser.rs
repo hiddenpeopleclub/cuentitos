@@ -101,7 +101,7 @@ pub fn parse_set(content: &str, database: &Database) -> Result<ParsedSet, SetPar
         }
     };
 
-    let lhs_kind = database.variables[variable_id].kind;
+    let lhs_kind = database.variables[variable_id].kind();
     let rhs_kind = match infer_type(&expression, database) {
         Ok(kind) => kind,
         Err(TypeInferenceError::Mismatch { left, right, .. }) => {

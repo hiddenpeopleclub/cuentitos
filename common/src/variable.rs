@@ -2,25 +2,22 @@ use crate::value::{Value, ValueKind};
 
 /// What type a declared variable has, together with its declared default.
 ///
-/// `kind` is the static [`ValueKind`] used by parse-time inference; `default`
-/// is the [`Value`] handed to the runtime as the initial cell value. Adding a
-/// new type means: extend [`Value`]/[`ValueKind`], add a constructor here,
-/// and dispatch on the new variant where needed — no storage migration for
-/// either the database or the runtime state.
+/// The static [`ValueKind`] is derived from `default` via [`Variable::kind`];
+/// the same `default` is handed to the runtime as the initial cell value.
+/// Adding a new type means: extend [`Value`]/[`ValueKind`], add a constructor
+/// here, and dispatch on the new variant where needed — no storage migration
+/// for either the database or the runtime state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variable {
     pub name: String,
-    pub kind: ValueKind,
     pub default: Value,
 }
 
 impl Variable {
-    /// Construct a variable from a name and a declared default. The variable's
-    /// [`ValueKind`] is taken from the default.
+    /// Construct a variable from a name and a declared default.
     pub fn new<S: Into<String>>(name: S, default: Value) -> Self {
         Self {
             name: name.into(),
-            kind: default.kind(),
             default,
         }
     }
@@ -28,6 +25,15 @@ impl Variable {
     /// Convenience constructor for integer variables.
     pub fn new_integer<S: Into<String>>(name: S, default: i64) -> Self {
         Self::new(name, Value::Integer(default))
+    }
+
+    /// The static [`ValueKind`] of this variable, derived from its declared
+    /// default. Single source of truth — kept as a method (rather than a
+    /// stored field) so parse-time inference and runtime dispatch can never
+    /// disagree.
+    #[must_use]
+    pub fn kind(&self) -> ValueKind {
+        self.default.kind()
     }
 
     /// Produce the runtime value cell for this variable's declared default.
@@ -45,7 +51,7 @@ mod tests {
     fn new_integer_builds_variable() {
         let v = Variable::new_integer("an_integer", 42);
         assert_eq!(v.name, "an_integer");
-        assert_eq!(v.kind, ValueKind::Integer);
+        assert_eq!(v.kind(), ValueKind::Integer);
         assert_eq!(v.default, Value::Integer(42));
     }
 
