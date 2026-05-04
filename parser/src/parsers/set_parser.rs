@@ -181,6 +181,8 @@ impl VariableResolver for DatabaseResolver<'_> {
 /// Locate the assignment operator and split into `(lhs, op, rhs)`. Compound
 /// operators (`+=`, `-=`, `*=`, `/=`) take precedence over plain `=`.
 fn split_lhs_op_rhs(rest: &str) -> Result<(&str, AssignmentOperator, &str), SetParseError> {
+    // Safe to byte-index: is_valid_identifier rejects non-ASCII LHS,
+    // and the operator characters we look for are all single-byte ASCII.
     let bytes = rest.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
