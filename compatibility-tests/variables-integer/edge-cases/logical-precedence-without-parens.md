@@ -1,9 +1,9 @@
-# Edge Case: Default Precedence — `a OR b AND c` Behaves as `a OR (b AND c)`
+# Edge Case: Default Precedence — `a or b and c` Behaves as `a or (b and c)`
 
-`AND` binds tighter than `OR`. Without parentheses, `a OR b AND c` must
-evaluate identically to `a OR (b AND c)`. With these inputs, both produce
-**true** (because `a > 0` alone satisfies the OR), so both gated lines are
-shown. If precedence were inverted to `(a OR b) AND c`, the first line
+`and` binds tighter than `or`. Without parentheses, `a or b and c` must
+evaluate identically to `a or (b and c)`. With these inputs, both produce
+**true** (because `a > 0` alone satisfies the `or`), so both gated lines
+are shown. If precedence were inverted to `(a or b) and c`, the first line
 would not be shown — its appearance proves AND-tighter-than-OR is in
 effect.
 
@@ -16,9 +16,9 @@ int c = 0
 ---
 
 Implicit precedence.
-  req a > 0 OR b > 0 AND c > 0
+  req a > 0 or b > 0 and c > 0
 Equivalent explicit grouping.
-  req a > 0 OR (b > 0 AND c > 0)
+  req a > 0 or (b > 0 and c > 0)
 ```
 
 ## Input

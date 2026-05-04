@@ -2,7 +2,7 @@
 
 Logical sub-expressions nested three or more levels deep should evaluate
 correctly. Each gated line has at least three nested parenthesis pairs
-mixing `AND`, `OR`, and `NOT`. Two of the three expressions are true and
+mixing `and`, `or`, and `not`. Two of the three expressions are true and
 one is false — the false case proves the engine actually evaluates the
 nested structure rather than always succeeding.
 
@@ -16,11 +16,11 @@ int mana = 0
 ---
 
 Triple nested AND, all true.
-  req ((health > 0) AND ((shield > 0) AND (health < 100)))
+  req ((health > 0) and ((shield > 0) and (health < 100)))
 Quad nested with one inner false.
-  req (((health > 0 OR armor > 0) AND (mana > 0 OR armor > 0)))
+  req (((health > 0 or armor > 0) and (mana > 0 or armor > 0)))
 Triple nested with NOT.
-  req (((NOT armor > 0) AND health > 0))
+  req (((not armor > 0) and health > 0))
 ```
 
 ## Input

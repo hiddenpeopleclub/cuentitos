@@ -10,7 +10,7 @@ int x = 5
 ---
 
 Line.
-  req x > 0 AND x < 10)
+  req x > 0 and x < 10)
 ```
 
 ## Input
@@ -20,5 +20,5 @@ s
 
 ## Result
 ```result
-logical-unbalanced-paren-close.cuentitos:6: ERROR: Unbalanced parentheses in 'req': 'x > 0 AND x < 10)'.
+logical-unbalanced-paren-close.cuentitos:6: ERROR: Unbalanced parentheses in 'req': 'x > 0 and x < 10)'.
 ```

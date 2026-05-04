@@ -1,6 +1,6 @@
 # Require: Logical OR
 
-A `req` using `OR` passes when at least one of the comparisons is true and
+A `req` using `or` passes when at least one of the comparisons is true and
 fails only when both are false.
 
 ## Script
@@ -12,9 +12,9 @@ int armor = 0
 ---
 
 You can act.
-  req health > 0 OR shield > 0
+  req health > 0 or shield > 0
 You are powerless.
-  req shield > 0 OR armor > 0
+  req shield > 0 or armor > 0
 ```
 
 ## Input

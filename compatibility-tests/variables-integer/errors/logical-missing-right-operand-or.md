@@ -1,6 +1,6 @@
 # Logical Operator Error: Missing Right Operand for OR
 
-A `req` condition with `OR` and no right operand is a parse-time error.
+A `req` condition with `or` and no right operand is a parse-time error.
 
 ## Script
 ```cuentitos
@@ -9,7 +9,7 @@ int x = 5
 ---
 
 Line.
-  req x > 0 OR
+  req x > 0 or
 ```
 
 ## Input
@@ -19,5 +19,5 @@ s
 
 ## Result
 ```result
-logical-missing-right-operand-or.cuentitos:6: ERROR: Missing right operand for 'OR' in 'req': 'x > 0 OR'.
+logical-missing-right-operand-or.cuentitos:6: ERROR: Missing right operand for 'or' in 'req': 'x > 0 or'.
 ```

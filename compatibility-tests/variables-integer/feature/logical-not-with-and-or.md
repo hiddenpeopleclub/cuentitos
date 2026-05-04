@@ -1,6 +1,6 @@
 # Require: NOT Combined with AND and OR
 
-`NOT` binds tightest, then `AND`, then `OR`. Combinations of all three follow
+`not` binds tightest, then `and`, then `or`. Combinations of all three follow
 that precedence and produce the expected truth values.
 
 ## Script
@@ -12,11 +12,11 @@ int armor = 5
 ---
 
 Alive but exposed.
-  req health > 0 AND NOT shield > 0
+  req health > 0 and not shield > 0
 Dangerous combo.
-  req NOT health > 0 OR armor > 0
+  req not health > 0 or armor > 0
 Impossible.
-  req NOT health > 0 AND armor > 0
+  req not health > 0 and armor > 0
 ```
 
 ## Input

@@ -1,6 +1,6 @@
 # Logical Operator Error: Missing Operand for NOT
 
-A `req` condition with `NOT` and no operand following it is a parse-time
+A `req` condition with `not` and no operand following it is a parse-time
 error.
 
 ## Script
@@ -10,7 +10,7 @@ int x = 5
 ---
 
 Line.
-  req NOT
+  req not
 ```
 
 ## Input
@@ -20,5 +20,5 @@ s
 
 ## Result
 ```result
-logical-missing-operand-not.cuentitos:6: ERROR: Missing operand for 'NOT' in 'req': 'NOT'.
+logical-missing-operand-not.cuentitos:6: ERROR: Missing operand for 'not' in 'req': 'not'.
 ```

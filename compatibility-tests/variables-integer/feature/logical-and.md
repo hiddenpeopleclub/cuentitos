@@ -1,6 +1,6 @@
 # Require: Logical AND
 
-A `req` using `AND` passes only when both comparisons are true. The parent
+A `req` using `and` passes only when both comparisons are true. The parent
 block is shown only when the combined expression evaluates to true.
 
 ## Script
@@ -12,9 +12,9 @@ int armor = 0
 ---
 
 Defended.
-  req health > 0 AND shield > 0
+  req health > 0 and shield > 0
 Exposed.
-  req health > 0 AND armor > 0
+  req health > 0 and armor > 0
 ```
 
 ## Input

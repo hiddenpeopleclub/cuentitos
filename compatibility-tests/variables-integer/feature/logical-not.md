@@ -1,6 +1,6 @@
 # Require: Logical NOT
 
-A `req` using `NOT` inverts the truth value of its comparison operand. The
+A `req` using `not` inverts the truth value of its comparison operand. The
 parent block is shown only when the negated expression is true.
 
 ## Script
@@ -11,9 +11,9 @@ int shield = 0
 ---
 
 Unshielded.
-  req NOT shield > 0
+  req not shield > 0
 Unhealthy.
-  req NOT health > 0
+  req not health > 0
 ```
 
 ## Input
