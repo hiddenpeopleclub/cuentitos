@@ -1,5 +1,5 @@
 use crate::block::{Block, BlockId};
-use crate::requirement_statement::RequirementStatement;
+use crate::boolean_expression::BooleanExpression;
 use crate::section::Section;
 use crate::set_statement::SetStatement;
 use crate::variable::Variable;
@@ -15,7 +15,7 @@ pub struct Database {
     pub variables: Vec<Variable>,
     pub variable_registry: HashMap<String, VariableId>,
     pub sets: Vec<SetStatement>,
-    pub requirements: Vec<RequirementStatement>,
+    pub requirements: Vec<BooleanExpression>,
 }
 
 impl Database {
@@ -38,7 +38,7 @@ impl Database {
         set_id
     }
 
-    pub fn add_requirement(&mut self, requirement: RequirementStatement) -> RequirementId {
+    pub fn add_requirement(&mut self, requirement: BooleanExpression) -> RequirementId {
         let requirement_id = self.requirements.len();
         self.requirements.push(requirement);
         requirement_id

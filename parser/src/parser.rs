@@ -218,6 +218,50 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    /// `and`/`or` had a bare arithmetic LHS instead of a comparison.
+    LogicalBareIntegerOnLeft {
+        operator: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// `not` had a bare arithmetic operand instead of a comparison.
+    LogicalBareIntegerOperandOfNot {
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// `and`/`or` had no left operand. `source` is the trimmed condition.
+    LogicalMissingLeftOperand {
+        operator: String,
+        source: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// `and`/`or` had no right operand. `source` is the trimmed condition.
+    LogicalMissingRightOperand {
+        operator: String,
+        source: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// `not` had no operand. `source` is the trimmed condition.
+    LogicalMissingNotOperand {
+        source: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// Parens in a `req` condition don't balance.
+    UnbalancedParentheses {
+        source: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// A reserved keyword (e.g. `and`, `or`, `not`) was used as a variable
+    /// name in a `--- variables` declaration.
+    ReservedKeyword {
+        name: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
     MultipleErrors {
         errors: Vec<ParseError>,
     },
@@ -591,6 +635,84 @@ impl fmt::Display for ParseError {
                     file_prefix(file),
                     line,
                     kind
+                )
+            }
+            ParseError::LogicalBareIntegerOnLeft {
+                operator,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Logical operator '{}' expects a comparison on its left, not an integer expression.",
+                    file_prefix(file),
+                    line,
+                    operator
+                )
+            }
+            ParseError::LogicalBareIntegerOperandOfNot { file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Logical operator 'not' expects a comparison as its operand, not an integer expression.",
+                    file_prefix(file),
+                    line
+                )
+            }
+            ParseError::LogicalMissingLeftOperand {
+                operator,
+                source,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Missing left operand for '{}' in 'req': '{}'.",
+                    file_prefix(file),
+                    line,
+                    operator,
+                    source
+                )
+            }
+            ParseError::LogicalMissingRightOperand {
+                operator,
+                source,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Missing right operand for '{}' in 'req': '{}'.",
+                    file_prefix(file),
+                    line,
+                    operator,
+                    source
+                )
+            }
+            ParseError::LogicalMissingNotOperand { source, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Missing operand for 'not' in 'req': '{}'.",
+                    file_prefix(file),
+                    line,
+                    source
+                )
+            }
+            ParseError::UnbalancedParentheses { source, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Unbalanced parentheses in 'req': '{}'.",
+                    file_prefix(file),
+                    line,
+                    source
+                )
+            }
+            ParseError::ReservedKeyword { name, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Reserved keyword '{}' cannot be used as a variable name.",
+                    file_prefix(file),
+                    line,
+                    name
                 )
             }
             ParseError::MultipleErrors { errors } => {
@@ -1214,13 +1336,8 @@ impl Parser {
                                     }
                                 };
 
-                                let requirement_id = context.database.add_requirement(
-                                    cuentitos_common::RequirementStatement::new(
-                                        parsed.left,
-                                        parsed.operator,
-                                        parsed.right,
-                                    ),
-                                );
+                                let requirement_id =
+                                    context.database.add_requirement(parsed.expression);
                                 let block = Block::with_line(
                                     BlockType::Requirement(requirement_id),
                                     parent_id,
@@ -1239,64 +1356,81 @@ impl Parser {
                             }
                             Err(requirement_err) => {
                                 use crate::parsers::requirement_parser::RequirementParseError;
+                                let file = self.file_path.clone();
+                                let line = context.current_line;
                                 let parse_error = match requirement_err {
                                     RequirementParseError::UndefinedVariable { name } => {
-                                        ParseError::UndefinedVariableReference {
-                                            name,
-                                            file: self.file_path.clone(),
-                                            line: context.current_line,
-                                        }
+                                        ParseError::UndefinedVariableReference { name, file, line }
                                     }
                                     RequirementParseError::MalformedExpression { expression } => {
                                         ParseError::MalformedRequirementExpression {
                                             expression,
-                                            file: self.file_path.clone(),
-                                            line: context.current_line,
+                                            file,
+                                            line,
                                         }
                                     }
-                                    RequirementParseError::InvalidLhs { name } => {
-                                        ParseError::InvalidVariableName {
-                                            name,
-                                            file: self.file_path.clone(),
-                                            line: context.current_line,
-                                        }
-                                    }
-                                    RequirementParseError::MissingLhs => {
+                                    RequirementParseError::MissingCondition => {
                                         ParseError::MalformedRequirementExpression {
                                             expression: content.trim().to_string(),
-                                            file: self.file_path.clone(),
-                                            line: context.current_line,
+                                            file,
+                                            line,
                                         }
                                     }
-                                    RequirementParseError::UnknownOperator { op } => {
+                                    RequirementParseError::UnknownOperator { symbol } => {
                                         ParseError::UnknownComparisonOperator {
-                                            operator: op,
-                                            file: self.file_path.clone(),
-                                            line: context.current_line,
+                                            operator: symbol,
+                                            file,
+                                            line,
                                         }
                                     }
                                     RequirementParseError::TypeMismatch { left, right } => {
                                         ParseError::RequirementTypeMismatch {
                                             left,
                                             right,
-                                            file: self.file_path.clone(),
-                                            line: context.current_line,
+                                            file,
+                                            line,
                                         }
                                     }
                                     RequirementParseError::NonOrderedComparison {
                                         kind, ..
-                                    } => ParseError::NonOrderedComparison {
-                                        kind,
-                                        file: self.file_path.clone(),
-                                        line: context.current_line,
-                                    },
+                                    } => ParseError::NonOrderedComparison { kind, file, line },
                                     RequirementParseError::NonNumericArithmetic { kind } => {
-                                        ParseError::NonNumericArithmetic {
-                                            kind,
-                                            file: self.file_path.clone(),
-                                            line: context.current_line,
-                                        }
+                                        ParseError::NonNumericArithmetic { kind, file, line }
                                     }
+                                    RequirementParseError::LogicalBareIntegerOnLeft {
+                                        operator,
+                                    } => ParseError::LogicalBareIntegerOnLeft {
+                                        operator: operator.as_str().to_string(),
+                                        file,
+                                        line,
+                                    },
+                                    RequirementParseError::LogicalBareIntegerOperandOfNot => {
+                                        ParseError::LogicalBareIntegerOperandOfNot { file, line }
+                                    }
+                                    RequirementParseError::LogicalMissingLeftOperand {
+                                        operator,
+                                        source,
+                                    } => ParseError::LogicalMissingLeftOperand {
+                                        operator: operator.as_str().to_string(),
+                                        source,
+                                        file,
+                                        line,
+                                    },
+                                    RequirementParseError::LogicalMissingRightOperand {
+                                        operator,
+                                        source,
+                                    } => ParseError::LogicalMissingRightOperand {
+                                        operator: operator.as_str().to_string(),
+                                        source,
+                                        file,
+                                        line,
+                                    },
+                                    RequirementParseError::LogicalMissingNotOperand { source } => {
+                                        ParseError::LogicalMissingNotOperand { source, file, line }
+                                    }
+                                    RequirementParseError::LogicalUnbalancedParentheses {
+                                        source,
+                                    } => ParseError::UnbalancedParentheses { source, file, line },
                                     RequirementParseError::NotARequirementStatement => {
                                         unreachable!(
                                             "looks_like_requirement_line filter should preclude this"

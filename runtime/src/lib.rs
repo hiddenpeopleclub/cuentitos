@@ -605,24 +605,14 @@ impl Runtime {
             else {
                 continue;
             };
-            let statement = &self.database.requirements[requirement_id];
+            let expression = &self.database.requirements[requirement_id];
             let line = self.database.blocks[child_id].line;
             let values = &self.state.variable_values;
             let lookup = |id: VariableId| values[id].clone();
-            let left = match cuentitos_common::evaluate(&statement.left, &lookup) {
-                Ok(value) => value,
-                Err(err) => return Err(self.evaluation_error_to_runtime(err, line)),
-            };
-            let right = match cuentitos_common::evaluate(&statement.right, &lookup) {
-                Ok(value) => value,
-                Err(err) => return Err(self.evaluation_error_to_runtime(err, line)),
-            };
-            // Parser-time inference guarantees both sides have the same kind
-            // and that ordering operators only apply to ordered kinds, so a
-            // `TypeMismatch` here is unreachable today; if a future operator
-            // can produce one, it propagates through the same channel as
-            // arithmetic errors.
-            let outcome = match statement.operator.apply(&left, &right) {
+            // `BooleanExpression::evaluate` short-circuits internally for
+            // `and`/`or`/`not`. Sibling `req`s remain implicitly ANDed by
+            // the loop here — failing one short-circuits the whole gate.
+            let outcome = match expression.evaluate(&lookup) {
                 Ok(value) => value,
                 Err(err) => return Err(self.evaluation_error_to_runtime(err, line)),
             };

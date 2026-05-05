@@ -165,6 +165,14 @@ fn parse_one_declaration(
         });
     }
 
+    if is_reserved_keyword(name) {
+        return Err(ParseError::ReservedKeyword {
+            name: name.to_string(),
+            file: file_path.clone(),
+            line: line_number,
+        });
+    }
+
     if let Some(&previous_line) = declared_lines.get(name) {
         return Err(ParseError::DuplicateVariable {
             name: name.to_string(),
@@ -265,6 +273,13 @@ pub fn is_valid_identifier(name: &str) -> bool {
         return false;
     }
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// True for lowercase logical-operator keywords that cannot be used as
+/// variable names. Uppercase variants (`AND`/`OR`/`NOT`) are not reserved
+/// — they parse as ordinary identifiers.
+pub fn is_reserved_keyword(name: &str) -> bool {
+    matches!(name, "and" | "or" | "not")
 }
 
 // ---------------------------------------------------------------------------

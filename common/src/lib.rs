@@ -1,4 +1,5 @@
 pub mod block;
+pub mod boolean_expression;
 pub mod database;
 pub mod expression;
 pub mod path_resolver;
@@ -17,6 +18,7 @@ pub type RequirementId = usize;
 
 // Re-export commonly used types
 pub use block::{Block, BlockId, BlockType};
+pub use boolean_expression::BooleanExpression;
 pub use database::Database;
 pub use expression::{evaluate, BinaryOperator, EvaluationError, Expression};
 pub use path_resolver::{PathResolutionError, PathResolver, ResolvedPath};
