@@ -2,18 +2,17 @@
 created: 2026-05-04
 ---
 
-# Logical Operators in req — Implementation
-
 # Logical Operators in `req` — Implementation
 
-Implement `AND`, `OR`, `NOT` in `req` conditions so the compatibility tests
-from the **Compatibility Tests** task pass.
+Implement `and`, `or`, `not` in `req` conditions so the compatibility
+tests from the **Compatibility Tests** task (PR #74) pass.
 
 ## Context
 
-Follow-up to "Require Integer Variables". Adds uppercase logical operators
+Follow-up to "Require Integer Variables". Adds lowercase logical operators
 to `req` conditions so authors can combine comparisons inline instead of
-stacking sibling `req` blocks.
+stacking sibling `req` blocks. Casing matches the rest of the keyword
+family (`set`, `req`, `int`).
 
 ## Syntax
 
@@ -25,20 +24,22 @@ int shield = 0
 
 # start
   You're defended.
-    req health > 0 AND shield > 0
+    req health > 0 and shield > 0
   You're exposed but alive.
-    req health > 0 AND NOT shield > 0
+    req health > 0 and not shield > 0
   You can act.
-    req health > 0 OR shield > 0
+    req health > 0 or shield > 0
   Either side or both, but not too much.
-    req (health > 0 OR shield > 0) AND health < 100
+    req (health > 0 or shield > 0) and health < 100
 ```
 
 ## Grammar
 
-- Keywords: `AND`, `OR`, `NOT` — uppercase only. Lowercase `and`/`or`/`not`
-  are NOT keywords; they remain valid identifiers.
-- Precedence (tightest first): `NOT` → comparison → `AND` → `OR`.
+- Keywords: `and`, `or`, `not` — lowercase only and reserved (cannot be
+  used as variable names). Uppercase `AND`/`OR`/`NOT` are not keywords;
+  they parse as ordinary identifiers (and surface as
+  `Undefined variable: 'AND'.` if used in a `req` condition).
+- Precedence (tightest first): `not` → comparison → `and` → `or`.
 - Parentheses group sub-expressions.
 - A `req` condition is a boolean expression composed of comparisons
   (`>`, `<`, `>=`, `<=`, `=`, `!=`); logical operators combine boolean
@@ -70,9 +71,9 @@ pub enum BooleanExpression {
 }
 ```
 
-The `Block::Requirement` variant then carries a `BooleanExpression` instead
-of a single `RequirementStatement`. Migrate existing single-comparison
-parsing to wrap the result in `BooleanExpression::Comparison(...)`.
+The `Block::Requirement` variant then carries a `BooleanExpression`
+instead of a single `RequirementStatement`. Migrate existing single-
+comparison parsing to wrap the result in `BooleanExpression::Comparison`.
 
 This keeps the symmetry that already exists between `BinaryOperator::apply`
 on `Value`s and `ComparisonOperator::apply` returning `Result<bool,
@@ -84,18 +85,21 @@ the choice.
 
 ## Parser changes
 
-- Tokenize uppercase `AND`/`OR`/`NOT` as logical-operator tokens; lowercase
-  variants stay as identifier tokens.
-- Recursive descent: `parse_or → parse_and → parse_not → parse_primary`
+- Tokenize lowercase `and`/`or`/`not` as logical-operator tokens (in `req`
+  condition context). Uppercase variants stay as identifier tokens.
+- Add `and`/`or`/`not` to the reserved-keyword check used by the variable
+  declaration parser.
+- Recursive descent for the boolean expression:
+  `parse_or → parse_and → parse_not → parse_primary`
   where `parse_primary` is either a parenthesized boolean expression or a
   comparison (single `req` statement).
 - Parse-time validation:
   - Each leaf must be a comparison; reject a bare integer expression where
     a boolean is expected.
-  - Each side of `AND`/`OR` must be present; `NOT` must have an operand.
+  - Each side of `and`/`or` must be present; `not` must have an operand.
   - Parentheses must balance.
-- Surface clear errors — match the wording style of existing parser
-  errors. (The compatibility-tests task pinned exact wording in `errors/`.)
+- Surface clear errors — exact wording is pinned by the compat tests on
+  PR #74.
 
 ## Runtime changes
 
@@ -104,13 +108,12 @@ the choice.
   three combinators with short-circuit semantics.
 - `RuntimeError` may need a new "expected boolean got integer" variant if
   any error path can reach the runtime — but parse-time validation should
-  rule that out, so this is likely a `unreachable!()` with a meaningful
+  rule that out, so this is likely an `unreachable!()` with a meaningful
   message.
 
 ## Acceptance
 
-- All compatibility tests from the Compatibility Tests PR pass under
-  `./bin/run-compat`.
+- All 25 compatibility tests from PR #74 pass under `./bin/run-compat`.
 - New Rust unit tests for the boolean-expression parser and evaluator,
   including precedence and short-circuit behavior.
 - `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
@@ -119,5 +122,5 @@ the choice.
 
 ## Dependencies
 
-Requires the **Compatibility Tests** PR to have landed (or at least be
-visible on a branch you can rebase against).
+Requires PR #74 (`cuentitos-logical-ops-compat`) to have landed (or at
+least be visible on a branch you can rebase against).
