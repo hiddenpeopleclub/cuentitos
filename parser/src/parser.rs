@@ -220,7 +220,7 @@ pub enum ParseError {
     },
     /// `and`/`or` had a bare arithmetic LHS instead of a comparison.
     LogicalBareIntegerOnLeft {
-        operator: String,
+        operator: crate::boolean_expression::LogicalKeyword,
         file: Option<PathBuf>,
         line: usize,
     },
@@ -231,14 +231,14 @@ pub enum ParseError {
     },
     /// `and`/`or` had no left operand. `source` is the trimmed condition.
     LogicalMissingLeftOperand {
-        operator: String,
+        operator: crate::boolean_expression::LogicalKeyword,
         source: String,
         file: Option<PathBuf>,
         line: usize,
     },
     /// `and`/`or` had no right operand. `source` is the trimmed condition.
     LogicalMissingRightOperand {
-        operator: String,
+        operator: crate::boolean_expression::LogicalKeyword,
         source: String,
         file: Option<PathBuf>,
         line: usize,
@@ -647,7 +647,7 @@ impl fmt::Display for ParseError {
                     "{}:{}: ERROR: Logical operator '{}' expects a comparison on its left, not an integer expression.",
                     file_prefix(file),
                     line,
-                    operator
+                    operator.as_str()
                 )
             }
             ParseError::LogicalBareIntegerOperandOfNot { file, line } => {
@@ -669,7 +669,7 @@ impl fmt::Display for ParseError {
                     "{}:{}: ERROR: Missing left operand for '{}' in 'req': '{}'.",
                     file_prefix(file),
                     line,
-                    operator,
+                    operator.as_str(),
                     source
                 )
             }
@@ -684,7 +684,7 @@ impl fmt::Display for ParseError {
                     "{}:{}: ERROR: Missing right operand for '{}' in 'req': '{}'.",
                     file_prefix(file),
                     line,
-                    operator,
+                    operator.as_str(),
                     source
                 )
             }
@@ -1400,7 +1400,7 @@ impl Parser {
                                     RequirementParseError::LogicalBareIntegerOnLeft {
                                         operator,
                                     } => ParseError::LogicalBareIntegerOnLeft {
-                                        operator: operator.as_str().to_string(),
+                                        operator,
                                         file,
                                         line,
                                     },
@@ -1411,7 +1411,7 @@ impl Parser {
                                         operator,
                                         source,
                                     } => ParseError::LogicalMissingLeftOperand {
-                                        operator: operator.as_str().to_string(),
+                                        operator,
                                         source,
                                         file,
                                         line,
@@ -1420,7 +1420,7 @@ impl Parser {
                                         operator,
                                         source,
                                     } => ParseError::LogicalMissingRightOperand {
-                                        operator: operator.as_str().to_string(),
+                                        operator,
                                         source,
                                         file,
                                         line,
