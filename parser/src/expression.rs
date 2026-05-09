@@ -293,8 +293,11 @@ mod tests {
             vars.iter().map(|(n, id, _)| (*n, *id)).collect();
         let resolver = make_resolver(&resolver_pairs);
         let expression = parse_expression(input, &resolver).expect("parse should succeed");
-        let values: HashMap<VariableId, i64> = vars.iter().map(|(_, id, v)| (*id, *v)).collect();
-        match evaluate(&expression, &|id| Value::Integer(values[&id]))? {
+        let values: HashMap<VariableId, Value> = vars
+            .iter()
+            .map(|(_, id, v)| (*id, Value::Integer(*v)))
+            .collect();
+        match evaluate(&expression, &|id| &values[&id])?.into_owned() {
             Value::Integer(n) => Ok(n),
         }
     }
@@ -451,9 +454,10 @@ mod tests {
     fn negation_of_i64_min_value_at_runtime_overflows() {
         let resolver = make_resolver(&[("x", 0)]);
         let expression = parse_expression("-x", &resolver).unwrap();
-        let values = std::iter::once((0_usize, i64::MIN)).collect::<HashMap<_, _>>();
+        let values: HashMap<VariableId, Value> =
+            std::iter::once((0_usize, Value::Integer(i64::MIN))).collect();
         assert_eq!(
-            evaluate(&expression, &|id| Value::Integer(values[&id])).unwrap_err(),
+            evaluate(&expression, &|id| &values[&id]).unwrap_err(),
             EvaluationError::Overflow
         );
     }

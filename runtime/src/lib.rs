@@ -608,7 +608,7 @@ impl Runtime {
             let expression = &self.database.requirements[requirement_id];
             let line = self.database.blocks[child_id].line;
             let values = &self.state.variable_values;
-            let lookup = |id: VariableId| values[id].clone();
+            let lookup = |id: VariableId| -> &Value { &values[id] };
             // `BooleanExpression::evaluate` short-circuits internally for
             // `and`/`or`/`not`. Sibling `req`s remain implicitly ANDed by
             // the loop here — failing one short-circuits the whole gate.
@@ -655,11 +655,12 @@ impl Runtime {
         let (operator, variable_id, rhs_value) = {
             let statement = &self.database.sets[set_id];
             let values = &self.state.variable_values;
-            let rhs =
-                match cuentitos_common::evaluate(&statement.expression, &|id| values[id].clone()) {
-                    Ok(value) => value,
-                    Err(err) => return Err(self.evaluation_error_to_runtime(err, line)),
-                };
+            let rhs = match cuentitos_common::evaluate(&statement.expression, &|id| -> &Value {
+                &values[id]
+            }) {
+                Ok(value) => value.into_owned(),
+                Err(err) => return Err(self.evaluation_error_to_runtime(err, line)),
+            };
             (statement.operator, statement.variable_id, rhs)
         };
 
@@ -671,7 +672,6 @@ impl Runtime {
             self.state.variable_values[variable_id] = rhs_value;
             return Ok(());
         }
-        let current = self.state.variable_values[variable_id].clone();
         let binary_operator = match operator {
             AssignmentOperator::Assign => unreachable!("handled by the early return above"),
             AssignmentOperator::AddAssign => BinaryOperator::Add,
@@ -680,7 +680,7 @@ impl Runtime {
             AssignmentOperator::DivideAssign => BinaryOperator::Divide,
         };
         let new_value = binary_operator
-            .apply(current, rhs_value)
+            .apply(&self.state.variable_values[variable_id], &rhs_value)
             .map_err(|err| self.evaluation_error_to_runtime(err, line))?;
         self.state.variable_values[variable_id] = new_value;
         Ok(())

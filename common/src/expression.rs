@@ -10,6 +10,8 @@
 //! new arms in [`BinaryOperator::apply`], new arms in [`evaluate`], no
 //! restructuring at the call sites.
 
+use std::borrow::Cow;
+
 use crate::value::{Value, ValueKind};
 use crate::VariableId;
 
@@ -27,8 +29,8 @@ impl BinaryOperator {
     /// operands to be `Integer`; mixed or non-numeric operands return
     /// [`EvaluationError::TypeMismatch`]. Adding `Float` later means adding
     /// a `(Float, Float)` arm and a numeric-promotion rule.
-    pub fn apply(self, left: Value, right: Value) -> Result<Value, EvaluationError> {
-        match (self, &left, &right) {
+    pub fn apply(self, left: &Value, right: &Value) -> Result<Value, EvaluationError> {
+        match (self, left, right) {
             (BinaryOperator::Add, Value::Integer(l), Value::Integer(r)) => l
                 .checked_add(*r)
                 .map(Value::Integer)
@@ -82,15 +84,20 @@ pub enum EvaluationError {
     },
 }
 
-/// Evaluate `expression` against the supplied per-variable lookup. The lookup
-/// returns the current [`Value`] for a [`VariableId`].
-pub fn evaluate(
-    expression: &Expression,
-    lookup: &dyn Fn(VariableId) -> Value,
-) -> Result<Value, EvaluationError> {
+/// Evaluate `expression` against the supplied per-variable lookup. The
+/// lookup returns a borrow of the current [`Value`] for a [`VariableId`];
+/// the result is a [`Cow`] so that variable references and literals don't
+/// allocate, and only arithmetic combinations produce owned values. With
+/// `Value::Integer` (today's only variant) the cost is the same either way,
+/// but for future non-`Copy` variants (`String`, etc.) this avoids
+/// per-lookup allocation.
+pub fn evaluate<'v>(
+    expression: &'v Expression,
+    lookup: &dyn Fn(VariableId) -> &'v Value,
+) -> Result<Cow<'v, Value>, EvaluationError> {
     match expression {
-        Expression::Literal(value) => Ok(value.clone()),
-        Expression::Variable(id) => Ok(lookup(*id)),
+        Expression::Literal(value) => Ok(Cow::Borrowed(value)),
+        Expression::Variable(id) => Ok(Cow::Borrowed(lookup(*id))),
         Expression::Binary {
             operator,
             left,
@@ -98,7 +105,7 @@ pub fn evaluate(
         } => {
             let left_value = evaluate(left, lookup)?;
             let right_value = evaluate(right, lookup)?;
-            operator.apply(left_value, right_value)
+            operator.apply(&left_value, &right_value).map(Cow::Owned)
         }
     }
 }

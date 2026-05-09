@@ -28,7 +28,10 @@ impl BooleanExpression {
     /// runtime errors in branches the result doesn't depend on are
     /// skipped (e.g. divide-by-zero on the right of an `and` whose left
     /// is already false never fires).
-    pub fn evaluate(&self, lookup: &dyn Fn(VariableId) -> Value) -> Result<bool, EvaluationError> {
+    pub fn evaluate<'v>(
+        &'v self,
+        lookup: &dyn Fn(VariableId) -> &'v Value,
+    ) -> Result<bool, EvaluationError> {
         match self {
             BooleanExpression::Comparison(statement) => {
                 let left = evaluate_expression(&statement.left, lookup)?;
@@ -66,7 +69,7 @@ mod tests {
         ))
     }
 
-    fn no_vars() -> impl Fn(VariableId) -> Value {
+    fn no_vars<'a>() -> impl Fn(VariableId) -> &'a Value {
         |_| panic!("no variables expected")
     }
 
