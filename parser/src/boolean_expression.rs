@@ -509,6 +509,14 @@ impl<'a> BooleanParser<'a> {
     }
 
     // ----- Arithmetic sub-language -----
+    //
+    // Mirrors the recursive descent in `parser/src/expression.rs`:
+    // precedence `+ -` < `* /` < unary `-` < primary, with the same
+    // `i64::MIN`-aware literal negation. **DO NOT change operator
+    // precedence, integer-literal handling, or unary-minus rules here
+    // without mirroring the change in `parser/src/expression.rs`.**
+    // Tracked as a follow-up: extract a single arithmetic helper that
+    // both call into.
 
     fn parse_arith(&mut self) -> Result<Expression, BooleanParseError> {
         self.parse_additive()

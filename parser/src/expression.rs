@@ -1,13 +1,25 @@
 //! Shared expression parser.
 //!
-//! Used by `set` and `req` statements. Identifiers are resolved to
-//! [`VariableId`]s at parse time via the supplied [`VariableResolver`]; the
-//! resulting AST is then stored on the block and evaluated at runtime
-//! (see [`cuentitos_common::evaluate`]).
+//! Used by `set` statements (and historically by single-comparison `req`
+//! parsing). Identifiers are resolved to [`VariableId`]s at parse time via
+//! the supplied [`VariableResolver`]; the resulting AST is then stored on
+//! the block and evaluated at runtime (see [`cuentitos_common::evaluate`]).
 //!
 //! Variable defaults (in `--- variables` blocks) use a different evaluator
 //! that constant-folds at parse time and never produces an AST — see
 //! `parsers::variables_parser::evaluate_expression`.
+//!
+//! # Duplication with `boolean_expression.rs`
+//!
+//! The arithmetic recursive descent here (precedence: `+ -` < `* /` <
+//! unary `-` < primary) is mirrored in `parser/src/boolean_expression.rs`
+//! because that parser needs to lex logical/comparison operators in the
+//! same token stream as arithmetic, and reusing this parser would require
+//! threading the boolean tokens through. **DO NOT change operator
+//! precedence, integer-literal handling, `i64::MIN` negation, or unary-
+//! minus rules here without mirroring the change in
+//! `parser/src/boolean_expression.rs`.** Tracked as a follow-up: extract
+//! a single arithmetic helper that both call into.
 
 use cuentitos_common::{BinaryOperator, Expression, Value, VariableId};
 
