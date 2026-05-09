@@ -58,7 +58,6 @@ pub fn parse_boolean_expression(
         tokens: &tokens,
         position: 0,
         resolver,
-        source: input,
     };
 
     let expression = parser.parse_or()?;
@@ -290,8 +289,6 @@ struct BooleanParser<'a> {
     tokens: &'a [Token],
     position: usize,
     resolver: &'a dyn VariableResolver,
-    #[allow(dead_code)]
-    source: &'a str,
 }
 
 impl<'a> BooleanParser<'a> {
