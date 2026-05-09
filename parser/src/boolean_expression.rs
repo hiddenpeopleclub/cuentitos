@@ -362,8 +362,11 @@ impl<'a> BooleanParser<'a> {
     ) -> Result<BooleanExpression, BooleanParseError> {
         if matches!(self.peek(), Some(Token::LParen)) {
             // Disambiguate: is this a parenthesized boolean group, or the
-            // parenthesized LHS of a comparison?
-            if self.parens_open_arithmetic_lhs() {
+            // parenthesized LHS of a comparison? The lookahead surfaces
+            // unbalanced-paren errors immediately at the open `(`, instead
+            // of routing into one branch and discovering the imbalance
+            // partway through parsing.
+            if self.parens_open_arithmetic_lhs()? {
                 return self.parse_comparison(context);
             }
             self.position += 1;
@@ -385,9 +388,10 @@ impl<'a> BooleanParser<'a> {
     /// operator. If so, the `(` is part of an arithmetic LHS like
     /// `(a + b) > 0`. Otherwise it's a boolean group.
     ///
-    /// Returns `false` if parens are unbalanced — the boolean grouping
-    /// branch will then surface the unbalanced-parens error.
-    fn parens_open_arithmetic_lhs(&self) -> bool {
+    /// Returns `Err(UnbalancedParentheses)` if the open `(` is never
+    /// closed — surfacing the error at the open paren rather than
+    /// routing into the boolean-group branch and discovering it later.
+    fn parens_open_arithmetic_lhs(&self) -> Result<bool, BooleanParseError> {
         debug_assert!(matches!(
             self.tokens.get(self.position),
             Some(Token::LParen)
@@ -401,7 +405,7 @@ impl<'a> BooleanParser<'a> {
                     depth -= 1;
                     if depth == 0 {
                         // Matching paren found. Look at next token.
-                        return matches!(
+                        return Ok(matches!(
                             self.tokens.get(i + 1),
                             Some(
                                 Token::Equal
@@ -411,14 +415,14 @@ impl<'a> BooleanParser<'a> {
                                     | Token::Greater
                                     | Token::GreaterOrEqual
                             )
-                        );
+                        ));
                     }
                 }
                 _ => {}
             }
             i += 1;
         }
-        false
+        Err(BooleanParseError::UnbalancedParentheses)
     }
 
     fn parse_comparison(
