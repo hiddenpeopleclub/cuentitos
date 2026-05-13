@@ -146,10 +146,14 @@ pub enum BooleanParseError {
 /// contributes one. The cap reflects AST nesting depth, not parser
 /// function-call frames: a single comparison costs 0, `not x > 0` costs
 /// 1, `(x > 0)` costs 1, `not not x > 0` costs 2. Long chains of
-/// `and`/`or` are parsed iteratively and don't contribute. Real `req`
-/// conditions stay well under this — the cap exists only to make the
-/// unbounded-recursion failure mode unreachable.
-pub const MAX_EXPRESSION_DEPTH: usize = 1024;
+/// `and`/`or` are parsed iteratively and don't contribute.
+///
+/// Set deliberately tight at 64 because real `req` conditions in a
+/// narrative script max out around 4–5 levels; the cap exists to bound
+/// adversarial input, and a tighter bound bounds CPU/memory consumed
+/// before the parser bails out. If a legitimate use case ever needs
+/// more, raise this rather than removing the cap entirely.
+pub const MAX_EXPRESSION_DEPTH: usize = 64;
 
 /// A logical-operator keyword name. Stored as an enum (rather than a raw
 /// string) so the formatter has a single source of truth.
