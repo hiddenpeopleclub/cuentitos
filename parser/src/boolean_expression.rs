@@ -134,11 +134,14 @@ pub enum BooleanParseError {
     ExpressionTooDeep,
 }
 
-/// Maximum nesting depth accepted in a `req` boolean expression. Set so
-/// pathological inputs (e.g. `not not not … x > 0`) can't blow the parse,
-/// validation, or runtime stacks. Real `req` conditions stay well under
-/// this — the cap exists only to make the unbounded-recursion failure
-/// mode unreachable.
+/// Maximum nesting depth accepted in a `req` boolean expression. Each
+/// `not`, parenthesized group, or other descent below a logical level
+/// contributes one. The cap reflects AST nesting depth, not parser
+/// function-call frames: a single comparison costs 0, `not x > 0` costs
+/// 1, `(x > 0)` costs 1, `not not x > 0` costs 2. Long chains of
+/// `and`/`or` are parsed iteratively and don't contribute. Real `req`
+/// conditions stay well under this — the cap exists only to make the
+/// unbounded-recursion failure mode unreachable.
 pub const MAX_EXPRESSION_DEPTH: usize = 1024;
 
 /// A logical-operator keyword name. Stored as an enum (rather than a raw
@@ -323,11 +326,11 @@ struct BooleanParser<'a> {
     tokens: &'a [Token],
     position: usize,
     resolver: &'a dyn VariableResolver,
-    /// Current boolean-tree nesting depth. Bumped at the start of each
-    /// recursive entry (parse_or/parse_and/parse_not/parse_primary) and
-    /// dropped on the successful return path. On the error path we leak
-    /// the depth — fine because the parse short-circuits and the source
-    /// is one-shot. Bounded by [`MAX_EXPRESSION_DEPTH`].
+    /// Current AST nesting depth. Bumped only when descending past a
+    /// `not` or `(` into a recursive call; not bumped for plain comparison
+    /// leaves or for parse-function entries that don't descend. On the
+    /// error path the depth leaks — fine because the parse short-circuits
+    /// and the source is one-shot. Bounded by [`MAX_EXPRESSION_DEPTH`].
     depth: usize,
 }
 
@@ -351,7 +354,6 @@ impl<'a> BooleanParser<'a> {
     }
 
     fn parse_or(&mut self) -> Result<BooleanExpression, BooleanParseError> {
-        self.enter_recursion()?;
         // Detect missing left operand for `or` — first token is `or` itself.
         if matches!(self.peek(), Some(Token::LogicalOr)) {
             return Err(BooleanParseError::MissingLeftOperand {
@@ -369,7 +371,6 @@ impl<'a> BooleanParser<'a> {
             let right = self.parse_and(LogicalContext::RightOfOr)?;
             left = BooleanExpression::Or(Box::new(left), Box::new(right));
         }
-        self.leave_recursion();
         Ok(left)
     }
 
@@ -377,7 +378,6 @@ impl<'a> BooleanParser<'a> {
         &mut self,
         context: LogicalContext,
     ) -> Result<BooleanExpression, BooleanParseError> {
-        self.enter_recursion()?;
         if matches!(self.peek(), Some(Token::LogicalAnd)) {
             return Err(BooleanParseError::MissingLeftOperand {
                 operator: LogicalKeyword::And,
@@ -394,7 +394,6 @@ impl<'a> BooleanParser<'a> {
             let right = self.parse_not(LogicalContext::RightOfAnd)?;
             left = BooleanExpression::And(Box::new(left), Box::new(right));
         }
-        self.leave_recursion();
         Ok(left)
     }
 
@@ -402,27 +401,26 @@ impl<'a> BooleanParser<'a> {
         &mut self,
         context: LogicalContext,
     ) -> Result<BooleanExpression, BooleanParseError> {
-        self.enter_recursion()?;
         if matches!(self.peek(), Some(Token::LogicalNot)) {
             self.position += 1;
             // Missing operand entirely.
             if self.peek().is_none() || matches!(self.peek(), Some(Token::RParen)) {
                 return Err(BooleanParseError::MissingNotOperand);
             }
+            // Bump only at the actual descent — one `not` wrap = one AST
+            // level. A bare comparison (the else branch) doesn't bump.
+            self.enter_recursion()?;
             let inner = self.parse_not(LogicalContext::OperandOfNot)?;
             self.leave_recursion();
             return Ok(BooleanExpression::Not(Box::new(inner)));
         }
-        let result = self.parse_primary(context)?;
-        self.leave_recursion();
-        Ok(result)
+        self.parse_primary(context)
     }
 
     fn parse_primary(
         &mut self,
         context: LogicalContext,
     ) -> Result<BooleanExpression, BooleanParseError> {
-        self.enter_recursion()?;
         if matches!(self.peek(), Some(Token::LParen)) {
             // Disambiguate: is this a parenthesized boolean group, or the
             // parenthesized LHS of a comparison? The lookahead surfaces
@@ -430,11 +428,11 @@ impl<'a> BooleanParser<'a> {
             // of routing into one branch and discovering the imbalance
             // partway through parsing.
             if self.parens_open_arithmetic_lhs()? {
-                let result = self.parse_comparison(context)?;
-                self.leave_recursion();
-                return Ok(result);
+                return self.parse_comparison(context);
             }
             self.position += 1;
+            // Bump only when actually descending into a paren group.
+            self.enter_recursion()?;
             let inner = self.parse_or()?;
             match self.peek() {
                 Some(Token::RParen) => {
@@ -445,9 +443,7 @@ impl<'a> BooleanParser<'a> {
                 _ => Err(BooleanParseError::UnbalancedParentheses),
             }
         } else {
-            let result = self.parse_comparison(context)?;
-            self.leave_recursion();
-            Ok(result)
+            self.parse_comparison(context)
         }
     }
 
