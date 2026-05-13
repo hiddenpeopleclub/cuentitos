@@ -50,6 +50,9 @@ pub fn parse_boolean_expression(
         Err(TokenizeError::UnknownSymbol(symbol)) => {
             return Err(BooleanParseError::UnknownOperator { symbol });
         }
+        Err(TokenizeError::LiteralOverflow(literal)) => {
+            return Err(BooleanParseError::LiteralOverflow { literal });
+        }
     };
 
     if tokens.is_empty() {
@@ -115,9 +118,10 @@ pub enum BooleanParseError {
     /// (e.g. missing RHS in a comparison, dangling arithmetic operator,
     /// stray identifier in a position requiring an operator).
     Malformed,
-    /// A constant subexpression overflowed at parse time (e.g. a literal
-    /// magnitude greater than `i64::MIN`).
-    Overflow,
+    /// A literal exceeded the i64 range at parse time. Carries the
+    /// offending literal text (e.g. `99999999999999999999`) so the caller
+    /// can surface it in the error message.
+    LiteralOverflow { literal: String },
 }
 
 /// A logical-operator keyword name. Stored as an enum (rather than a raw
@@ -165,6 +169,7 @@ enum Token {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum TokenizeError {
     UnknownSymbol(String),
+    LiteralOverflow(String),
 }
 
 fn tokenize(input: &str) -> Result<Vec<Token>, TokenizeError> {
@@ -239,9 +244,13 @@ fn tokenize(input: &str) -> Result<Vec<Token>, TokenizeError> {
                 }
                 let literal =
                     std::str::from_utf8(&bytes[start..i]).expect("ascii digits are valid utf8");
+                // u64::from_str only fails here for magnitudes greater than
+                // u64::MAX — every literal in range already parses. Surface
+                // that as LiteralOverflow so the user sees the same message
+                // as i64-range overflows caught later in the parser.
                 let parsed: u64 = literal
                     .parse()
-                    .map_err(|_| TokenizeError::UnknownSymbol(literal.to_string()))?;
+                    .map_err(|_| TokenizeError::LiteralOverflow(literal.to_string()))?;
                 tokens.push(Token::Int(parsed));
             }
             c if c.is_ascii_alphabetic() || c == b'_' => {
@@ -553,7 +562,9 @@ impl<'a> BooleanParser<'a> {
                 let n = *n;
                 self.position += 1;
                 if n > i64::MAX as u64 {
-                    return Err(BooleanParseError::Overflow);
+                    return Err(BooleanParseError::LiteralOverflow {
+                        literal: n.to_string(),
+                    });
                 }
                 Ok(Expression::Literal(Value::Integer(n as i64)))
             }
@@ -595,7 +606,9 @@ enum LogicalContext {
 fn negate_u64_literal(n: u64) -> Result<i64, BooleanParseError> {
     const ABS_MIN: u64 = (i64::MAX as u64) + 1;
     if n > ABS_MIN {
-        return Err(BooleanParseError::Overflow);
+        return Err(BooleanParseError::LiteralOverflow {
+            literal: format!("-{n}"),
+        });
     }
     if n == ABS_MIN {
         return Ok(i64::MIN);
@@ -864,5 +877,31 @@ mod tests {
     fn malformed_dangling_arithmetic_operator() {
         let err = parse("x > 5 +", &[("x", 0)]).unwrap_err();
         assert_eq!(err, BooleanParseError::Malformed);
+    }
+
+    #[test]
+    fn literal_overflow_carries_the_offending_literal() {
+        let err = parse("x > 99999999999999999999", &[("x", 0)]).unwrap_err();
+        assert_eq!(
+            err,
+            BooleanParseError::LiteralOverflow {
+                literal: "99999999999999999999".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn negative_literal_overflow_carries_the_offending_literal() {
+        // `-9223372036854775809` = -(i64::MAX + 2). The magnitude fits in
+        // u64 so the tokenizer accepts it as Int, then negate_u64_literal
+        // catches the overflow and stamps the sign onto the reported
+        // literal.
+        let err = parse("x > -9223372036854775809", &[("x", 0)]).unwrap_err();
+        assert_eq!(
+            err,
+            BooleanParseError::LiteralOverflow {
+                literal: "-9223372036854775809".to_string()
+            }
+        );
     }
 }

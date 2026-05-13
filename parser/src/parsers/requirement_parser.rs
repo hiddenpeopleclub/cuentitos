@@ -71,6 +71,9 @@ pub enum RequirementParseError {
     LogicalMissingNotOperand { source: String },
     /// Unbalanced parens in the condition. Source is the trimmed condition.
     LogicalUnbalancedParentheses { source: String },
+    /// A literal in the condition's arithmetic exceeded the integer
+    /// range. Carries the offending literal text.
+    LiteralOverflow { literal: String },
 }
 
 /// Try to parse `content` as a `req` statement.
@@ -143,11 +146,12 @@ fn map_boolean_error(error: BooleanParseError, source: &str) -> RequirementParse
         BooleanParseError::UnknownOperator { symbol } => {
             RequirementParseError::UnknownOperator { symbol }
         }
-        BooleanParseError::Malformed | BooleanParseError::Overflow => {
-            RequirementParseError::MalformedExpression {
-                expression: source.to_string(),
-            }
+        BooleanParseError::LiteralOverflow { literal } => {
+            RequirementParseError::LiteralOverflow { literal }
         }
+        BooleanParseError::Malformed => RequirementParseError::MalformedExpression {
+            expression: source.to_string(),
+        },
     }
 }
 
@@ -437,6 +441,17 @@ mod tests {
             parse_requirement("req (x > 0 and x < 10", &db).unwrap_err(),
             RequirementParseError::LogicalUnbalancedParentheses {
                 source: "(x > 0 and x < 10".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_literal_overflow_with_literal_in_error() {
+        let db = db_with(&["x"]);
+        assert_eq!(
+            parse_requirement("req x > 99999999999999999999", &db).unwrap_err(),
+            RequirementParseError::LiteralOverflow {
+                literal: "99999999999999999999".to_string(),
             }
         );
     }

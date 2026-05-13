@@ -263,6 +263,13 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    /// A literal in a `req` arithmetic subexpression exceeded the integer
+    /// range. Carries the offending literal text.
+    RequirementLiteralOverflow {
+        literal: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
     MultipleErrors {
         errors: Vec<ParseError>,
     },
@@ -714,6 +721,19 @@ impl fmt::Display for ParseError {
                     file_prefix(file),
                     line,
                     name
+                )
+            }
+            ParseError::RequirementLiteralOverflow {
+                literal,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Integer overflow in 'req' expression: literal '{}' exceeds the integer range.",
+                    file_prefix(file),
+                    line,
+                    literal
                 )
             }
             ParseError::MultipleErrors { errors } => {
@@ -1432,6 +1452,13 @@ impl Parser {
                                     RequirementParseError::LogicalUnbalancedParentheses {
                                         source,
                                     } => ParseError::UnbalancedParentheses { source, file, line },
+                                    RequirementParseError::LiteralOverflow { literal } => {
+                                        ParseError::RequirementLiteralOverflow {
+                                            literal,
+                                            file,
+                                            line,
+                                        }
+                                    }
                                     RequirementParseError::NotARequirementStatement => {
                                         unreachable!(
                                             "looks_like_requirement_line filter should preclude this"
