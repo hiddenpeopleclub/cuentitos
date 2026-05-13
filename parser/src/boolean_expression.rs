@@ -191,117 +191,123 @@ enum TokenizeError {
 
 fn tokenize(input: &str) -> Result<Vec<Token>, TokenizeError> {
     let mut tokens = Vec::new();
-    let bytes = input.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        let c = bytes[i];
-        if (c as char).is_whitespace() {
-            i += 1;
+    let mut chars = input.chars().peekable();
+    while let Some(&c) = chars.peek() {
+        if c.is_whitespace() {
+            chars.next();
             continue;
         }
         match c {
-            b'+' => {
+            '+' => {
+                chars.next();
                 tokens.push(Token::Plus);
-                i += 1;
             }
-            b'-' => {
+            '-' => {
+                chars.next();
                 tokens.push(Token::Minus);
-                i += 1;
             }
-            b'*' => {
+            '*' => {
+                chars.next();
                 tokens.push(Token::Star);
-                i += 1;
             }
-            b'/' => {
+            '/' => {
+                chars.next();
                 tokens.push(Token::Slash);
-                i += 1;
             }
-            b'(' => {
+            '(' => {
+                chars.next();
                 tokens.push(Token::LParen);
-                i += 1;
             }
-            b')' => {
+            ')' => {
+                chars.next();
                 tokens.push(Token::RParen);
-                i += 1;
             }
-            b'>' => {
-                if i + 1 < bytes.len() && bytes[i + 1] == b'=' {
+            '>' => {
+                chars.next();
+                if matches!(chars.peek(), Some('=')) {
+                    chars.next();
                     tokens.push(Token::GreaterOrEqual);
-                    i += 2;
                 } else {
                     tokens.push(Token::Greater);
-                    i += 1;
                 }
             }
-            b'<' => {
-                if i + 1 < bytes.len() && bytes[i + 1] == b'=' {
+            '<' => {
+                chars.next();
+                if matches!(chars.peek(), Some('=')) {
+                    chars.next();
                     tokens.push(Token::LessOrEqual);
-                    i += 2;
                 } else {
                     tokens.push(Token::Less);
-                    i += 1;
                 }
             }
-            b'=' => {
+            '=' => {
+                chars.next();
                 tokens.push(Token::Equal);
-                i += 1;
             }
-            b'!' => {
-                if i + 1 < bytes.len() && bytes[i + 1] == b'=' {
+            '!' => {
+                chars.next();
+                if matches!(chars.peek(), Some('=')) {
+                    chars.next();
                     tokens.push(Token::NotEqual);
-                    i += 2;
                 } else {
                     return Err(TokenizeError::UnknownSymbol("!".to_string()));
                 }
             }
-            b'0'..=b'9' => {
-                let start = i;
-                while i < bytes.len() && bytes[i].is_ascii_digit() {
-                    i += 1;
+            c if c.is_ascii_digit() => {
+                let mut literal = String::new();
+                while let Some(&c) = chars.peek() {
+                    if c.is_ascii_digit() {
+                        literal.push(c);
+                        chars.next();
+                    } else {
+                        break;
+                    }
                 }
-                let literal =
-                    std::str::from_utf8(&bytes[start..i]).expect("ascii digits are valid utf8");
                 // u64::from_str only fails here for magnitudes greater than
                 // u64::MAX — every literal in range already parses. Surface
                 // that as LiteralOverflow so the user sees the same message
                 // as i64-range overflows caught later in the parser.
                 let parsed: u64 = literal
                     .parse()
-                    .map_err(|_| TokenizeError::LiteralOverflow(literal.to_string()))?;
+                    .map_err(|_| TokenizeError::LiteralOverflow(literal.clone()))?;
                 tokens.push(Token::Int(parsed));
             }
-            c if c.is_ascii_alphabetic() || c == b'_' => {
-                let start = i;
-                while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
-                    i += 1;
+            c if c.is_ascii_alphabetic() || c == '_' => {
+                let mut name = String::new();
+                while let Some(&c) = chars.peek() {
+                    if c.is_ascii_alphanumeric() || c == '_' {
+                        name.push(c);
+                        chars.next();
+                    } else {
+                        break;
+                    }
                 }
-                let name =
-                    std::str::from_utf8(&bytes[start..i]).expect("identifier chars are ascii");
-                let token = match name {
+                let token = match name.as_str() {
                     "and" => Token::LogicalAnd,
                     "or" => Token::LogicalOr,
                     "not" => Token::LogicalNot,
-                    _ => Token::Ident(name.to_string()),
+                    _ => Token::Ident(name),
                 };
                 tokens.push(token);
             }
             _ => {
-                let start = i;
-                while i < bytes.len() {
-                    let c = bytes[i];
-                    if (c as char).is_whitespace()
+                // Accumulate a contiguous run of symbol characters so the
+                // error names the full offending lexeme (e.g. `~~`, not just
+                // `~`). Walking by chars keeps multi-byte UTF-8 symbols
+                // intact in the reported text.
+                let mut symbol = String::new();
+                while let Some(&c) = chars.peek() {
+                    if c.is_whitespace()
                         || c.is_ascii_alphanumeric()
-                        || c == b'_'
-                        || c == b'('
-                        || c == b')'
+                        || c == '_'
+                        || c == '('
+                        || c == ')'
                     {
                         break;
                     }
-                    i += 1;
+                    symbol.push(c);
+                    chars.next();
                 }
-                let symbol = std::str::from_utf8(&bytes[start..i])
-                    .unwrap_or("?")
-                    .to_string();
                 return Err(TokenizeError::UnknownSymbol(symbol));
             }
         }
@@ -907,6 +913,20 @@ mod tests {
             err,
             BooleanParseError::LiteralOverflow {
                 literal: "-9223372036854775809".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn unknown_operator_preserves_non_ascii_symbol() {
+        // U+2227 LOGICAL AND. The tokenizer walks `chars()`, so multi-byte
+        // UTF-8 stays intact in the reported symbol — not split mid-byte
+        // and stringified as "?".
+        let err = parse("x > 0 ∧ y > 0", &[("x", 0), ("y", 1)]).unwrap_err();
+        assert_eq!(
+            err,
+            BooleanParseError::UnknownOperator {
+                symbol: "∧".to_string()
             }
         );
     }
