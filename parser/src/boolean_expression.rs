@@ -72,6 +72,10 @@ pub fn parse_boolean_expression(
     };
 
     let expression = parser.parse_or()?;
+    // Every enter_recursion on the success path is paired with a
+    // leave_recursion. If we ever land here with non-zero depth, a new
+    // descent point was added without a matching leave.
+    debug_assert_eq!(parser.depth, 0, "depth bumps unbalanced on success");
     if parser.position != parser.tokens.len() {
         // Unexpected trailing input. If a stray `)` is left over the
         // tokens still parsed individually but the boolean grammar
