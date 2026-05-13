@@ -155,6 +155,11 @@ fn map_boolean_error(error: BooleanParseError, source: &str) -> RequirementParse
     }
 }
 
+// TODO: thread a sub-expression index or snippet through TypeMismatch /
+// NonOrderedComparison / NonNumericArithmetic when non-Integer kinds
+// land. Today the first failing comparison surfaces with no breadcrumb
+// about which leaf in the tree it was — fine while Integer is the only
+// kind, but `a > 0 and b > c` with a Float `c` will be hard to debug.
 fn validate_leaves(
     expression: &BooleanExpression,
     database: &Database,
