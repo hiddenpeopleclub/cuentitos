@@ -451,14 +451,21 @@ impl<'a> BooleanParser<'a> {
         }
     }
 
-    /// Look ahead from a `(` at `self.position`: scan to its matching `)`,
-    /// then check whether the next non-whitespace token is a comparison
-    /// operator. If so, the `(` is part of an arithmetic LHS like
-    /// `(a + b) > 0`. Otherwise it's a boolean group.
+    /// Look ahead from a `(` at `self.position`: scan to its matching
+    /// `)`, then keep walking past any arithmetic continuation tokens
+    /// (more arith operators, operands, and balanced nested paren
+    /// groups). If the first non-arithmetic token at depth 0 is a
+    /// comparison operator, the `(` opens an arithmetic LHS like
+    /// `(a + b) > 0` or `(a + b) + 1 > 0`. Otherwise it's a boolean
+    /// group.
     ///
     /// Returns `Err(UnbalancedParentheses)` if the open `(` is never
     /// closed — surfacing the error at the open paren rather than
     /// routing into the boolean-group branch and discovering it later.
+    //
+    // TODO: precompute paren-match positions during tokenization
+    // (`Vec<usize>` indexed by paren index) if `req` expressions ever
+    // grow large enough that the per-`(` O(n) scan dominates.
     fn parens_open_arithmetic_lhs(&self) -> Result<bool, BooleanParseError> {
         debug_assert!(matches!(
             self.tokens.get(self.position),
@@ -472,18 +479,11 @@ impl<'a> BooleanParser<'a> {
                 Token::RParen => {
                     depth -= 1;
                     if depth == 0 {
-                        // Matching paren found. Look at next token.
-                        return Ok(matches!(
-                            self.tokens.get(i + 1),
-                            Some(
-                                Token::Equal
-                                    | Token::NotEqual
-                                    | Token::Less
-                                    | Token::LessOrEqual
-                                    | Token::Greater
-                                    | Token::GreaterOrEqual
-                            )
-                        ));
+                        // Matching paren of the leading `(` found. Skip
+                        // past anything that could continue the same
+                        // arithmetic expression and decide based on what
+                        // comes after.
+                        return Ok(self.is_arithmetic_continuation_then_comparison(i + 1));
                     }
                 }
                 _ => {}
@@ -491,6 +491,56 @@ impl<'a> BooleanParser<'a> {
             i += 1;
         }
         Err(BooleanParseError::UnbalancedParentheses)
+    }
+
+    /// Starting at `start`, walk forward through tokens that could
+    /// continue an arithmetic expression (`+`/`-`/`*`/`/`, integer
+    /// literals, identifiers, and balanced nested paren groups). Return
+    /// `true` iff the first token outside that continuation, at top
+    /// depth, is a comparison operator.
+    ///
+    /// Used by [`parens_open_arithmetic_lhs`] to disambiguate a leading
+    /// `(` that opens an arithmetic LHS (`(a + b) + 1 > c`) from one
+    /// that opens a boolean group (`(a > 0) and b > 0`).
+    fn is_arithmetic_continuation_then_comparison(&self, start: usize) -> bool {
+        let mut i = start;
+        let mut depth = 0_usize;
+        while i < self.tokens.len() {
+            match &self.tokens[i] {
+                Token::Equal
+                | Token::NotEqual
+                | Token::Less
+                | Token::LessOrEqual
+                | Token::Greater
+                | Token::GreaterOrEqual
+                    if depth == 0 =>
+                {
+                    return true;
+                }
+                Token::Plus
+                | Token::Minus
+                | Token::Star
+                | Token::Slash
+                | Token::Int(_)
+                | Token::Ident(_) => {}
+                Token::LParen => depth += 1,
+                Token::RParen => {
+                    if depth == 0 {
+                        // Stray close paren outside the LHS — not part
+                        // of the same arithmetic expression. Hand back
+                        // to the boolean grammar so the imbalance
+                        // surfaces at the right spot.
+                        return false;
+                    }
+                    depth -= 1;
+                }
+                // Logical keywords or comparison ops below a nested
+                // paren group: not an arithmetic LHS.
+                _ => return false,
+            }
+            i += 1;
+        }
+        false
     }
 
     fn parse_comparison(
@@ -717,6 +767,51 @@ mod tests {
             }
             _ => panic!("expected Comparison"),
         }
+    }
+
+    #[test]
+    fn arithmetic_lhs_with_parens_then_more_arithmetic() {
+        // (a + b) + 1 > c — leading paren opens arith LHS, then `+ 1`
+        // continues the same arithmetic expression before the comparison.
+        let result = parse("(a + b) + 1 > c", &[("a", 0), ("b", 1), ("c", 2)]).unwrap();
+        match result {
+            BooleanExpression::Comparison(stmt) => {
+                assert_eq!(stmt.operator, ComparisonOperator::Greater);
+                assert!(matches!(stmt.left, Expression::Binary { .. }));
+                assert_eq!(stmt.right, Expression::Variable(2));
+            }
+            _ => panic!("expected Comparison"),
+        }
+    }
+
+    #[test]
+    fn arithmetic_lhs_with_parens_then_multiplication() {
+        // (a + b) * 2 > c — same shape, multiplicative continuation.
+        let result = parse("(a + b) * 2 > c", &[("a", 0), ("b", 1), ("c", 2)]).unwrap();
+        assert!(matches!(result, BooleanExpression::Comparison(_)));
+    }
+
+    #[test]
+    fn arithmetic_lhs_with_single_var_in_parens_then_more() {
+        // (a) + 1 > 0 — degenerate single-variable paren followed by arith.
+        let result = parse("(a) + 1 > 0", &[("a", 0)]).unwrap();
+        assert!(matches!(result, BooleanExpression::Comparison(_)));
+    }
+
+    #[test]
+    fn arithmetic_lhs_with_nested_parens_then_more() {
+        // ((a + b)) + 1 > 0 — nested parens, then continuation.
+        let result = parse("((a + b)) + 1 > 0", &[("a", 0), ("b", 1)]).unwrap();
+        assert!(matches!(result, BooleanExpression::Comparison(_)));
+    }
+
+    #[test]
+    fn boolean_group_followed_by_logical_still_parses_as_group() {
+        // (a > 0) and b > 0 — leading paren opens a boolean group, not
+        // an arith LHS. The continuation scanner sees `and` after the
+        // matching `)` and falls back to the boolean grammar.
+        let result = parse("(a > 0) and b > 0", &[("a", 0), ("b", 1)]).unwrap();
+        assert!(matches!(result, BooleanExpression::And(_, _)));
     }
 
     #[test]
