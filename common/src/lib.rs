@@ -20,7 +20,7 @@ pub type RequirementId = usize;
 pub use block::{Block, BlockId, BlockType};
 pub use boolean_expression::BooleanExpression;
 pub use database::Database;
-pub use expression::{evaluate, BinaryOperator, EvaluationError, Expression};
+pub use expression::{evaluate, variable_lookup, BinaryOperator, EvaluationError, Expression};
 pub use path_resolver::{PathResolutionError, PathResolver, ResolvedPath};
 pub use requirement_statement::{ComparisonOperator, RequirementStatement};
 pub use section::Section;

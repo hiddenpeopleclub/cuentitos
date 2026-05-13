@@ -84,6 +84,15 @@ pub enum EvaluationError {
     },
 }
 
+/// Build the lookup closure expected by [`evaluate`] (and
+/// [`crate::BooleanExpression::evaluate`]) from a flat slice of variable
+/// values indexed by [`VariableId`]. Hides the explicit
+/// `|id: VariableId| -> &Value { ... }` annotation that the closure
+/// inference otherwise requires to drive the `'v` lifetime through.
+pub fn variable_lookup<'v>(values: &'v [Value]) -> impl Fn(VariableId) -> &'v Value + 'v {
+    move |id: VariableId| &values[id]
+}
+
 /// Evaluate `expression` against the supplied per-variable lookup. The
 /// lookup returns a borrow of the current [`Value`] for a [`VariableId`];
 /// the result is a [`Cow`] so that variable references and literals don't

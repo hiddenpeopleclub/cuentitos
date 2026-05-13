@@ -607,8 +607,7 @@ impl Runtime {
             };
             let expression = &self.database.requirements[requirement_id];
             let line = self.database.blocks[child_id].line;
-            let values = &self.state.variable_values;
-            let lookup = |id: VariableId| -> &Value { &values[id] };
+            let lookup = cuentitos_common::variable_lookup(&self.state.variable_values);
             // `BooleanExpression::evaluate` short-circuits internally for
             // `and`/`or`/`not`. Sibling `req`s remain implicitly ANDed by
             // the loop here — failing one short-circuits the whole gate.
@@ -654,10 +653,8 @@ impl Runtime {
         // before the final write to `self.state.variable_values`.
         let (operator, variable_id, rhs_value) = {
             let statement = &self.database.sets[set_id];
-            let values = &self.state.variable_values;
-            let rhs = match cuentitos_common::evaluate(&statement.expression, &|id| -> &Value {
-                &values[id]
-            }) {
+            let lookup = cuentitos_common::variable_lookup(&self.state.variable_values);
+            let rhs = match cuentitos_common::evaluate(&statement.expression, &lookup) {
                 Ok(value) => value.into_owned(),
                 Err(err) => return Err(self.evaluation_error_to_runtime(err, line)),
             };
