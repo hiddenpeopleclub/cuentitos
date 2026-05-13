@@ -52,8 +52,9 @@ pub enum RequirementParseError {
     NonNumericArithmetic { kind: ValueKind },
 
     // Logical-operator-specific errors with rich payloads.
-    /// `and`/`or` had a bare arithmetic LHS instead of a comparison.
-    LogicalBareIntegerOnLeft { operator: LogicalKeyword },
+    /// `and`/`or` had a bare arithmetic operand (left or right) instead of
+    /// a comparison.
+    LogicalBareIntegerOperand { operator: LogicalKeyword },
     /// `not` had a bare arithmetic operand instead of a comparison.
     LogicalBareIntegerOperandOfNot,
     /// `and`/`or` had no left operand. Source is the trimmed condition.
@@ -107,8 +108,8 @@ pub fn parse_requirement(
 
 fn map_boolean_error(error: BooleanParseError, source: &str) -> RequirementParseError {
     match error {
-        BooleanParseError::BareIntegerLeftOfLogical { operator } => {
-            RequirementParseError::LogicalBareIntegerOnLeft { operator }
+        BooleanParseError::BareIntegerOperandOfLogical { operator } => {
+            RequirementParseError::LogicalBareIntegerOperand { operator }
         }
         BooleanParseError::BareIntegerOperandOfNot => {
             RequirementParseError::LogicalBareIntegerOperandOfNot
@@ -389,8 +390,30 @@ mod tests {
         let db = db_with(&["health", "shield"]);
         assert_eq!(
             parse_requirement("req health and shield > 0", &db).unwrap_err(),
-            RequirementParseError::LogicalBareIntegerOnLeft {
+            RequirementParseError::LogicalBareIntegerOperand {
                 operator: LogicalKeyword::And,
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_bare_integer_right_of_and() {
+        let db = db_with(&["x", "y"]);
+        assert_eq!(
+            parse_requirement("req x > 0 and y", &db).unwrap_err(),
+            RequirementParseError::LogicalBareIntegerOperand {
+                operator: LogicalKeyword::And,
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_bare_integer_right_of_or() {
+        let db = db_with(&["x", "y"]);
+        assert_eq!(
+            parse_requirement("req x > 0 or y", &db).unwrap_err(),
+            RequirementParseError::LogicalBareIntegerOperand {
+                operator: LogicalKeyword::Or,
             }
         );
     }

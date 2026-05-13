@@ -86,10 +86,10 @@ pub fn parse_boolean_expression(
 /// wraps these into [`crate::ParseError`] variants with file/line context.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BooleanParseError {
-    /// A bare integer expression was found where a comparison was
-    /// expected, on the **left** of `and`/`or`. The wrapping operator is
-    /// known to the caller (e.g. parse_and). Carries the operator name.
-    BareIntegerLeftOfLogical { operator: LogicalKeyword },
+    /// A bare integer expression was found as an operand (left or right)
+    /// of `and`/`or`. The wrapping operator is known to the caller (e.g.
+    /// `parse_and`). Carries the operator name.
+    BareIntegerOperandOfLogical { operator: LogicalKeyword },
     /// A bare integer expression was the operand of `not`.
     BareIntegerOperandOfNot,
     /// A bare integer expression appeared at the top of a `req` condition
@@ -487,18 +487,18 @@ impl<'a> BooleanParser<'a> {
             }
             // No comparison operator — we got an arithmetic expression
             // where a boolean was expected. Surface a context-aware error.
-            Some(Token::LogicalAnd) => Err(BooleanParseError::BareIntegerLeftOfLogical {
+            Some(Token::LogicalAnd) => Err(BooleanParseError::BareIntegerOperandOfLogical {
                 operator: LogicalKeyword::And,
             }),
-            Some(Token::LogicalOr) => Err(BooleanParseError::BareIntegerLeftOfLogical {
+            Some(Token::LogicalOr) => Err(BooleanParseError::BareIntegerOperandOfLogical {
                 operator: LogicalKeyword::Or,
             }),
             Some(Token::RParen) | None => match context {
                 LogicalContext::OperandOfNot => Err(BooleanParseError::BareIntegerOperandOfNot),
-                LogicalContext::RightOfAnd => Err(BooleanParseError::BareIntegerLeftOfLogical {
+                LogicalContext::RightOfAnd => Err(BooleanParseError::BareIntegerOperandOfLogical {
                     operator: LogicalKeyword::And,
                 }),
-                LogicalContext::RightOfOr => Err(BooleanParseError::BareIntegerLeftOfLogical {
+                LogicalContext::RightOfOr => Err(BooleanParseError::BareIntegerOperandOfLogical {
                     operator: LogicalKeyword::Or,
                 }),
                 LogicalContext::OuterOrTop => Err(BooleanParseError::BareIntegerAtTop),
@@ -746,7 +746,7 @@ mod tests {
         let err = parse("health and shield > 0", &[("health", 0), ("shield", 1)]).unwrap_err();
         assert_eq!(
             err,
-            BooleanParseError::BareIntegerLeftOfLogical {
+            BooleanParseError::BareIntegerOperandOfLogical {
                 operator: LogicalKeyword::And,
             }
         );
@@ -757,7 +757,29 @@ mod tests {
         let err = parse("health or shield > 0", &[("health", 0), ("shield", 1)]).unwrap_err();
         assert_eq!(
             err,
-            BooleanParseError::BareIntegerLeftOfLogical {
+            BooleanParseError::BareIntegerOperandOfLogical {
+                operator: LogicalKeyword::Or,
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_bare_integer_right_of_and() {
+        let err = parse("x > 0 and y", &[("x", 0), ("y", 1)]).unwrap_err();
+        assert_eq!(
+            err,
+            BooleanParseError::BareIntegerOperandOfLogical {
+                operator: LogicalKeyword::And,
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_bare_integer_right_of_or() {
+        let err = parse("x > 0 or y", &[("x", 0), ("y", 1)]).unwrap_err();
+        assert_eq!(
+            err,
+            BooleanParseError::BareIntegerOperandOfLogical {
                 operator: LogicalKeyword::Or,
             }
         );

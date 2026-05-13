@@ -22,5 +22,5 @@ s
 
 ## Result
 ```result
-logical-bare-integer-and.cuentitos:7: ERROR: Logical operator 'and' expects a comparison on its left, not an integer expression.
+logical-bare-integer-and.cuentitos:7: ERROR: Logical operator 'and' expects a comparison as each operand, not an integer expression.
 ```

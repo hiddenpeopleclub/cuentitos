@@ -218,8 +218,9 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
-    /// `and`/`or` had a bare arithmetic LHS instead of a comparison.
-    LogicalBareIntegerOnLeft {
+    /// `and`/`or` had a bare arithmetic operand (left or right) instead
+    /// of a comparison.
+    LogicalBareIntegerOperand {
         operator: crate::boolean_expression::LogicalKeyword,
         file: Option<PathBuf>,
         line: usize,
@@ -637,14 +638,14 @@ impl fmt::Display for ParseError {
                     kind
                 )
             }
-            ParseError::LogicalBareIntegerOnLeft {
+            ParseError::LogicalBareIntegerOperand {
                 operator,
                 file,
                 line,
             } => {
                 write!(
                     f,
-                    "{}:{}: ERROR: Logical operator '{}' expects a comparison on its left, not an integer expression.",
+                    "{}:{}: ERROR: Logical operator '{}' expects a comparison as each operand, not an integer expression.",
                     file_prefix(file),
                     line,
                     operator.as_str()
@@ -1397,9 +1398,9 @@ impl Parser {
                                     RequirementParseError::NonNumericArithmetic { kind } => {
                                         ParseError::NonNumericArithmetic { kind, file, line }
                                     }
-                                    RequirementParseError::LogicalBareIntegerOnLeft {
+                                    RequirementParseError::LogicalBareIntegerOperand {
                                         operator,
-                                    } => ParseError::LogicalBareIntegerOnLeft {
+                                    } => ParseError::LogicalBareIntegerOperand {
                                         operator,
                                         file,
                                         line,
