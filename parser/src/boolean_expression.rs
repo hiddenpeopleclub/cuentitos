@@ -432,63 +432,25 @@ impl<'a> BooleanParser<'a> {
         context: LogicalContext,
     ) -> Result<BooleanExpression, BooleanParseError> {
         let left = self.parse_arith()?;
+        let comparison_operator = match self.peek() {
+            Some(Token::Equal) => Some(ComparisonOperator::Equal),
+            Some(Token::NotEqual) => Some(ComparisonOperator::NotEqual),
+            Some(Token::Less) => Some(ComparisonOperator::Less),
+            Some(Token::LessOrEqual) => Some(ComparisonOperator::LessOrEqual),
+            Some(Token::Greater) => Some(ComparisonOperator::Greater),
+            Some(Token::GreaterOrEqual) => Some(ComparisonOperator::GreaterOrEqual),
+            _ => None,
+        };
+        if let Some(operator) = comparison_operator {
+            self.position += 1;
+            let right = self.parse_arith()?;
+            return Ok(BooleanExpression::Comparison(RequirementStatement::new(
+                left, operator, right,
+            )));
+        }
+        // No comparison operator — we got an arithmetic expression where
+        // a boolean was expected. Surface a context-aware error.
         match self.peek() {
-            Some(Token::Equal) => {
-                self.position += 1;
-                let right = self.parse_arith()?;
-                Ok(BooleanExpression::Comparison(RequirementStatement::new(
-                    left,
-                    ComparisonOperator::Equal,
-                    right,
-                )))
-            }
-            Some(Token::NotEqual) => {
-                self.position += 1;
-                let right = self.parse_arith()?;
-                Ok(BooleanExpression::Comparison(RequirementStatement::new(
-                    left,
-                    ComparisonOperator::NotEqual,
-                    right,
-                )))
-            }
-            Some(Token::Less) => {
-                self.position += 1;
-                let right = self.parse_arith()?;
-                Ok(BooleanExpression::Comparison(RequirementStatement::new(
-                    left,
-                    ComparisonOperator::Less,
-                    right,
-                )))
-            }
-            Some(Token::LessOrEqual) => {
-                self.position += 1;
-                let right = self.parse_arith()?;
-                Ok(BooleanExpression::Comparison(RequirementStatement::new(
-                    left,
-                    ComparisonOperator::LessOrEqual,
-                    right,
-                )))
-            }
-            Some(Token::Greater) => {
-                self.position += 1;
-                let right = self.parse_arith()?;
-                Ok(BooleanExpression::Comparison(RequirementStatement::new(
-                    left,
-                    ComparisonOperator::Greater,
-                    right,
-                )))
-            }
-            Some(Token::GreaterOrEqual) => {
-                self.position += 1;
-                let right = self.parse_arith()?;
-                Ok(BooleanExpression::Comparison(RequirementStatement::new(
-                    left,
-                    ComparisonOperator::GreaterOrEqual,
-                    right,
-                )))
-            }
-            // No comparison operator — we got an arithmetic expression
-            // where a boolean was expected. Surface a context-aware error.
             Some(Token::LogicalAnd) => Err(BooleanParseError::BareIntegerOperandOfLogical {
                 operator: LogicalKeyword::And,
             }),
@@ -505,7 +467,6 @@ impl<'a> BooleanParser<'a> {
                 }),
                 LogicalContext::OuterOrTop => Err(BooleanParseError::BareIntegerAtTop),
             },
-            Some(Token::LogicalNot) => Err(BooleanParseError::Malformed),
             _ => Err(BooleanParseError::Malformed),
         }
     }
