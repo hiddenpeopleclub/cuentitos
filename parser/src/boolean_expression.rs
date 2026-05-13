@@ -624,22 +624,22 @@ impl<'a> ArithmeticSource for BooleanParser<'a> {
         self.position += 1;
     }
 
-    fn take_int(&mut self) -> u64 {
-        let n = match &self.tokens[self.position] {
-            Token::Int(n) => *n,
-            other => panic!("take_int on non-Int token: {other:?}"),
+    fn take_int(&mut self) -> Option<u64> {
+        let Token::Int(n) = self.tokens.get(self.position)? else {
+            return None;
         };
+        let value = *n;
         self.position += 1;
-        n
+        Some(value)
     }
 
-    fn take_ident(&mut self) -> String {
-        let name = match &self.tokens[self.position] {
-            Token::Ident(name) => name.clone(),
-            other => panic!("take_ident on non-Ident token: {other:?}"),
+    fn take_ident(&mut self) -> Option<String> {
+        let Token::Ident(name) = self.tokens.get(self.position)? else {
+            return None;
         };
+        let value = name.clone();
         self.position += 1;
-        name
+        Some(value)
     }
 
     fn resolve(&self, name: &str) -> Option<VariableId> {

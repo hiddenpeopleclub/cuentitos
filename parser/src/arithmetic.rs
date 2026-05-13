@@ -113,14 +113,18 @@ pub trait ArithmeticSource {
     /// Consume the current token. Caller must have already observed it
     /// via [`peek_kind`](Self::peek_kind).
     fn advance(&mut self);
-    /// Consume the current `Int` token and return its magnitude. Caller
-    /// must have observed `ArithmeticTokenKind::Int` via `peek_kind`;
-    /// otherwise this is a contract violation.
-    fn take_int(&mut self) -> u64;
-    /// Consume the current `Ident` token and return its text. Caller
-    /// must have observed `ArithmeticTokenKind::Ident` via `peek_kind`;
-    /// otherwise this is a contract violation.
-    fn take_ident(&mut self) -> String;
+    /// Consume the current `Int` token and return its magnitude.
+    /// Returns `None` if the cursor is not pointing at an `Int` (i.e.
+    /// the caller forgot to guard with [`peek_kind`](Self::peek_kind));
+    /// callers in this module `.expect()` on that since the surrounding
+    /// `match` already verified the kind.
+    fn take_int(&mut self) -> Option<u64>;
+    /// Consume the current `Ident` token and return its text.
+    /// Returns `None` if the cursor is not pointing at an `Ident` (i.e.
+    /// the caller forgot to guard with [`peek_kind`](Self::peek_kind));
+    /// callers in this module `.expect()` on that since the surrounding
+    /// `match` already verified the kind.
+    fn take_ident(&mut self) -> Option<String>;
     /// Resolve an identifier to a declared variable id.
     fn resolve(&self, name: &str) -> Option<VariableId>;
 }
@@ -181,7 +185,7 @@ fn parse_unary<S: ArithmeticSource>(stream: &mut S) -> Result<Expression, Arithm
             // `i64::MIN` (whose magnitude doesn't fit in `i64`) is
             // representable.
             if let Some(ArithmeticTokenKind::Int) = stream.peek_kind() {
-                let n = stream.take_int();
+                let n = stream.take_int().expect("peek_kind guarded this");
                 return negate_u64_literal(n).map(|v| Expression::Literal(Value::Integer(v)));
             }
             let inner = parse_unary(stream)?;
@@ -205,7 +209,7 @@ fn parse_unary<S: ArithmeticSource>(stream: &mut S) -> Result<Expression, Arithm
 fn parse_primary<S: ArithmeticSource>(stream: &mut S) -> Result<Expression, ArithmeticError> {
     match stream.peek_kind() {
         Some(ArithmeticTokenKind::Int) => {
-            let n = stream.take_int();
+            let n = stream.take_int().expect("peek_kind guarded this");
             if n > i64::MAX as u64 {
                 return Err(ArithmeticError::LiteralOverflow {
                     literal: n.to_string(),
@@ -214,7 +218,7 @@ fn parse_primary<S: ArithmeticSource>(stream: &mut S) -> Result<Expression, Arit
             Ok(Expression::Literal(Value::Integer(n as i64)))
         }
         Some(ArithmeticTokenKind::Ident) => {
-            let name = stream.take_ident();
+            let name = stream.take_ident().expect("peek_kind guarded this");
             match stream.resolve(&name) {
                 Some(id) => Ok(Expression::Variable(id)),
                 None => Err(ArithmeticError::UndefinedVariable { name }),
