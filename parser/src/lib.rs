@@ -1,5 +1,6 @@
 use cuentitos_common::*;
 
+pub mod arithmetic;
 pub mod boolean_expression;
 pub mod expression;
 pub mod parser;

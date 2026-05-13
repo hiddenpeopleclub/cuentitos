@@ -9,19 +9,24 @@
 //! comparison := arith_expr compare_op arith_expr
 //! ```
 //!
-//! Arithmetic sub-expressions (the operands of comparisons) reuse the
-//! standard `+ - * /` parser with their own parens. The boolean primary
-//! disambiguates `(...)` between "parenthesized boolean group" and
-//! "parenthesized arithmetic LHS of a comparison" by looking ahead through
-//! the matched parenthesis to see whether a comparison operator follows.
+//! Arithmetic operands of comparisons are parsed by the shared body in
+//! [`crate::arithmetic`]; this module's [`ArithmeticSource`] impl on
+//! [`BooleanParser`] projects boolean tokens into that body. The boolean
+//! primary disambiguates `(...)` between "parenthesized boolean group"
+//! and "parenthesized arithmetic LHS of a comparison" by looking ahead
+//! through the matched parenthesis to see whether a comparison operator
+//! follows.
 //!
 //! Errors are typed (see [`BooleanParseError`]) and carry enough context
 //! for the caller to format the exact compatibility-test wording, e.g.
 //! `Missing right operand for 'and' in 'req': 'x > 0 and'.`
 
 use cuentitos_common::{
-    BinaryOperator, BooleanExpression, ComparisonOperator, Expression, RequirementStatement, Value,
-    VariableId,
+    BooleanExpression, ComparisonOperator, Expression, RequirementStatement, VariableId,
+};
+
+use crate::arithmetic::{
+    parse_arithmetic_expression, ArithmeticError, ArithmeticSource, ArithmeticToken,
 };
 
 /// Resolves identifiers (variable names) to declared [`VariableId`]s.
@@ -480,115 +485,55 @@ impl<'a> BooleanParser<'a> {
         }
     }
 
-    // ----- Arithmetic sub-language -----
-    //
-    // Mirrors the recursive descent in `parser/src/expression.rs`:
-    // precedence `+ -` < `* /` < unary `-` < primary, with the same
-    // `i64::MIN`-aware literal negation. **DO NOT change operator
-    // precedence, integer-literal handling, or unary-minus rules here
-    // without mirroring the change in `parser/src/expression.rs`.**
-    // Tracked as a follow-up: extract a single arithmetic helper that
-    // both call into.
+    // The arithmetic sublanguage (operands of comparisons) is parsed by
+    // the shared body in [`crate::arithmetic`]; this struct's
+    // [`ArithmeticSource`] impl below projects the boolean tokens into
+    // [`ArithmeticToken`] and the call site maps [`ArithmeticError`] back
+    // into [`BooleanParseError`].
 
     fn parse_arith(&mut self) -> Result<Expression, BooleanParseError> {
-        self.parse_additive()
+        parse_arithmetic_expression(self).map_err(map_arithmetic_error)
     }
+}
 
-    fn parse_additive(&mut self) -> Result<Expression, BooleanParseError> {
-        let mut left = self.parse_multiplicative()?;
-        loop {
-            let operator = match self.peek() {
-                Some(Token::Plus) => BinaryOperator::Add,
-                Some(Token::Minus) => BinaryOperator::Subtract,
-                _ => break,
-            };
-            self.position += 1;
-            let right = self.parse_multiplicative()?;
-            left = Expression::Binary {
-                operator,
-                left: Box::new(left),
-                right: Box::new(right),
-            };
-        }
-        Ok(left)
-    }
-
-    fn parse_multiplicative(&mut self) -> Result<Expression, BooleanParseError> {
-        let mut left = self.parse_unary()?;
-        loop {
-            let operator = match self.peek() {
-                Some(Token::Star) => BinaryOperator::Multiply,
-                Some(Token::Slash) => BinaryOperator::Divide,
-                _ => break,
-            };
-            self.position += 1;
-            let right = self.parse_unary()?;
-            left = Expression::Binary {
-                operator,
-                left: Box::new(left),
-                right: Box::new(right),
-            };
-        }
-        Ok(left)
-    }
-
-    fn parse_unary(&mut self) -> Result<Expression, BooleanParseError> {
-        match self.peek() {
-            Some(Token::Minus) => {
-                self.position += 1;
-                if let Some(Token::Int(n)) = self.peek() {
-                    let n = *n;
-                    self.position += 1;
-                    return negate_u64_literal(n).map(|v| Expression::Literal(Value::Integer(v)));
-                }
-                let inner = self.parse_unary()?;
-                Ok(Expression::Binary {
-                    operator: BinaryOperator::Subtract,
-                    left: Box::new(Expression::Literal(Value::Integer(0))),
-                    right: Box::new(inner),
-                })
-            }
-            Some(Token::Plus) => {
-                self.position += 1;
-                self.parse_unary()
-            }
-            _ => self.parse_arith_primary(),
+impl<'a> ArithmeticSource for BooleanParser<'a> {
+    fn peek(&self) -> Option<ArithmeticToken> {
+        match self.tokens.get(self.position)? {
+            Token::Int(n) => Some(ArithmeticToken::Int(*n)),
+            Token::Ident(name) => Some(ArithmeticToken::Ident(name.clone())),
+            Token::Plus => Some(ArithmeticToken::Plus),
+            Token::Minus => Some(ArithmeticToken::Minus),
+            Token::Star => Some(ArithmeticToken::Star),
+            Token::Slash => Some(ArithmeticToken::Slash),
+            Token::LParen => Some(ArithmeticToken::LParen),
+            Token::RParen => Some(ArithmeticToken::RParen),
+            // Logical and comparison tokens aren't part of the arithmetic
+            // sublanguage — surface them as end-of-stream so the shared
+            // parser stops cleanly and the boolean parser resumes from
+            // here.
+            _ => None,
         }
     }
 
-    fn parse_arith_primary(&mut self) -> Result<Expression, BooleanParseError> {
-        match self.peek() {
-            Some(Token::Int(n)) => {
-                let n = *n;
-                self.position += 1;
-                if n > i64::MAX as u64 {
-                    return Err(BooleanParseError::LiteralOverflow {
-                        literal: n.to_string(),
-                    });
-                }
-                Ok(Expression::Literal(Value::Integer(n as i64)))
-            }
-            Some(Token::Ident(name)) => {
-                let name = name.clone();
-                self.position += 1;
-                match self.resolver.resolve(&name) {
-                    Some(id) => Ok(Expression::Variable(id)),
-                    None => Err(BooleanParseError::UndefinedVariable { name }),
-                }
-            }
-            Some(Token::LParen) => {
-                self.position += 1;
-                let inner = self.parse_additive()?;
-                match self.peek() {
-                    Some(Token::RParen) => {
-                        self.position += 1;
-                        Ok(inner)
-                    }
-                    _ => Err(BooleanParseError::UnbalancedParentheses),
-                }
-            }
-            _ => Err(BooleanParseError::Malformed),
+    fn advance(&mut self) {
+        self.position += 1;
+    }
+
+    fn resolve(&self, name: &str) -> Option<VariableId> {
+        self.resolver.resolve(name)
+    }
+}
+
+fn map_arithmetic_error(error: ArithmeticError) -> BooleanParseError {
+    match error {
+        ArithmeticError::Malformed => BooleanParseError::Malformed,
+        ArithmeticError::LiteralOverflow { literal } => {
+            BooleanParseError::LiteralOverflow { literal }
         }
+        ArithmeticError::UndefinedVariable { name } => {
+            BooleanParseError::UndefinedVariable { name }
+        }
+        ArithmeticError::UnbalancedParentheses => BooleanParseError::UnbalancedParentheses,
     }
 }
 
@@ -601,19 +546,6 @@ enum LogicalContext {
     RightOfAnd,
     RightOfOr,
     OperandOfNot,
-}
-
-fn negate_u64_literal(n: u64) -> Result<i64, BooleanParseError> {
-    const ABS_MIN: u64 = (i64::MAX as u64) + 1;
-    if n > ABS_MIN {
-        return Err(BooleanParseError::LiteralOverflow {
-            literal: format!("-{n}"),
-        });
-    }
-    if n == ABS_MIN {
-        return Ok(i64::MIN);
-    }
-    Ok(-(n as i64))
 }
 
 #[cfg(test)]
