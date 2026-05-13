@@ -26,10 +26,6 @@ pub struct ParsedSet {
 /// message like `Malformed 'set' statement: '5 +'.`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetParseError {
-    /// The line did not begin with `set ` followed by something parseable.
-    /// Carries the trimmed line so the caller can decide whether to emit a
-    /// targeted error or fall through to other parsers.
-    NotASetStatement,
     /// LHS or RHS referenced a variable that was never declared.
     UndefinedVariable { name: String },
     /// RHS expression had a syntactic problem.
@@ -54,14 +50,22 @@ pub enum SetParseError {
 
 /// Try to parse `content` as a `set` statement.
 ///
-/// `content` should already have indentation stripped. Returns
-/// `Err(NotASetStatement)` if the line doesn't begin with the `set` keyword
-/// — callers fall through to other parsers in that case.
+/// `content` should already have indentation stripped, and the caller is
+/// responsible for filtering with [`is_set_line`] first — calling this
+/// on a non-`set` line is a contract violation. In debug builds it
+/// panics; in release it surfaces as a `MissingLhs` so the parser still
+/// makes progress.
 pub fn parse_set(content: &str, database: &Database) -> Result<ParsedSet, SetParseError> {
     let rest = match strip_keyword(content, "set") {
         StripResult::Stripped(rest) => rest,
         StripResult::BareKeyword => return Err(SetParseError::MissingLhs),
-        StripResult::NotKeyword => return Err(SetParseError::NotASetStatement),
+        StripResult::NotKeyword => {
+            debug_assert!(
+                false,
+                "parse_set called on non-set line — caller must filter with is_set_line: {content:?}"
+            );
+            return Err(SetParseError::MissingLhs);
+        }
     };
 
     let (lhs_raw, operator, rhs_raw) = split_lhs_op_rhs(rest)?;
@@ -139,6 +143,17 @@ pub fn parse_set(content: &str, database: &Database) -> Result<ParsedSet, SetPar
         operator,
         expression,
     })
+}
+
+/// Cheap predicate: does `content` (already trimmed of indentation) begin
+/// with the `set` keyword followed by ASCII whitespace? Callers must
+/// filter with this before [`parse_set`] — calling `parse_set` on
+/// anything else is a contract violation.
+pub fn is_set_line(content: &str) -> bool {
+    matches!(
+        strip_keyword(content, "set"),
+        StripResult::Stripped(_) | StripResult::BareKeyword
+    )
 }
 
 enum StripResult<'a> {
@@ -297,12 +312,12 @@ mod tests {
     }
 
     #[test]
-    fn returns_not_a_set_for_unrelated_lines() {
-        let db = db_with(&[]);
-        assert_eq!(
-            parse_set("Hello", &db).unwrap_err(),
-            SetParseError::NotASetStatement
-        );
+    fn is_set_line_filters_non_keyword_lines() {
+        assert!(is_set_line("set x = 5"));
+        assert!(is_set_line("set\tx = 5"));
+        assert!(is_set_line("set"));
+        assert!(!is_set_line("Hello"));
+        assert!(!is_set_line("seth = 1"));
     }
 
     #[test]

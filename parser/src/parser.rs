@@ -1329,9 +1329,6 @@ impl Parser {
                                             line: context.current_line,
                                         }
                                     }
-                                    SetParseError::NotASetStatement => unreachable!(
-                                        "looks_like_set_line filter should preclude this"
-                                    ),
                                 };
                                 self.collect_error_and_skip(parse_error, &mut context);
                                 continue;
@@ -1476,11 +1473,6 @@ impl Parser {
                                     }
                                     RequirementParseError::ExpressionTooDeep => {
                                         ParseError::ExpressionTooDeep { file, line }
-                                    }
-                                    RequirementParseError::NotARequirementStatement => {
-                                        unreachable!(
-                                            "looks_like_requirement_line filter should preclude this"
-                                        )
                                     }
                                 };
                                 self.collect_error_and_skip(parse_error, &mut context);
@@ -1655,22 +1647,14 @@ impl Parser {
     /// Lines that pass through here are then handed to `set_parser::parse_set`
     /// for full validation.
     fn looks_like_set_line(content: &str) -> bool {
-        content == "set"
-            || content
-                .strip_prefix("set")
-                .map(|rest| rest.starts_with(' ') || rest.starts_with('\t'))
-                .unwrap_or(false)
+        crate::parsers::set_parser::is_set_line(content)
     }
 
     /// Cheap pre-filter: does this trimmed line begin with the `req` keyword?
     /// Lines that pass through here are then handed to
     /// `requirement_parser::parse_requirement` for full validation.
     fn looks_like_requirement_line(content: &str) -> bool {
-        content == "req"
-            || content
-                .strip_prefix("req")
-                .map(|rest| rest.starts_with(' ') || rest.starts_with('\t'))
-                .unwrap_or(false)
+        crate::parsers::requirement_parser::is_requirement_line(content)
     }
 
     /// Find the parent block for a non-section block at `level`. Mutates

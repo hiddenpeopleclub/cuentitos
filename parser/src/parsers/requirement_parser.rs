@@ -29,8 +29,6 @@ pub struct ParsedRequirement {
 /// Errors specific to parsing a `req` statement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RequirementParseError {
-    /// Line did not begin with `req`.
-    NotARequirementStatement,
     /// `req` followed by no condition.
     MissingCondition,
     /// LHS or RHS referenced a variable that was never declared.
@@ -81,9 +79,11 @@ pub enum RequirementParseError {
 
 /// Try to parse `content` as a `req` statement.
 ///
-/// `content` should already have indentation stripped. Returns
-/// `Err(NotARequirementStatement)` if the line doesn't begin with the
-/// `req` keyword.
+/// `content` should already have indentation stripped, and the caller is
+/// responsible for filtering with [`is_requirement_line`] first —
+/// calling this on a non-`req` line is a contract violation. In debug
+/// builds it panics; in release it surfaces as a `MissingCondition` so
+/// the parser still makes progress.
 pub fn parse_requirement(
     content: &str,
     database: &Database,
@@ -91,7 +91,13 @@ pub fn parse_requirement(
     let rest = match strip_keyword(content, "req") {
         StripResult::Stripped(rest) => rest,
         StripResult::BareKeyword => return Err(RequirementParseError::MissingCondition),
-        StripResult::NotKeyword => return Err(RequirementParseError::NotARequirementStatement),
+        StripResult::NotKeyword => {
+            debug_assert!(
+                false,
+                "parse_requirement called on non-req line — caller must filter with is_requirement_line: {content:?}"
+            );
+            return Err(RequirementParseError::MissingCondition);
+        }
     };
 
     let payload = rest.trim();
@@ -221,6 +227,17 @@ impl VariableResolver for DatabaseResolver<'_> {
     fn resolve(&self, name: &str) -> Option<VariableId> {
         self.database.variable_id(name)
     }
+}
+
+/// Cheap predicate: does `content` (already trimmed of indentation)
+/// begin with the `req` keyword followed by ASCII whitespace? Callers
+/// must filter with this before [`parse_requirement`] — calling
+/// `parse_requirement` on anything else is a contract violation.
+pub fn is_requirement_line(content: &str) -> bool {
+    matches!(
+        strip_keyword(content, "req"),
+        StripResult::Stripped(_) | StripResult::BareKeyword
+    )
 }
 
 enum StripResult<'a> {
@@ -373,12 +390,12 @@ mod tests {
     }
 
     #[test]
-    fn returns_not_a_req_for_unrelated_lines() {
-        let db = db_with(&[]);
-        assert_eq!(
-            parse_requirement("Hello world", &db).unwrap_err(),
-            RequirementParseError::NotARequirementStatement
-        );
+    fn is_requirement_line_filters_non_keyword_lines() {
+        assert!(is_requirement_line("req x > 0"));
+        assert!(is_requirement_line("req\tx > 0"));
+        assert!(is_requirement_line("req"));
+        assert!(!is_requirement_line("Hello world"));
+        assert!(!is_requirement_line("require x > 0"));
     }
 
     #[test]
