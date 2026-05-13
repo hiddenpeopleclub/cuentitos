@@ -186,9 +186,12 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
-    /// `req` used a comparison operator that isn't one of the supported set.
-    UnknownComparisonOperator {
-        operator: String,
+    /// `req` contained a symbol the tokenizer didn't recognize as part
+    /// of any grammar token. This includes both unsupported comparison
+    /// operators (e.g. `~`) and stray symbols that aren't operators at
+    /// all (e.g. `&`, `|`); the message wording must reflect that.
+    UnknownSymbolInRequirement {
+        symbol: String,
         file: Option<PathBuf>,
         line: usize,
     },
@@ -597,17 +600,13 @@ impl fmt::Display for ParseError {
                     expression
                 )
             }
-            ParseError::UnknownComparisonOperator {
-                operator,
-                file,
-                line,
-            } => {
+            ParseError::UnknownSymbolInRequirement { symbol, file, line } => {
                 write!(
                     f,
-                    "{}:{}: ERROR: Unknown comparison operator: '{}'.",
+                    "{}:{}: ERROR: Unknown operator '{}' in 'req'.",
                     file_prefix(file),
                     line,
-                    operator
+                    symbol
                 )
             }
             ParseError::RequirementAtTopLevel { file, line } => {
@@ -1409,9 +1408,9 @@ impl Parser {
                                             line,
                                         }
                                     }
-                                    RequirementParseError::UnknownOperator { symbol } => {
-                                        ParseError::UnknownComparisonOperator {
-                                            operator: symbol,
+                                    RequirementParseError::UnknownSymbol { symbol } => {
+                                        ParseError::UnknownSymbolInRequirement {
+                                            symbol,
                                             file,
                                             line,
                                         }

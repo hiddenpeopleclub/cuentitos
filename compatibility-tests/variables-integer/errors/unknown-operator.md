@@ -1,7 +1,10 @@
-# Require Error: Unknown Comparison Operator
+# Require Error: Unknown Operator
 
-A `req` using a symbol that is not one of the supported comparison operators
-(`>`, `<`, `>=`, `<=`, `=`, `!=`) is a parse-time error.
+A `req` containing a symbol the tokenizer doesn't recognize as part of
+any grammar token is a parse-time error. This covers both unsupported
+comparison operators (e.g. `~`) and stray symbols that aren't operators
+at all (e.g. `&`, `|`); the diagnostic must say "unknown operator", not
+"unknown comparison operator".
 
 ## Script
 ```cuentitos
@@ -20,5 +23,5 @@ s
 
 ## Result
 ```result
-unknown-operator.cuentitos:6: ERROR: Unknown comparison operator: '~'.
+unknown-operator.cuentitos:6: ERROR: Unknown operator '~' in 'req'.
 ```

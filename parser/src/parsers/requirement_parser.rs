@@ -36,9 +36,11 @@ pub enum RequirementParseError {
     /// Generic structural failure that surfaces as
     /// `Malformed expression in 'req': '<source>'`.
     MalformedExpression { expression: String },
-    /// A symbol was found between operands that isn't one of the
-    /// supported comparison operators. Carries the offending symbol.
-    UnknownOperator { symbol: String },
+    /// The tokenizer hit a symbol that isn't part of any `req`-grammar
+    /// token (e.g. `&`, `|`, `~`). Not all of these are comparison
+    /// operators — the diagnostic must say "unknown operator", not
+    /// "unknown comparison operator".
+    UnknownSymbol { symbol: String },
     /// LHS and RHS of a comparison inferred to different kinds.
     TypeMismatch { left: ValueKind, right: ValueKind },
     /// An ordering operator was applied to a non-ordered kind.
@@ -152,8 +154,8 @@ fn map_boolean_error(error: BooleanParseError, source: &str) -> RequirementParse
         BooleanParseError::UndefinedVariable { name } => {
             RequirementParseError::UndefinedVariable { name }
         }
-        BooleanParseError::UnknownOperator { symbol } => {
-            RequirementParseError::UnknownOperator { symbol }
+        BooleanParseError::UnknownSymbol { symbol } => {
+            RequirementParseError::UnknownSymbol { symbol }
         }
         BooleanParseError::LiteralOverflow { literal } => {
             RequirementParseError::LiteralOverflow { literal }
@@ -379,12 +381,26 @@ mod tests {
     }
 
     #[test]
-    fn returns_unknown_operator_for_tilde() {
+    fn returns_unknown_symbol_for_tilde() {
         let db = db_with(&["x"]);
         assert_eq!(
             parse_requirement("req x ~ 5", &db).unwrap_err(),
-            RequirementParseError::UnknownOperator {
+            RequirementParseError::UnknownSymbol {
                 symbol: "~".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn returns_unknown_symbol_for_ampersand() {
+        // `&` is the most common typo for `and` — surface it as an
+        // unknown operator (not "unknown comparison operator", since `&`
+        // isn't a comparison operator at all).
+        let db = db_with(&["x", "y"]);
+        assert_eq!(
+            parse_requirement("req x > 0 & y > 0", &db).unwrap_err(),
+            RequirementParseError::UnknownSymbol {
+                symbol: "&".to_string()
             }
         );
     }

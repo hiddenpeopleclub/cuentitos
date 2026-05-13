@@ -53,7 +53,7 @@ pub fn parse_boolean_expression(
     let tokens = match tokenize(input) {
         Ok(tokens) => tokens,
         Err(TokenizeError::UnknownSymbol(symbol)) => {
-            return Err(BooleanParseError::UnknownOperator { symbol });
+            return Err(BooleanParseError::UnknownSymbol { symbol });
         }
         Err(TokenizeError::LiteralOverflow(literal)) => {
             return Err(BooleanParseError::LiteralOverflow { literal });
@@ -121,9 +121,12 @@ pub enum BooleanParseError {
     UnbalancedParentheses,
     /// The RHS or LHS expression referenced an undeclared variable.
     UndefinedVariable { name: String },
-    /// A symbol token was not a recognized operator. Carries the offending
-    /// symbol so the caller can format `Unknown comparison operator: '~'`.
-    UnknownOperator { symbol: String },
+    /// A symbol that the tokenizer didn't recognize as part of any
+    /// `req`-grammar token. Carries the offending lexeme so the caller
+    /// can format `Unknown operator '&' in 'req'`. Includes things that
+    /// aren't comparison operators at all (e.g. `&`, `|`, `~`), so the
+    /// message must not over-claim "comparison operator".
+    UnknownSymbol { symbol: String },
     /// Generic structural failure that doesn't fit a more specific case
     /// (e.g. missing RHS in a comparison, dangling arithmetic operator,
     /// stray identifier in a position requiring an operator).
@@ -964,7 +967,7 @@ mod tests {
         let err = parse("x ~ 5", &[("x", 0)]).unwrap_err();
         assert_eq!(
             err,
-            BooleanParseError::UnknownOperator {
+            BooleanParseError::UnknownSymbol {
                 symbol: "~".to_string()
             }
         );
@@ -1038,7 +1041,7 @@ mod tests {
         let err = parse("x > 0 ∧ y > 0", &[("x", 0), ("y", 1)]).unwrap_err();
         assert_eq!(
             err,
-            BooleanParseError::UnknownOperator {
+            BooleanParseError::UnknownSymbol {
                 symbol: "∧".to_string()
             }
         );
