@@ -17,6 +17,7 @@ use cuentitos_common::{Expression, VariableId};
 
 use crate::arithmetic::{
     parse_arithmetic_expression, ArithmeticError, ArithmeticSource, ArithmeticToken,
+    ArithmeticTokenKind,
 };
 
 /// Errors produced while parsing or resolving an expression at parse time.
@@ -83,12 +84,30 @@ struct SliceArithmeticSource<'a> {
 }
 
 impl<'a> ArithmeticSource for SliceArithmeticSource<'a> {
-    fn peek(&self) -> Option<ArithmeticToken> {
-        self.tokens.get(self.position).cloned()
+    fn peek_kind(&self) -> Option<ArithmeticTokenKind> {
+        self.tokens.get(self.position).map(ArithmeticToken::kind)
     }
 
     fn advance(&mut self) {
         self.position += 1;
+    }
+
+    fn take_int(&mut self) -> u64 {
+        let n = match &self.tokens[self.position] {
+            ArithmeticToken::Int(n) => *n,
+            other => panic!("take_int on non-Int token: {other:?}"),
+        };
+        self.position += 1;
+        n
+    }
+
+    fn take_ident(&mut self) -> String {
+        let name = match &self.tokens[self.position] {
+            ArithmeticToken::Ident(name) => name.clone(),
+            other => panic!("take_ident on non-Ident token: {other:?}"),
+        };
+        self.position += 1;
+        name
     }
 
     fn resolve(&self, name: &str) -> Option<VariableId> {

@@ -30,8 +30,26 @@
 
 use cuentitos_common::{BinaryOperator, Expression, Value, VariableId};
 
-/// The arithmetic sublanguage's token alphabet. Callers project their
-/// richer token type into this through [`ArithmeticSource::peek`].
+/// The arithmetic sublanguage's token alphabet — payload-free so the
+/// parser can pattern-match on it without copying identifier text.
+/// Identifier and literal payloads are pulled out separately through
+/// [`ArithmeticSource::take_ident`] and [`ArithmeticSource::take_int`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArithmeticTokenKind {
+    Int,
+    Ident,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    LParen,
+    RParen,
+}
+
+/// A payload-carrying arithmetic token. Provided for callers that
+/// pre-tokenize into a `Vec` (see `SliceArithmeticSource`); the trait
+/// itself works in terms of [`ArithmeticTokenKind`] plus
+/// [`ArithmeticSource::take_int`]/[`ArithmeticSource::take_ident`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ArithmeticToken {
     Int(u64),
@@ -42,6 +60,21 @@ pub enum ArithmeticToken {
     Slash,
     LParen,
     RParen,
+}
+
+impl ArithmeticToken {
+    pub fn kind(&self) -> ArithmeticTokenKind {
+        match self {
+            ArithmeticToken::Int(_) => ArithmeticTokenKind::Int,
+            ArithmeticToken::Ident(_) => ArithmeticTokenKind::Ident,
+            ArithmeticToken::Plus => ArithmeticTokenKind::Plus,
+            ArithmeticToken::Minus => ArithmeticTokenKind::Minus,
+            ArithmeticToken::Star => ArithmeticTokenKind::Star,
+            ArithmeticToken::Slash => ArithmeticTokenKind::Slash,
+            ArithmeticToken::LParen => ArithmeticTokenKind::LParen,
+            ArithmeticToken::RParen => ArithmeticTokenKind::RParen,
+        }
+    }
 }
 
 /// Errors produced by the shared arithmetic parser. Callers re-map these
@@ -64,16 +97,30 @@ pub enum ArithmeticError {
 /// Bridges the caller's token stream and identifier scope to the
 /// arithmetic parser. Implementations decide which of the caller's tokens
 /// belong to the arithmetic sublanguage; anything else is reported as
-/// `None` from [`ArithmeticSource::peek`] so the parser stops cleanly
-/// and the caller resumes from there.
+/// `None` from [`ArithmeticSource::peek_kind`] so the parser stops
+/// cleanly and the caller resumes from there.
+///
+/// The trait separates *discrimination* (cheap, `Copy`) from *payload
+/// extraction* (allocating for `Ident`), so a recursive-descent parser
+/// can `peek_kind` repeatedly at decision points without cloning the
+/// identifier text every time.
 pub trait ArithmeticSource {
-    /// Look at the current arithmetic token without consuming it.
+    /// Look at the current arithmetic token's kind without consuming it.
     /// Returns `None` for end-of-stream **or** for any token that isn't
     /// part of the arithmetic sublanguage — the parser treats both
     /// identically (clean stop).
-    fn peek(&self) -> Option<ArithmeticToken>;
-    /// Consume the current token.
+    fn peek_kind(&self) -> Option<ArithmeticTokenKind>;
+    /// Consume the current token. Caller must have already observed it
+    /// via [`peek_kind`](Self::peek_kind).
     fn advance(&mut self);
+    /// Consume the current `Int` token and return its magnitude. Caller
+    /// must have observed `ArithmeticTokenKind::Int` via `peek_kind`;
+    /// otherwise this is a contract violation.
+    fn take_int(&mut self) -> u64;
+    /// Consume the current `Ident` token and return its text. Caller
+    /// must have observed `ArithmeticTokenKind::Ident` via `peek_kind`;
+    /// otherwise this is a contract violation.
+    fn take_ident(&mut self) -> String;
     /// Resolve an identifier to a declared variable id.
     fn resolve(&self, name: &str) -> Option<VariableId>;
 }
@@ -89,9 +136,9 @@ pub fn parse_arithmetic_expression<S: ArithmeticSource>(
 fn parse_additive<S: ArithmeticSource>(stream: &mut S) -> Result<Expression, ArithmeticError> {
     let mut left = parse_multiplicative(stream)?;
     loop {
-        let operator = match stream.peek() {
-            Some(ArithmeticToken::Plus) => BinaryOperator::Add,
-            Some(ArithmeticToken::Minus) => BinaryOperator::Subtract,
+        let operator = match stream.peek_kind() {
+            Some(ArithmeticTokenKind::Plus) => BinaryOperator::Add,
+            Some(ArithmeticTokenKind::Minus) => BinaryOperator::Subtract,
             _ => break,
         };
         stream.advance();
@@ -110,9 +157,9 @@ fn parse_multiplicative<S: ArithmeticSource>(
 ) -> Result<Expression, ArithmeticError> {
     let mut left = parse_unary(stream)?;
     loop {
-        let operator = match stream.peek() {
-            Some(ArithmeticToken::Star) => BinaryOperator::Multiply,
-            Some(ArithmeticToken::Slash) => BinaryOperator::Divide,
+        let operator = match stream.peek_kind() {
+            Some(ArithmeticTokenKind::Star) => BinaryOperator::Multiply,
+            Some(ArithmeticTokenKind::Slash) => BinaryOperator::Divide,
             _ => break,
         };
         stream.advance();
@@ -127,14 +174,14 @@ fn parse_multiplicative<S: ArithmeticSource>(
 }
 
 fn parse_unary<S: ArithmeticSource>(stream: &mut S) -> Result<Expression, ArithmeticError> {
-    match stream.peek() {
-        Some(ArithmeticToken::Minus) => {
+    match stream.peek_kind() {
+        Some(ArithmeticTokenKind::Minus) => {
             stream.advance();
             // Fold `-` directly into a following literal so that
             // `i64::MIN` (whose magnitude doesn't fit in `i64`) is
             // representable.
-            if let Some(ArithmeticToken::Int(n)) = stream.peek() {
-                stream.advance();
+            if let Some(ArithmeticTokenKind::Int) = stream.peek_kind() {
+                let n = stream.take_int();
                 return negate_u64_literal(n).map(|v| Expression::Literal(Value::Integer(v)));
             }
             let inner = parse_unary(stream)?;
@@ -147,7 +194,7 @@ fn parse_unary<S: ArithmeticSource>(stream: &mut S) -> Result<Expression, Arithm
                 right: Box::new(inner),
             })
         }
-        Some(ArithmeticToken::Plus) => {
+        Some(ArithmeticTokenKind::Plus) => {
             stream.advance();
             parse_unary(stream)
         }
@@ -156,9 +203,9 @@ fn parse_unary<S: ArithmeticSource>(stream: &mut S) -> Result<Expression, Arithm
 }
 
 fn parse_primary<S: ArithmeticSource>(stream: &mut S) -> Result<Expression, ArithmeticError> {
-    match stream.peek() {
-        Some(ArithmeticToken::Int(n)) => {
-            stream.advance();
+    match stream.peek_kind() {
+        Some(ArithmeticTokenKind::Int) => {
+            let n = stream.take_int();
             if n > i64::MAX as u64 {
                 return Err(ArithmeticError::LiteralOverflow {
                     literal: n.to_string(),
@@ -166,18 +213,18 @@ fn parse_primary<S: ArithmeticSource>(stream: &mut S) -> Result<Expression, Arit
             }
             Ok(Expression::Literal(Value::Integer(n as i64)))
         }
-        Some(ArithmeticToken::Ident(name)) => {
-            stream.advance();
+        Some(ArithmeticTokenKind::Ident) => {
+            let name = stream.take_ident();
             match stream.resolve(&name) {
                 Some(id) => Ok(Expression::Variable(id)),
                 None => Err(ArithmeticError::UndefinedVariable { name }),
             }
         }
-        Some(ArithmeticToken::LParen) => {
+        Some(ArithmeticTokenKind::LParen) => {
             stream.advance();
             let inner = parse_additive(stream)?;
-            match stream.peek() {
-                Some(ArithmeticToken::RParen) => {
+            match stream.peek_kind() {
+                Some(ArithmeticTokenKind::RParen) => {
                     stream.advance();
                     Ok(inner)
                 }

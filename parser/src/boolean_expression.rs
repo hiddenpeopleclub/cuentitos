@@ -26,7 +26,7 @@ use cuentitos_common::{
 };
 
 use crate::arithmetic::{
-    parse_arithmetic_expression, ArithmeticError, ArithmeticSource, ArithmeticToken,
+    parse_arithmetic_expression, ArithmeticError, ArithmeticSource, ArithmeticTokenKind,
 };
 
 /// Resolves identifiers (variable names) to declared [`VariableId`]s.
@@ -540,8 +540,8 @@ impl<'a> BooleanParser<'a> {
     // The arithmetic sublanguage (operands of comparisons) is parsed by
     // the shared body in [`crate::arithmetic`]; this struct's
     // [`ArithmeticSource`] impl below projects the boolean tokens into
-    // [`ArithmeticToken`] and the call site maps [`ArithmeticError`] back
-    // into [`BooleanParseError`].
+    // [`ArithmeticTokenKind`] and the call site maps [`ArithmeticError`]
+    // back into [`BooleanParseError`].
 
     fn parse_arith(&mut self) -> Result<Expression, BooleanParseError> {
         parse_arithmetic_expression(self).map_err(map_arithmetic_error)
@@ -549,16 +549,16 @@ impl<'a> BooleanParser<'a> {
 }
 
 impl<'a> ArithmeticSource for BooleanParser<'a> {
-    fn peek(&self) -> Option<ArithmeticToken> {
+    fn peek_kind(&self) -> Option<ArithmeticTokenKind> {
         match self.tokens.get(self.position)? {
-            Token::Int(n) => Some(ArithmeticToken::Int(*n)),
-            Token::Ident(name) => Some(ArithmeticToken::Ident(name.clone())),
-            Token::Plus => Some(ArithmeticToken::Plus),
-            Token::Minus => Some(ArithmeticToken::Minus),
-            Token::Star => Some(ArithmeticToken::Star),
-            Token::Slash => Some(ArithmeticToken::Slash),
-            Token::LParen => Some(ArithmeticToken::LParen),
-            Token::RParen => Some(ArithmeticToken::RParen),
+            Token::Int(_) => Some(ArithmeticTokenKind::Int),
+            Token::Ident(_) => Some(ArithmeticTokenKind::Ident),
+            Token::Plus => Some(ArithmeticTokenKind::Plus),
+            Token::Minus => Some(ArithmeticTokenKind::Minus),
+            Token::Star => Some(ArithmeticTokenKind::Star),
+            Token::Slash => Some(ArithmeticTokenKind::Slash),
+            Token::LParen => Some(ArithmeticTokenKind::LParen),
+            Token::RParen => Some(ArithmeticTokenKind::RParen),
             // Logical and comparison tokens aren't part of the arithmetic
             // sublanguage — surface them as end-of-stream so the shared
             // parser stops cleanly and the boolean parser resumes from
@@ -569,6 +569,24 @@ impl<'a> ArithmeticSource for BooleanParser<'a> {
 
     fn advance(&mut self) {
         self.position += 1;
+    }
+
+    fn take_int(&mut self) -> u64 {
+        let n = match &self.tokens[self.position] {
+            Token::Int(n) => *n,
+            other => panic!("take_int on non-Int token: {other:?}"),
+        };
+        self.position += 1;
+        n
+    }
+
+    fn take_ident(&mut self) -> String {
+        let name = match &self.tokens[self.position] {
+            Token::Ident(name) => name.clone(),
+            other => panic!("take_ident on non-Ident token: {other:?}"),
+        };
+        self.position += 1;
+        name
     }
 
     fn resolve(&self, name: &str) -> Option<VariableId> {
