@@ -788,6 +788,56 @@ mod tests {
     }
 
     #[test]
+    fn parse_block_reserved_keyword_and() {
+        let script = "--- variables\nint and = 1\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        match expect_single_error(outcome) {
+            ParseError::ReservedKeyword { name, line, .. } => {
+                assert_eq!(name, "and");
+                assert_eq!(line, 2);
+            }
+            other => panic!("expected ReservedKeyword, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_block_reserved_keyword_or() {
+        let script = "--- variables\nint or = 1\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        match expect_single_error(outcome) {
+            ParseError::ReservedKeyword { name, .. } => assert_eq!(name, "or"),
+            other => panic!("expected ReservedKeyword, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_block_reserved_keyword_not() {
+        let script = "--- variables\nint not = 1\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        match expect_single_error(outcome) {
+            ParseError::ReservedKeyword { name, .. } => assert_eq!(name, "not"),
+            other => panic!("expected ReservedKeyword, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_block_uppercase_logical_keywords_are_allowed() {
+        // The reservation is for the lowercase tokens the boolean parser
+        // recognizes; uppercase variants must remain ordinary identifiers.
+        let script = "--- variables\nint AND = 1\nint OR = 2\nint NOT = 3\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        assert!(outcome.errors.is_empty(), "errors: {:?}", outcome.errors);
+    }
+
+    #[test]
     fn parse_block_division_by_zero() {
         let script = "--- variables\nint a = 10 / 0\n---";
         let lines: Vec<&str> = script.lines().collect();
