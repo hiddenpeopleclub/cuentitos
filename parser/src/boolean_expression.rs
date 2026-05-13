@@ -466,6 +466,11 @@ impl<'a> BooleanParser<'a> {
     /// closed — surfacing the error at the open paren rather than
     /// routing into the boolean-group branch and discovering it later.
     //
+    // Each open paren triggers a forward scan to its matching `)` plus
+    // a continuation walk; nesting compounds to O(d²) in the worst case
+    // (`((((a > 0))))` does d full scans, each O(d)). Real `req`
+    // conditions stay shallow so this is a non-issue today.
+    //
     // TODO: precompute paren-match positions during tokenization
     // (`Vec<usize>` indexed by paren index) if `req` expressions ever
     // grow large enough that the per-`(` O(n) scan dominates.
