@@ -37,8 +37,10 @@ impl<F: Fn(&str) -> Option<VariableId>> VariableResolver for F {
 
 /// Parse `input` as a `req` boolean condition.
 ///
-/// `source` is the original (post-`req`) text used to format error messages
-/// that include the offending substring. Pass the trimmed condition.
+/// `input` is the trimmed text after the leading `req` keyword.
+/// `resolver` maps identifiers in the condition to declared
+/// [`VariableId`]s; unresolved names surface as
+/// [`BooleanParseError::UndefinedVariable`].
 pub fn parse_boolean_expression(
     input: &str,
     resolver: &dyn VariableResolver,
