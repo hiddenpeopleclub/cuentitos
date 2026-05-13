@@ -86,7 +86,12 @@ pub enum RequirementParseError {
 /// calling this on a non-`req` line is a contract violation. In debug
 /// builds it panics; in release it surfaces as a `MissingCondition` so
 /// the parser still makes progress.
-pub fn parse_requirement(
+///
+/// `pub(crate)` so the predicate-then-parse contract is enforced by
+/// crate-level visibility — external callers cannot bypass
+/// `is_requirement_line` and stumble into the misleading
+/// `MissingCondition` fallback.
+pub(crate) fn parse_requirement(
     content: &str,
     database: &Database,
 ) -> Result<ParsedRequirement, RequirementParseError> {

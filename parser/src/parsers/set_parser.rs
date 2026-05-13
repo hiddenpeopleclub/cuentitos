@@ -55,7 +55,11 @@ pub enum SetParseError {
 /// on a non-`set` line is a contract violation. In debug builds it
 /// panics; in release it surfaces as a `MissingLhs` so the parser still
 /// makes progress.
-pub fn parse_set(content: &str, database: &Database) -> Result<ParsedSet, SetParseError> {
+///
+/// `pub(crate)` so the predicate-then-parse contract is enforced by
+/// crate-level visibility — external callers cannot bypass `is_set_line`
+/// and stumble into the misleading `MissingLhs` fallback.
+pub(crate) fn parse_set(content: &str, database: &Database) -> Result<ParsedSet, SetParseError> {
     let rest = match strip_keyword(content, "set") {
         StripResult::Stripped(rest) => rest,
         StripResult::BareKeyword => return Err(SetParseError::MissingLhs),
