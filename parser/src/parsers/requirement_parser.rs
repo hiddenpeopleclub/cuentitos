@@ -74,6 +74,9 @@ pub enum RequirementParseError {
     /// A literal in the condition's arithmetic exceeded the integer
     /// range. Carries the offending literal text.
     LiteralOverflow { literal: String },
+    /// The boolean condition nested deeper than the parser's recursion
+    /// cap. See [`crate::boolean_expression::MAX_EXPRESSION_DEPTH`].
+    ExpressionTooDeep,
 }
 
 /// Try to parse `content` as a `req` statement.
@@ -149,6 +152,7 @@ fn map_boolean_error(error: BooleanParseError, source: &str) -> RequirementParse
         BooleanParseError::LiteralOverflow { literal } => {
             RequirementParseError::LiteralOverflow { literal }
         }
+        BooleanParseError::ExpressionTooDeep => RequirementParseError::ExpressionTooDeep,
         BooleanParseError::Malformed => RequirementParseError::MalformedExpression {
             expression: source.to_string(),
         },

@@ -68,6 +68,7 @@ pub fn parse_boolean_expression(
         tokens: &tokens,
         position: 0,
         resolver,
+        depth: 0,
     };
 
     let expression = parser.parse_or()?;
@@ -127,7 +128,18 @@ pub enum BooleanParseError {
     /// offending literal text (e.g. `99999999999999999999`) so the caller
     /// can surface it in the error message.
     LiteralOverflow { literal: String },
+    /// The boolean expression nests deeper than [`MAX_EXPRESSION_DEPTH`].
+    /// Capping parse depth bounds validation and evaluation depth too —
+    /// see [`MAX_EXPRESSION_DEPTH`] for the rationale.
+    ExpressionTooDeep,
 }
+
+/// Maximum nesting depth accepted in a `req` boolean expression. Set so
+/// pathological inputs (e.g. `not not not … x > 0`) can't blow the parse,
+/// validation, or runtime stacks. Real `req` conditions stay well under
+/// this — the cap exists only to make the unbounded-recursion failure
+/// mode unreachable.
+pub const MAX_EXPRESSION_DEPTH: usize = 1024;
 
 /// A logical-operator keyword name. Stored as an enum (rather than a raw
 /// string) so the formatter has a single source of truth.
@@ -305,6 +317,12 @@ struct BooleanParser<'a> {
     tokens: &'a [Token],
     position: usize,
     resolver: &'a dyn VariableResolver,
+    /// Current boolean-tree nesting depth. Bumped at the start of each
+    /// recursive entry (parse_or/parse_and/parse_not/parse_primary) and
+    /// dropped on the successful return path. On the error path we leak
+    /// the depth — fine because the parse short-circuits and the source
+    /// is one-shot. Bounded by [`MAX_EXPRESSION_DEPTH`].
+    depth: usize,
 }
 
 impl<'a> BooleanParser<'a> {
@@ -312,7 +330,22 @@ impl<'a> BooleanParser<'a> {
         self.tokens.get(self.position)
     }
 
+    /// Enter a recursive frame. Returns `ExpressionTooDeep` once the
+    /// running tree depth exceeds the cap, before any further allocation.
+    fn enter_recursion(&mut self) -> Result<(), BooleanParseError> {
+        self.depth += 1;
+        if self.depth > MAX_EXPRESSION_DEPTH {
+            return Err(BooleanParseError::ExpressionTooDeep);
+        }
+        Ok(())
+    }
+
+    fn leave_recursion(&mut self) {
+        self.depth -= 1;
+    }
+
     fn parse_or(&mut self) -> Result<BooleanExpression, BooleanParseError> {
+        self.enter_recursion()?;
         // Detect missing left operand for `or` — first token is `or` itself.
         if matches!(self.peek(), Some(Token::LogicalOr)) {
             return Err(BooleanParseError::MissingLeftOperand {
@@ -330,6 +363,7 @@ impl<'a> BooleanParser<'a> {
             let right = self.parse_and(LogicalContext::RightOfOr)?;
             left = BooleanExpression::Or(Box::new(left), Box::new(right));
         }
+        self.leave_recursion();
         Ok(left)
     }
 
@@ -337,6 +371,7 @@ impl<'a> BooleanParser<'a> {
         &mut self,
         context: LogicalContext,
     ) -> Result<BooleanExpression, BooleanParseError> {
+        self.enter_recursion()?;
         if matches!(self.peek(), Some(Token::LogicalAnd)) {
             return Err(BooleanParseError::MissingLeftOperand {
                 operator: LogicalKeyword::And,
@@ -353,6 +388,7 @@ impl<'a> BooleanParser<'a> {
             let right = self.parse_not(LogicalContext::RightOfAnd)?;
             left = BooleanExpression::And(Box::new(left), Box::new(right));
         }
+        self.leave_recursion();
         Ok(left)
     }
 
@@ -360,6 +396,7 @@ impl<'a> BooleanParser<'a> {
         &mut self,
         context: LogicalContext,
     ) -> Result<BooleanExpression, BooleanParseError> {
+        self.enter_recursion()?;
         if matches!(self.peek(), Some(Token::LogicalNot)) {
             self.position += 1;
             // Missing operand entirely.
@@ -367,15 +404,19 @@ impl<'a> BooleanParser<'a> {
                 return Err(BooleanParseError::MissingNotOperand);
             }
             let inner = self.parse_not(LogicalContext::OperandOfNot)?;
+            self.leave_recursion();
             return Ok(BooleanExpression::Not(Box::new(inner)));
         }
-        self.parse_primary(context)
+        let result = self.parse_primary(context)?;
+        self.leave_recursion();
+        Ok(result)
     }
 
     fn parse_primary(
         &mut self,
         context: LogicalContext,
     ) -> Result<BooleanExpression, BooleanParseError> {
+        self.enter_recursion()?;
         if matches!(self.peek(), Some(Token::LParen)) {
             // Disambiguate: is this a parenthesized boolean group, or the
             // parenthesized LHS of a comparison? The lookahead surfaces
@@ -383,19 +424,24 @@ impl<'a> BooleanParser<'a> {
             // of routing into one branch and discovering the imbalance
             // partway through parsing.
             if self.parens_open_arithmetic_lhs()? {
-                return self.parse_comparison(context);
+                let result = self.parse_comparison(context)?;
+                self.leave_recursion();
+                return Ok(result);
             }
             self.position += 1;
             let inner = self.parse_or()?;
             match self.peek() {
                 Some(Token::RParen) => {
                     self.position += 1;
+                    self.leave_recursion();
                     Ok(inner)
                 }
                 _ => Err(BooleanParseError::UnbalancedParentheses),
             }
         } else {
-            self.parse_comparison(context)
+            let result = self.parse_comparison(context)?;
+            self.leave_recursion();
+            Ok(result)
         }
     }
 
@@ -820,6 +866,34 @@ mod tests {
                 literal: "99999999999999999999".to_string()
             }
         );
+    }
+
+    #[test]
+    fn rejects_expression_nested_beyond_cap() {
+        // A chain of `not` deeper than MAX_EXPRESSION_DEPTH must be
+        // rejected at parse time, before we recurse far enough to risk
+        // stack overflow. The condition `x > 0` is well-formed by
+        // itself; only the wrapping depth makes the input bad.
+        let mut input = String::new();
+        for _ in 0..=MAX_EXPRESSION_DEPTH {
+            input.push_str("not ");
+        }
+        input.push_str("x > 0");
+        let err = parse(&input, &[("x", 0)]).unwrap_err();
+        assert_eq!(err, BooleanParseError::ExpressionTooDeep);
+    }
+
+    #[test]
+    fn accepts_expression_at_modest_depth() {
+        // Sanity check: a depth well under the cap still parses.
+        let mut input = String::new();
+        for _ in 0..16 {
+            input.push_str("not ");
+        }
+        input.push_str("x > 0");
+        let result = parse(&input, &[("x", 0)]).unwrap();
+        // Outer node is `Not` — the chain reduces by one each level.
+        assert!(matches!(result, BooleanExpression::Not(_)));
     }
 
     #[test]

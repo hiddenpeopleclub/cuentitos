@@ -270,6 +270,12 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    /// A `req` boolean condition nested deeper than the parser's
+    /// recursion cap.
+    ExpressionTooDeep {
+        file: Option<PathBuf>,
+        line: usize,
+    },
     MultipleErrors {
         errors: Vec<ParseError>,
     },
@@ -734,6 +740,15 @@ impl fmt::Display for ParseError {
                     file_prefix(file),
                     line,
                     literal
+                )
+            }
+            ParseError::ExpressionTooDeep { file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: 'req' expression nests too deeply (max {} levels).",
+                    file_prefix(file),
+                    line,
+                    crate::boolean_expression::MAX_EXPRESSION_DEPTH
                 )
             }
             ParseError::MultipleErrors { errors } => {
@@ -1458,6 +1473,9 @@ impl Parser {
                                             file,
                                             line,
                                         }
+                                    }
+                                    RequirementParseError::ExpressionTooDeep => {
+                                        ParseError::ExpressionTooDeep { file, line }
                                     }
                                     RequirementParseError::NotARequirementStatement => {
                                         unreachable!(
