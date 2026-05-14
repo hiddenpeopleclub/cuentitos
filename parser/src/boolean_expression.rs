@@ -654,6 +654,29 @@ impl<'a> ArithmeticSource for BooleanParser<'a> {
     fn resolve(&self, name: &str) -> Option<VariableId> {
         self.resolver.resolve(name)
     }
+
+    // Trait-side recursion bookkeeping. Reuses the boolean parser's
+    // `depth` field so boolean nesting (`not`, `(...)` boolean groups)
+    // and arithmetic nesting (`---x`, `((x))` arith LHS) share a single
+    // [`MAX_EXPRESSION_DEPTH`] budget — adversarial input can't dodge
+    // the cap by switching layers.
+    //
+    // The inherent `enter_recursion`/`leave_recursion` methods on
+    // [`BooleanParser`] surface the boolean error type and stay
+    // selected at boolean-layer call sites by Rust's preference for
+    // inherent methods; this trait impl is reached only via generic
+    // dispatch from the shared arithmetic body.
+    fn enter_recursion(&mut self) -> Result<(), ArithmeticError> {
+        self.depth += 1;
+        if self.depth > MAX_EXPRESSION_DEPTH {
+            return Err(ArithmeticError::ExpressionTooDeep);
+        }
+        Ok(())
+    }
+
+    fn leave_recursion(&mut self) {
+        self.depth -= 1;
+    }
 }
 
 fn map_arithmetic_error(error: ArithmeticError) -> BooleanParseError {
@@ -666,6 +689,10 @@ fn map_arithmetic_error(error: ArithmeticError) -> BooleanParseError {
             BooleanParseError::UndefinedVariable { name }
         }
         ArithmeticError::UnbalancedParentheses => BooleanParseError::UnbalancedParentheses,
+        // Fold into the existing boolean depth-cap error variant — both
+        // boolean and arithmetic nesting share one budget, so one
+        // diagnostic suffices.
+        ArithmeticError::ExpressionTooDeep => BooleanParseError::ExpressionTooDeep,
     }
 }
 
@@ -1025,6 +1052,64 @@ mod tests {
         let result = parse(&input, &[("x", 0)]).unwrap();
         // Outer node is `Not` — the chain reduces by one each level.
         assert!(matches!(result, BooleanExpression::Not(_)));
+    }
+
+    #[test]
+    fn rejects_deep_arithmetic_unary_minus() {
+        // 200 leading `-`s on the RHS recurse through the shared
+        // arithmetic `parse_unary` body. Before the arith side joined
+        // the cap, this used to grow the parser stack linearly with the
+        // input length. Now the same `MAX_EXPRESSION_DEPTH` budget
+        // catches it before recursion gets dangerous.
+        let mut input = String::from("x > ");
+        for _ in 0..200 {
+            input.push('-');
+        }
+        input.push('1');
+        let err = parse(&input, &[("x", 0)]).unwrap_err();
+        assert_eq!(err, BooleanParseError::ExpressionTooDeep);
+    }
+
+    #[test]
+    fn rejects_deep_arithmetic_paren_nesting() {
+        // 200 nested `(`s in the RHS recurse through the shared
+        // arithmetic `parse_primary` LParen branch. Same class of
+        // stack-growth bug as the unary-minus chain; same cap catches
+        // it. Closing parens are emitted symmetrically so any error
+        // we observe is depth-related, not malformed-input-related.
+        let mut input = String::from("x > ");
+        for _ in 0..200 {
+            input.push('(');
+        }
+        input.push('1');
+        for _ in 0..200 {
+            input.push(')');
+        }
+        let err = parse(&input, &[("x", 0)]).unwrap_err();
+        assert_eq!(err, BooleanParseError::ExpressionTooDeep);
+    }
+
+    #[test]
+    fn boolean_and_arithmetic_depth_share_a_budget() {
+        // Combining `not` wraps with an arith paren-nested RHS must
+        // still cap at the same `MAX_EXPRESSION_DEPTH` — boolean and
+        // arithmetic nesting feed the same counter, so an adversarial
+        // input can't switch layers to dodge the limit.
+        let half_minus_one = MAX_EXPRESSION_DEPTH / 2;
+        let mut input = String::new();
+        for _ in 0..half_minus_one {
+            input.push_str("not ");
+        }
+        input.push_str("x > ");
+        for _ in 0..=half_minus_one {
+            input.push('(');
+        }
+        input.push('1');
+        for _ in 0..=half_minus_one {
+            input.push(')');
+        }
+        let err = parse(&input, &[("x", 0)]).unwrap_err();
+        assert_eq!(err, BooleanParseError::ExpressionTooDeep);
     }
 
     #[test]

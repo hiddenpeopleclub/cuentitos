@@ -92,6 +92,13 @@ pub enum ArithmeticError {
     UndefinedVariable { name: String },
     /// A `(` in primary position was never closed.
     UnbalancedParentheses,
+    /// The source's recursion counter exceeded its cap. Raised from the
+    /// shared body's two stack-growing descent points (unary `-`/`+` and
+    /// the `(` branch of `primary`) so adversarial input — a long
+    /// `----…x` chain or `(((…x))…)` nesting — can't drive the parser
+    /// stack to overflow. Callers map this onto their own
+    /// depth-exceeded variant.
+    ExpressionTooDeep,
 }
 
 /// Bridges the caller's token stream and identifier scope to the
@@ -127,6 +134,16 @@ pub trait ArithmeticSource {
     fn take_ident(&mut self) -> Option<String>;
     /// Resolve an identifier to a declared variable id.
     fn resolve(&self, name: &str) -> Option<VariableId>;
+    /// Bump the source's recursion counter before a stack-growing
+    /// descent (non-literal unary `-`/`+`, or the `(` branch of
+    /// `primary`). Returns [`ArithmeticError::ExpressionTooDeep`] once
+    /// the source's cap is exceeded. Pairs with
+    /// [`leave_recursion`](Self::leave_recursion) on the success path;
+    /// the error path leaks the bump because the surrounding parse is
+    /// one-shot and the counter is dropped with the source.
+    fn enter_recursion(&mut self) -> Result<(), ArithmeticError>;
+    /// Decrement the recursion counter after a successful descent.
+    fn leave_recursion(&mut self);
 }
 
 /// Parse an arithmetic expression from `stream`, leaving the cursor
@@ -188,7 +205,13 @@ fn parse_unary<S: ArithmeticSource>(stream: &mut S) -> Result<Expression, Arithm
                 let n = stream.take_int().expect("peek_kind guarded this");
                 return negate_u64_literal(n).map(|v| Expression::Literal(Value::Integer(v)));
             }
+            // Non-literal unary minus is the stack-growing case: the
+            // following `parse_unary` call adds a frame for every `-`
+            // in the chain. Bound it through the source so an adversarial
+            // `----…x` can't drive the stack to overflow.
+            stream.enter_recursion()?;
             let inner = parse_unary(stream)?;
+            stream.leave_recursion();
             // Non-literal unary minus lowers to `0 - inner` so the
             // runtime's overflow-checked subtraction catches the
             // `-i64::MIN` edge case.
@@ -200,7 +223,13 @@ fn parse_unary<S: ArithmeticSource>(stream: &mut S) -> Result<Expression, Arithm
         }
         Some(ArithmeticTokenKind::Plus) => {
             stream.advance();
-            parse_unary(stream)
+            // `+` unary is identity (no AST node), but the recursive
+            // `parse_unary` call still grows the stack on `+++…`. Bound
+            // it through the same counter as `-`.
+            stream.enter_recursion()?;
+            let inner = parse_unary(stream)?;
+            stream.leave_recursion();
+            Ok(inner)
         }
         _ => parse_primary(stream),
     }
@@ -226,7 +255,13 @@ fn parse_primary<S: ArithmeticSource>(stream: &mut S) -> Result<Expression, Arit
         }
         Some(ArithmeticTokenKind::LParen) => {
             stream.advance();
+            // Nested parens are the other stack-growing path: `(((((…)))))`
+            // recurses through `parse_additive` once per `(`. Bound it
+            // through the same counter as unary minus so `((((…x))))`
+            // can't drive the stack to overflow.
+            stream.enter_recursion()?;
             let inner = parse_additive(stream)?;
+            stream.leave_recursion();
             match stream.peek_kind() {
                 Some(ArithmeticTokenKind::RParen) => {
                     stream.advance();

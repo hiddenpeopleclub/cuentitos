@@ -56,6 +56,7 @@ pub fn parse_expression(
         tokens: &tokens,
         position: 0,
         resolver,
+        depth: 0,
     };
     let expression = parse_arithmetic_expression(&mut source).map_err(map_arithmetic_error)?;
     if source.position != tokens.len() {
@@ -73,6 +74,12 @@ fn map_arithmetic_error(error: ArithmeticError) -> ParseExpressionError {
         ArithmeticError::UndefinedVariable { name } => {
             ParseExpressionError::UndefinedVariable { name }
         }
+        // The set-side parser doesn't currently surface depth-too-deep
+        // with a dedicated diagnostic — fold into Malformed so the cap
+        // still stops a stack-overflow attempt, even though the message
+        // is generic. A follow-up can add a typed variant if the set
+        // path ever sees depth-related authoring mistakes in the wild.
+        ArithmeticError::ExpressionTooDeep => ParseExpressionError::Malformed,
     }
 }
 
@@ -81,6 +88,12 @@ struct SliceArithmeticSource<'a> {
     tokens: &'a [ArithmeticToken],
     position: usize,
     resolver: &'a dyn VariableResolver,
+    /// Recursion depth accumulated by the shared arithmetic body via
+    /// [`ArithmeticSource::enter_recursion`]. Mirrors the same cap as
+    /// the boolean parser — same `MAX_EXPRESSION_DEPTH` constant — so
+    /// `set x = ----…1` or `set x = (((…1)))` can't drive the parser
+    /// stack to overflow.
+    depth: usize,
 }
 
 impl<'a> ArithmeticSource for SliceArithmeticSource<'a> {
@@ -112,6 +125,18 @@ impl<'a> ArithmeticSource for SliceArithmeticSource<'a> {
 
     fn resolve(&self, name: &str) -> Option<VariableId> {
         self.resolver.resolve(name)
+    }
+
+    fn enter_recursion(&mut self) -> Result<(), ArithmeticError> {
+        self.depth += 1;
+        if self.depth > crate::boolean_expression::MAX_EXPRESSION_DEPTH {
+            return Err(ArithmeticError::ExpressionTooDeep);
+        }
+        Ok(())
+    }
+
+    fn leave_recursion(&mut self) {
+        self.depth -= 1;
     }
 }
 
@@ -294,6 +319,44 @@ mod tests {
         let resolver = no_vars();
         assert_eq!(
             parse_expression("(1 + 2", &resolver).unwrap_err(),
+            ParseExpressionError::Malformed
+        );
+    }
+
+    #[test]
+    fn rejects_deep_unary_minus_chain() {
+        // 200 leading `-`s would stack-overflow the parser before the
+        // arith side joined the depth cap. The set side surfaces
+        // `ExpressionTooDeep` as `Malformed` for now — the test pins
+        // that we *fail cleanly* rather than crashing.
+        let resolver = no_vars();
+        let mut input = String::new();
+        for _ in 0..200 {
+            input.push('-');
+        }
+        input.push('1');
+        assert_eq!(
+            parse_expression(&input, &resolver).unwrap_err(),
+            ParseExpressionError::Malformed
+        );
+    }
+
+    #[test]
+    fn rejects_deep_paren_nesting() {
+        // 200 nested `(`s exercise the LParen recursion in the shared
+        // arith body. Same fail-cleanly contract as the unary-minus
+        // chain.
+        let resolver = no_vars();
+        let mut input = String::new();
+        for _ in 0..200 {
+            input.push('(');
+        }
+        input.push('1');
+        for _ in 0..200 {
+            input.push(')');
+        }
+        assert_eq!(
+            parse_expression(&input, &resolver).unwrap_err(),
             ParseExpressionError::Malformed
         );
     }
