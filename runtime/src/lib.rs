@@ -600,6 +600,10 @@ impl Runtime {
     /// walks past them and either presents the next passing option or, if
     /// none remain, lands on the post-options content.
     fn evaluate_requirement_gating(&self, block_id: BlockId) -> Result<bool, RuntimeError> {
+        // The lookup closure captures `&self.state.variable_values` and
+        // is identical for every sibling `req`. Build it once outside
+        // the loop — same shape `apply_set` uses for its one-shot eval.
+        let lookup = cuentitos_common::variable_lookup(&self.state.variable_values);
         for &child_id in &self.database.blocks[block_id].children {
             let BlockType::Requirement(requirement_id) = self.database.blocks[child_id].block_type
             else {
@@ -607,7 +611,6 @@ impl Runtime {
             };
             let expression = &self.database.requirements[requirement_id];
             let line = self.database.blocks[child_id].line;
-            let lookup = cuentitos_common::variable_lookup(&self.state.variable_values);
             // `BooleanExpression::evaluate` short-circuits internally for
             // `and`/`or`/`not`. Sibling `req`s remain implicitly ANDed by
             // the loop here — failing one short-circuits the whole gate.
