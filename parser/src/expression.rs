@@ -1,15 +1,24 @@
-//! Shared expression parser.
+//! Expression parser for single-expression contexts (`set` RHS).
 //!
-//! Used by `set` and `req` statements. Identifiers are resolved to
-//! [`VariableId`]s at parse time via the supplied [`VariableResolver`]; the
-//! resulting AST is then stored on the block and evaluated at runtime
-//! (see [`cuentitos_common::evaluate`]).
+//! Tokenizes a UTF-8 string into the arithmetic-only token set, then
+//! delegates to the shared body in [`crate::arithmetic`]. Identifiers
+//! are resolved to [`VariableId`]s at parse time via the supplied
+//! [`VariableResolver`]; the resulting AST is then stored on the block
+//! and evaluated at runtime (see [`cuentitos_common::evaluate`]).
 //!
 //! Variable defaults (in `--- variables` blocks) use a different evaluator
 //! that constant-folds at parse time and never produces an AST — see
 //! `parsers::variables_parser::evaluate_expression`.
+//!
+//! The boolean-condition parser ([`crate::boolean_expression`]) uses the
+//! same shared body to handle arithmetic operands of comparisons.
 
-use cuentitos_common::{BinaryOperator, Expression, Value, VariableId};
+use cuentitos_common::{Expression, VariableId};
+
+use crate::arithmetic::{
+    parse_arithmetic_expression, ArithmeticError, ArithmeticSource, ArithmeticToken,
+    ArithmeticTokenKind,
+};
 
 /// Errors produced while parsing or resolving an expression at parse time.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,9 +27,11 @@ pub enum ParseExpressionError {
     Malformed,
     /// Identifier was not found in the supplied resolver.
     UndefinedVariable { name: String },
-    /// A constant subexpression overflowed at parse time. Triggered only by
-    /// negating a literal magnitude greater than `i64::MIN`.
-    Overflow,
+    /// A literal exceeded the `i64` range. Carries the offending literal
+    /// text (including any leading sign), parallel to
+    /// [`crate::arithmetic::ArithmeticError::LiteralOverflow`], so the
+    /// caller can format a diagnostic that names the literal.
+    Overflow { literal: String },
 }
 
 /// Look up a declared variable by name.
@@ -39,41 +50,126 @@ pub fn parse_expression(
     input: &str,
     resolver: &dyn VariableResolver,
 ) -> Result<Expression, ParseExpressionError> {
-    let tokens = tokenize(input).map_err(|_| ParseExpressionError::Malformed)?;
+    let tokens = tokenize(input).map_err(|err| match err {
+        TokenizeError::Malformed => ParseExpressionError::Malformed,
+        TokenizeError::LiteralOverflow(literal) => ParseExpressionError::Overflow { literal },
+    })?;
     if tokens.is_empty() {
         return Err(ParseExpressionError::Malformed);
     }
-    let mut pos = 0;
-    let expression = parse_additive(&tokens, &mut pos, resolver)?;
-    if pos != tokens.len() {
+    let mut source = SliceArithmeticSource {
+        tokens: &tokens,
+        position: 0,
+        resolver,
+        depth: 0,
+    };
+    let expression = parse_arithmetic_expression(&mut source).map_err(map_arithmetic_error)?;
+    if source.position != tokens.len() {
         return Err(ParseExpressionError::Malformed);
     }
     Ok(expression)
 }
 
+fn map_arithmetic_error(error: ArithmeticError) -> ParseExpressionError {
+    match error {
+        ArithmeticError::Malformed | ArithmeticError::UnbalancedParentheses => {
+            ParseExpressionError::Malformed
+        }
+        ArithmeticError::LiteralOverflow { literal } => ParseExpressionError::Overflow { literal },
+        ArithmeticError::UndefinedVariable { name } => {
+            ParseExpressionError::UndefinedVariable { name }
+        }
+        // The set-side parser doesn't currently surface depth-too-deep
+        // with a dedicated diagnostic — fold into Malformed so the cap
+        // still stops a stack-overflow attempt, even though the message
+        // is generic. A follow-up can add a typed variant if the set
+        // path ever sees depth-related authoring mistakes in the wild.
+        ArithmeticError::ExpressionTooDeep => ParseExpressionError::Malformed,
+    }
+}
+
+/// A [`ArithmeticSource`] backed by a pre-tokenized slice and a cursor.
+struct SliceArithmeticSource<'a> {
+    tokens: &'a [ArithmeticToken],
+    position: usize,
+    resolver: &'a dyn VariableResolver,
+    /// Recursion depth accumulated by the shared arithmetic body via
+    /// [`ArithmeticSource::enter_recursion`]. Mirrors the same cap as
+    /// the boolean parser — same `MAX_EXPRESSION_DEPTH` constant — so
+    /// `set x = ----…1` or `set x = (((…1)))` can't drive the parser
+    /// stack to overflow.
+    depth: usize,
+}
+
+impl<'a> ArithmeticSource for SliceArithmeticSource<'a> {
+    fn peek_kind(&self) -> Option<ArithmeticTokenKind> {
+        self.tokens.get(self.position).map(ArithmeticToken::kind)
+    }
+
+    fn advance(&mut self) {
+        self.position += 1;
+    }
+
+    fn take_int(&mut self) -> Option<u64> {
+        let ArithmeticToken::Int(n) = self.tokens.get(self.position)? else {
+            return None;
+        };
+        let value = *n;
+        self.position += 1;
+        Some(value)
+    }
+
+    fn take_ident(&mut self) -> Option<String> {
+        let ArithmeticToken::Ident(name) = self.tokens.get(self.position)? else {
+            return None;
+        };
+        let value = name.clone();
+        self.position += 1;
+        Some(value)
+    }
+
+    fn resolve(&self, name: &str) -> Option<VariableId> {
+        self.resolver.resolve(name)
+    }
+
+    fn enter_recursion(&mut self) -> Result<(), ArithmeticError> {
+        self.depth += 1;
+        if self.depth > crate::boolean_expression::MAX_EXPRESSION_DEPTH {
+            return Err(ArithmeticError::ExpressionTooDeep);
+        }
+        Ok(())
+    }
+
+    fn leave_recursion(&mut self) {
+        self.depth -= 1;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tokenizer
 // ---------------------------------------------------------------------------
+//
+// Integer literals are tokenized as `u64` so that the magnitude of
+// `i64::MIN` (`9_223_372_036_854_775_808`) is representable.
+// `parse_unary` in the shared arithmetic body folds a leading `-` into the
+// literal so the full negative range is usable.
 
-/// Integer literals are tokenized as `u64` so that the magnitude of `i64::MIN`
-/// (`9_223_372_036_854_775_808`) is representable. `parse_unary` folds a
-/// leading `-` into the literal so the full negative range is usable.
+/// Errors the set-side tokenizer can surface. Kept as an enum (rather
+/// than a zero-sized struct) so a literal that exceeds the `u64` range
+/// at lex time carries its source text — parallel to the boolean-side
+/// tokenizer — and the eventual diagnostic can name the offending
+/// literal instead of falling through to the generic "malformed" error.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Token {
-    Int(u64),
-    Ident(String),
-    Plus,
-    Minus,
-    Star,
-    Slash,
-    LParen,
-    RParen,
+enum TokenizeError {
+    /// Catch-all for unrecognized symbols (anything that isn't a known
+    /// operator, paren, identifier-start, or digit).
+    Malformed,
+    /// An integer literal exceeded `u64`. Carries the offending text so
+    /// the caller can surface it as a literal-overflow diagnostic.
+    LiteralOverflow(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct TokenizeError;
-
-fn tokenize(input: &str) -> Result<Vec<Token>, TokenizeError> {
+fn tokenize(input: &str) -> Result<Vec<ArithmeticToken>, TokenizeError> {
     let mut tokens = Vec::new();
     let mut chars = input.chars().peekable();
     while let Some(&c) = chars.peek() {
@@ -84,27 +180,27 @@ fn tokenize(input: &str) -> Result<Vec<Token>, TokenizeError> {
         match c {
             '+' => {
                 chars.next();
-                tokens.push(Token::Plus);
+                tokens.push(ArithmeticToken::Plus);
             }
             '-' => {
                 chars.next();
-                tokens.push(Token::Minus);
+                tokens.push(ArithmeticToken::Minus);
             }
             '*' => {
                 chars.next();
-                tokens.push(Token::Star);
+                tokens.push(ArithmeticToken::Star);
             }
             '/' => {
                 chars.next();
-                tokens.push(Token::Slash);
+                tokens.push(ArithmeticToken::Slash);
             }
             '(' => {
                 chars.next();
-                tokens.push(Token::LParen);
+                tokens.push(ArithmeticToken::LParen);
             }
             ')' => {
                 chars.next();
-                tokens.push(Token::RParen);
+                tokens.push(ArithmeticToken::RParen);
             }
             c if c.is_ascii_digit() => {
                 let mut buf = String::new();
@@ -116,8 +212,14 @@ fn tokenize(input: &str) -> Result<Vec<Token>, TokenizeError> {
                         break;
                     }
                 }
-                let n: u64 = buf.parse().map_err(|_| TokenizeError)?;
-                tokens.push(Token::Int(n));
+                // `u64::from_str` only fails here for magnitudes greater
+                // than `u64::MAX`. Preserve the literal text so the caller
+                // can surface the same overflow message as for in-range
+                // literals that exceed `i64`.
+                let parsed: u64 = buf
+                    .parse()
+                    .map_err(|_| TokenizeError::LiteralOverflow(buf.clone()))?;
+                tokens.push(ArithmeticToken::Int(parsed));
             }
             c if c.is_ascii_alphabetic() || c == '_' => {
                 let mut buf = String::new();
@@ -129,150 +231,18 @@ fn tokenize(input: &str) -> Result<Vec<Token>, TokenizeError> {
                         break;
                     }
                 }
-                tokens.push(Token::Ident(buf));
+                tokens.push(ArithmeticToken::Ident(buf));
             }
-            _ => return Err(TokenizeError),
+            _ => return Err(TokenizeError::Malformed),
         }
     }
     Ok(tokens)
 }
 
-// ---------------------------------------------------------------------------
-// Recursive-descent parser
-// ---------------------------------------------------------------------------
-
-fn parse_additive(
-    tokens: &[Token],
-    pos: &mut usize,
-    resolver: &dyn VariableResolver,
-) -> Result<Expression, ParseExpressionError> {
-    let mut left = parse_multiplicative(tokens, pos, resolver)?;
-    loop {
-        let operator = match tokens.get(*pos) {
-            Some(Token::Plus) => BinaryOperator::Add,
-            Some(Token::Minus) => BinaryOperator::Subtract,
-            _ => break,
-        };
-        *pos += 1;
-        let right = parse_multiplicative(tokens, pos, resolver)?;
-        left = Expression::Binary {
-            operator,
-            left: Box::new(left),
-            right: Box::new(right),
-        };
-    }
-    Ok(left)
-}
-
-fn parse_multiplicative(
-    tokens: &[Token],
-    pos: &mut usize,
-    resolver: &dyn VariableResolver,
-) -> Result<Expression, ParseExpressionError> {
-    let mut left = parse_unary(tokens, pos, resolver)?;
-    loop {
-        let operator = match tokens.get(*pos) {
-            Some(Token::Star) => BinaryOperator::Multiply,
-            Some(Token::Slash) => BinaryOperator::Divide,
-            _ => break,
-        };
-        *pos += 1;
-        let right = parse_unary(tokens, pos, resolver)?;
-        left = Expression::Binary {
-            operator,
-            left: Box::new(left),
-            right: Box::new(right),
-        };
-    }
-    Ok(left)
-}
-
-fn parse_unary(
-    tokens: &[Token],
-    pos: &mut usize,
-    resolver: &dyn VariableResolver,
-) -> Result<Expression, ParseExpressionError> {
-    match tokens.get(*pos) {
-        Some(Token::Minus) => {
-            *pos += 1;
-            // Fold `-` directly into a following literal so that `i64::MIN`
-            // (whose magnitude doesn't fit in `i64`) is representable.
-            if let Some(Token::Int(n)) = tokens.get(*pos) {
-                *pos += 1;
-                return negate_u64_literal(*n).map(|n| Expression::Literal(Value::Integer(n)));
-            }
-            let inner = parse_unary(tokens, pos, resolver)?;
-            // For non-literal unary minus, lower to `0 - inner` so that
-            // overflow-checked subtraction at runtime catches the `-i64::MIN`
-            // edge case.
-            Ok(Expression::Binary {
-                operator: BinaryOperator::Subtract,
-                left: Box::new(Expression::Literal(Value::Integer(0))),
-                right: Box::new(inner),
-            })
-        }
-        Some(Token::Plus) => {
-            *pos += 1;
-            parse_unary(tokens, pos, resolver)
-        }
-        _ => parse_primary(tokens, pos, resolver),
-    }
-}
-
-fn parse_primary(
-    tokens: &[Token],
-    pos: &mut usize,
-    resolver: &dyn VariableResolver,
-) -> Result<Expression, ParseExpressionError> {
-    match tokens.get(*pos) {
-        Some(Token::Int(n)) => {
-            let n = *n;
-            *pos += 1;
-            if n > i64::MAX as u64 {
-                return Err(ParseExpressionError::Overflow);
-            }
-            Ok(Expression::Literal(Value::Integer(n as i64)))
-        }
-        Some(Token::Ident(name)) => {
-            let name = name.clone();
-            *pos += 1;
-            match resolver.resolve(&name) {
-                Some(id) => Ok(Expression::Variable(id)),
-                None => Err(ParseExpressionError::UndefinedVariable { name }),
-            }
-        }
-        Some(Token::LParen) => {
-            *pos += 1;
-            let expression = parse_additive(tokens, pos, resolver)?;
-            match tokens.get(*pos) {
-                Some(Token::RParen) => {
-                    *pos += 1;
-                    Ok(expression)
-                }
-                _ => Err(ParseExpressionError::Malformed),
-            }
-        }
-        _ => Err(ParseExpressionError::Malformed),
-    }
-}
-
-/// Compute `-(n as i64)` without intermediate overflow. Handles the unique
-/// case of `i64::MIN`, whose absolute value is `(i64::MAX as u64) + 1`.
-fn negate_u64_literal(n: u64) -> Result<i64, ParseExpressionError> {
-    const ABS_MIN: u64 = (i64::MAX as u64) + 1;
-    if n > ABS_MIN {
-        return Err(ParseExpressionError::Overflow);
-    }
-    if n == ABS_MIN {
-        return Ok(i64::MIN);
-    }
-    Ok(-(n as i64))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cuentitos_common::{evaluate, EvaluationError};
+    use cuentitos_common::{evaluate, BinaryOperator, EvaluationError, Value};
     use std::collections::HashMap;
 
     fn make_resolver(pairs: &[(&str, VariableId)]) -> impl VariableResolver {
@@ -293,8 +263,11 @@ mod tests {
             vars.iter().map(|(n, id, _)| (*n, *id)).collect();
         let resolver = make_resolver(&resolver_pairs);
         let expression = parse_expression(input, &resolver).expect("parse should succeed");
-        let values: HashMap<VariableId, i64> = vars.iter().map(|(_, id, v)| (*id, *v)).collect();
-        match evaluate(&expression, &|id| Value::Integer(values[&id]))? {
+        let values: HashMap<VariableId, Value> = vars
+            .iter()
+            .map(|(_, id, v)| (*id, Value::Integer(*v)))
+            .collect();
+        match evaluate(&expression, &|id| &values[&id])?.into_owned() {
             Value::Integer(n) => Ok(n),
         }
     }
@@ -331,7 +304,22 @@ mod tests {
         let resolver = no_vars();
         assert_eq!(
             parse_expression("-9223372036854775809", &resolver).unwrap_err(),
-            ParseExpressionError::Overflow
+            ParseExpressionError::Overflow {
+                literal: "-9223372036854775809".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_positive_overflow_carries_literal() {
+        // A bare positive literal larger than i64::MAX surfaces with
+        // its text intact so the caller can name it in the diagnostic.
+        let resolver = no_vars();
+        assert_eq!(
+            parse_expression("99999999999999999999", &resolver).unwrap_err(),
+            ParseExpressionError::Overflow {
+                literal: "99999999999999999999".to_string(),
+            }
         );
     }
 
@@ -369,6 +357,44 @@ mod tests {
         let resolver = no_vars();
         assert_eq!(
             parse_expression("(1 + 2", &resolver).unwrap_err(),
+            ParseExpressionError::Malformed
+        );
+    }
+
+    #[test]
+    fn rejects_deep_unary_minus_chain() {
+        // 200 leading `-`s would stack-overflow the parser before the
+        // arith side joined the depth cap. The set side surfaces
+        // `ExpressionTooDeep` as `Malformed` for now — the test pins
+        // that we *fail cleanly* rather than crashing.
+        let resolver = no_vars();
+        let mut input = String::new();
+        for _ in 0..200 {
+            input.push('-');
+        }
+        input.push('1');
+        assert_eq!(
+            parse_expression(&input, &resolver).unwrap_err(),
+            ParseExpressionError::Malformed
+        );
+    }
+
+    #[test]
+    fn rejects_deep_paren_nesting() {
+        // 200 nested `(`s exercise the LParen recursion in the shared
+        // arith body. Same fail-cleanly contract as the unary-minus
+        // chain.
+        let resolver = no_vars();
+        let mut input = String::new();
+        for _ in 0..200 {
+            input.push('(');
+        }
+        input.push('1');
+        for _ in 0..200 {
+            input.push(')');
+        }
+        assert_eq!(
+            parse_expression(&input, &resolver).unwrap_err(),
             ParseExpressionError::Malformed
         );
     }
@@ -451,9 +477,10 @@ mod tests {
     fn negation_of_i64_min_value_at_runtime_overflows() {
         let resolver = make_resolver(&[("x", 0)]);
         let expression = parse_expression("-x", &resolver).unwrap();
-        let values = std::iter::once((0_usize, i64::MIN)).collect::<HashMap<_, _>>();
+        let values: HashMap<VariableId, Value> =
+            std::iter::once((0_usize, Value::Integer(i64::MIN))).collect();
         assert_eq!(
-            evaluate(&expression, &|id| Value::Integer(values[&id])).unwrap_err(),
+            evaluate(&expression, &|id| &values[&id]).unwrap_err(),
             EvaluationError::Overflow
         );
     }

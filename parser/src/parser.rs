@@ -186,9 +186,12 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
-    /// `req` used a comparison operator that isn't one of the supported set.
-    UnknownComparisonOperator {
-        operator: String,
+    /// `req` contained a symbol the tokenizer didn't recognize as part
+    /// of any grammar token. This includes both unsupported comparison
+    /// operators (e.g. `~`) and stray symbols that aren't operators at
+    /// all (e.g. `&`, `|`); the message wording must reflect that.
+    UnknownSymbolInRequirement {
+        symbol: String,
         file: Option<PathBuf>,
         line: usize,
     },
@@ -215,6 +218,81 @@ pub enum ParseError {
     /// An arithmetic subexpression operates on a non-numeric kind.
     NonNumericArithmetic {
         kind: cuentitos_common::ValueKind,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// `and`/`or` had a bare arithmetic operand (left or right) instead
+    /// of a comparison.
+    LogicalBareIntegerOperand {
+        operator: crate::boolean_expression::LogicalKeyword,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// `not` had a bare arithmetic operand instead of a comparison.
+    LogicalBareIntegerOperandOfNot {
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// `and`/`or` had no left operand. `source` is the trimmed condition.
+    LogicalMissingLeftOperand {
+        operator: crate::boolean_expression::LogicalKeyword,
+        source: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// `and`/`or` had no right operand. `source` is the trimmed condition.
+    LogicalMissingRightOperand {
+        operator: crate::boolean_expression::LogicalKeyword,
+        source: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// `not` had no operand. `source` is the trimmed condition.
+    LogicalMissingNotOperand {
+        source: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// Parens in a `req` condition don't balance.
+    UnbalancedParentheses {
+        source: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// A reserved keyword (e.g. `and`, `or`, `not`) was used as a variable
+    /// name in a `--- variables` declaration.
+    ReservedKeyword {
+        name: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// A literal in a `req` arithmetic subexpression exceeded the integer
+    /// range. Carries the offending literal text.
+    RequirementLiteralOverflow {
+        literal: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// A literal in a `set` RHS exceeded the integer range. Carries the
+    /// offending literal text. Parallel to
+    /// [`RequirementLiteralOverflow`](Self::RequirementLiteralOverflow)
+    /// so the two sibling parsers produce parallel diagnostics.
+    SetLiteralOverflow {
+        literal: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// `==` appeared in a `req` comparison. Cuentitos spells equality
+    /// as a single `=`; the doubled form is the most common typo from
+    /// C/Python users and gets a dedicated message so the author isn't
+    /// left guessing at a generic "malformed expression" diagnostic.
+    DoubleEqualsInRequirement {
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// A `req` boolean condition nested deeper than the parser's
+    /// recursion cap.
+    ExpressionTooDeep {
         file: Option<PathBuf>,
         line: usize,
     },
@@ -539,17 +617,13 @@ impl fmt::Display for ParseError {
                     expression
                 )
             }
-            ParseError::UnknownComparisonOperator {
-                operator,
-                file,
-                line,
-            } => {
+            ParseError::UnknownSymbolInRequirement { symbol, file, line } => {
                 write!(
                     f,
-                    "{}:{}: ERROR: Unknown comparison operator: '{}'.",
+                    "{}:{}: ERROR: Unknown operator '{}' in 'req'.",
                     file_prefix(file),
                     line,
-                    operator
+                    symbol
                 )
             }
             ParseError::RequirementAtTopLevel { file, line } => {
@@ -591,6 +665,127 @@ impl fmt::Display for ParseError {
                     file_prefix(file),
                     line,
                     kind
+                )
+            }
+            ParseError::LogicalBareIntegerOperand {
+                operator,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Logical operator '{}' expects a comparison as each operand, not an integer expression.",
+                    file_prefix(file),
+                    line,
+                    operator.as_str()
+                )
+            }
+            ParseError::LogicalBareIntegerOperandOfNot { file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Logical operator 'not' expects a comparison as its operand, not an integer expression.",
+                    file_prefix(file),
+                    line
+                )
+            }
+            ParseError::LogicalMissingLeftOperand {
+                operator,
+                source,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Missing left operand for '{}' in 'req': '{}'.",
+                    file_prefix(file),
+                    line,
+                    operator.as_str(),
+                    source
+                )
+            }
+            ParseError::LogicalMissingRightOperand {
+                operator,
+                source,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Missing right operand for '{}' in 'req': '{}'.",
+                    file_prefix(file),
+                    line,
+                    operator.as_str(),
+                    source
+                )
+            }
+            ParseError::LogicalMissingNotOperand { source, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Missing operand for 'not' in 'req': '{}'.",
+                    file_prefix(file),
+                    line,
+                    source
+                )
+            }
+            ParseError::UnbalancedParentheses { source, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Unbalanced parentheses in 'req': '{}'.",
+                    file_prefix(file),
+                    line,
+                    source
+                )
+            }
+            ParseError::ReservedKeyword { name, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Reserved keyword '{}' cannot be used as a variable name.",
+                    file_prefix(file),
+                    line,
+                    name
+                )
+            }
+            ParseError::RequirementLiteralOverflow {
+                literal,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Integer overflow in 'req' expression: literal '{}' exceeds the integer range.",
+                    file_prefix(file),
+                    line,
+                    literal
+                )
+            }
+            ParseError::SetLiteralOverflow {
+                literal,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Integer overflow in 'set' expression: literal '{}' exceeds the integer range.",
+                    file_prefix(file),
+                    line,
+                    literal
+                )
+            }
+            ParseError::DoubleEqualsInRequirement { file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Use '=' for equality, not '=='.",
+                    file_prefix(file),
+                    line
+                )
+            }
+            ParseError::ExpressionTooDeep { file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: 'req' expression nests too deeply (max {} levels).",
+                    file_prefix(file),
+                    line,
+                    crate::boolean_expression::MAX_EXPRESSION_DEPTH
                 )
             }
             ParseError::MultipleErrors { errors } => {
@@ -1171,9 +1366,13 @@ impl Parser {
                                             line: context.current_line,
                                         }
                                     }
-                                    SetParseError::NotASetStatement => unreachable!(
-                                        "looks_like_set_line filter should preclude this"
-                                    ),
+                                    SetParseError::LiteralOverflow { literal } => {
+                                        ParseError::SetLiteralOverflow {
+                                            literal,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
                                 };
                                 self.collect_error_and_skip(parse_error, &mut context);
                                 continue;
@@ -1214,13 +1413,8 @@ impl Parser {
                                     }
                                 };
 
-                                let requirement_id = context.database.add_requirement(
-                                    cuentitos_common::RequirementStatement::new(
-                                        parsed.left,
-                                        parsed.operator,
-                                        parsed.right,
-                                    ),
-                                );
+                                let requirement_id =
+                                    context.database.add_requirement(parsed.expression);
                                 let block = Block::with_line(
                                     BlockType::Requirement(requirement_id),
                                     parent_id,
@@ -1239,68 +1433,93 @@ impl Parser {
                             }
                             Err(requirement_err) => {
                                 use crate::parsers::requirement_parser::RequirementParseError;
+                                let file = self.file_path.clone();
+                                let line = context.current_line;
                                 let parse_error = match requirement_err {
                                     RequirementParseError::UndefinedVariable { name } => {
-                                        ParseError::UndefinedVariableReference {
-                                            name,
-                                            file: self.file_path.clone(),
-                                            line: context.current_line,
-                                        }
+                                        ParseError::UndefinedVariableReference { name, file, line }
                                     }
                                     RequirementParseError::MalformedExpression { expression } => {
                                         ParseError::MalformedRequirementExpression {
                                             expression,
-                                            file: self.file_path.clone(),
-                                            line: context.current_line,
+                                            file,
+                                            line,
                                         }
                                     }
-                                    RequirementParseError::InvalidLhs { name } => {
-                                        ParseError::InvalidVariableName {
-                                            name,
-                                            file: self.file_path.clone(),
-                                            line: context.current_line,
-                                        }
-                                    }
-                                    RequirementParseError::MissingLhs => {
+                                    RequirementParseError::MissingCondition => {
                                         ParseError::MalformedRequirementExpression {
                                             expression: content.trim().to_string(),
-                                            file: self.file_path.clone(),
-                                            line: context.current_line,
+                                            file,
+                                            line,
                                         }
                                     }
-                                    RequirementParseError::UnknownOperator { op } => {
-                                        ParseError::UnknownComparisonOperator {
-                                            operator: op,
-                                            file: self.file_path.clone(),
-                                            line: context.current_line,
+                                    RequirementParseError::UnknownSymbol { symbol } => {
+                                        ParseError::UnknownSymbolInRequirement {
+                                            symbol,
+                                            file,
+                                            line,
                                         }
                                     }
                                     RequirementParseError::TypeMismatch { left, right } => {
                                         ParseError::RequirementTypeMismatch {
                                             left,
                                             right,
-                                            file: self.file_path.clone(),
-                                            line: context.current_line,
+                                            file,
+                                            line,
                                         }
                                     }
                                     RequirementParseError::NonOrderedComparison {
                                         kind, ..
-                                    } => ParseError::NonOrderedComparison {
-                                        kind,
-                                        file: self.file_path.clone(),
-                                        line: context.current_line,
-                                    },
+                                    } => ParseError::NonOrderedComparison { kind, file, line },
                                     RequirementParseError::NonNumericArithmetic { kind } => {
-                                        ParseError::NonNumericArithmetic {
-                                            kind,
-                                            file: self.file_path.clone(),
-                                            line: context.current_line,
+                                        ParseError::NonNumericArithmetic { kind, file, line }
+                                    }
+                                    RequirementParseError::LogicalBareIntegerOperand {
+                                        operator,
+                                    } => ParseError::LogicalBareIntegerOperand {
+                                        operator,
+                                        file,
+                                        line,
+                                    },
+                                    RequirementParseError::LogicalBareIntegerOperandOfNot => {
+                                        ParseError::LogicalBareIntegerOperandOfNot { file, line }
+                                    }
+                                    RequirementParseError::LogicalMissingLeftOperand {
+                                        operator,
+                                        source,
+                                    } => ParseError::LogicalMissingLeftOperand {
+                                        operator,
+                                        source,
+                                        file,
+                                        line,
+                                    },
+                                    RequirementParseError::LogicalMissingRightOperand {
+                                        operator,
+                                        source,
+                                    } => ParseError::LogicalMissingRightOperand {
+                                        operator,
+                                        source,
+                                        file,
+                                        line,
+                                    },
+                                    RequirementParseError::LogicalMissingNotOperand { source } => {
+                                        ParseError::LogicalMissingNotOperand { source, file, line }
+                                    }
+                                    RequirementParseError::LogicalUnbalancedParentheses {
+                                        source,
+                                    } => ParseError::UnbalancedParentheses { source, file, line },
+                                    RequirementParseError::LiteralOverflow { literal } => {
+                                        ParseError::RequirementLiteralOverflow {
+                                            literal,
+                                            file,
+                                            line,
                                         }
                                     }
-                                    RequirementParseError::NotARequirementStatement => {
-                                        unreachable!(
-                                            "looks_like_requirement_line filter should preclude this"
-                                        )
+                                    RequirementParseError::ExpressionTooDeep => {
+                                        ParseError::ExpressionTooDeep { file, line }
+                                    }
+                                    RequirementParseError::DoubleEquals => {
+                                        ParseError::DoubleEqualsInRequirement { file, line }
                                     }
                                 };
                                 self.collect_error_and_skip(parse_error, &mut context);
@@ -1475,22 +1694,14 @@ impl Parser {
     /// Lines that pass through here are then handed to `set_parser::parse_set`
     /// for full validation.
     fn looks_like_set_line(content: &str) -> bool {
-        content == "set"
-            || content
-                .strip_prefix("set")
-                .map(|rest| rest.starts_with(' ') || rest.starts_with('\t'))
-                .unwrap_or(false)
+        crate::parsers::set_parser::is_set_line(content)
     }
 
     /// Cheap pre-filter: does this trimmed line begin with the `req` keyword?
     /// Lines that pass through here are then handed to
     /// `requirement_parser::parse_requirement` for full validation.
     fn looks_like_requirement_line(content: &str) -> bool {
-        content == "req"
-            || content
-                .strip_prefix("req")
-                .map(|rest| rest.starts_with(' ') || rest.starts_with('\t'))
-                .unwrap_or(false)
+        crate::parsers::requirement_parser::is_requirement_line(content)
     }
 
     /// Find the parent block for a non-section block at `level`. Mutates

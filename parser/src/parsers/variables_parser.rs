@@ -165,6 +165,14 @@ fn parse_one_declaration(
         });
     }
 
+    if is_reserved_keyword(name) {
+        return Err(ParseError::ReservedKeyword {
+            name: name.to_string(),
+            file: file_path.clone(),
+            line: line_number,
+        });
+    }
+
     if let Some(&previous_line) = declared_lines.get(name) {
         return Err(ParseError::DuplicateVariable {
             name: name.to_string(),
@@ -265,6 +273,13 @@ pub fn is_valid_identifier(name: &str) -> bool {
         return false;
     }
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// True for lowercase logical-operator keywords that cannot be used as
+/// variable names. Uppercase variants (`AND`/`OR`/`NOT`) are not reserved
+/// — they parse as ordinary identifiers.
+pub fn is_reserved_keyword(name: &str) -> bool {
+    matches!(name, "and" | "or" | "not")
 }
 
 // ---------------------------------------------------------------------------
@@ -770,6 +785,56 @@ mod tests {
             }
             other => panic!("expected InvalidVariableName, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn parse_block_reserved_keyword_and() {
+        let script = "--- variables\nint and = 1\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        match expect_single_error(outcome) {
+            ParseError::ReservedKeyword { name, line, .. } => {
+                assert_eq!(name, "and");
+                assert_eq!(line, 2);
+            }
+            other => panic!("expected ReservedKeyword, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_block_reserved_keyword_or() {
+        let script = "--- variables\nint or = 1\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        match expect_single_error(outcome) {
+            ParseError::ReservedKeyword { name, .. } => assert_eq!(name, "or"),
+            other => panic!("expected ReservedKeyword, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_block_reserved_keyword_not() {
+        let script = "--- variables\nint not = 1\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        match expect_single_error(outcome) {
+            ParseError::ReservedKeyword { name, .. } => assert_eq!(name, "not"),
+            other => panic!("expected ReservedKeyword, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_block_uppercase_logical_keywords_are_allowed() {
+        // The reservation is for the lowercase tokens the boolean parser
+        // recognizes; uppercase variants must remain ordinary identifiers.
+        let script = "--- variables\nint AND = 1\nint OR = 2\nint NOT = 3\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        assert!(outcome.errors.is_empty(), "errors: {:?}", outcome.errors);
     }
 
     #[test]

@@ -1,158 +1,224 @@
-//! Parser for `req <var> <op> <expr>` statements.
+//! Parser for `req <boolean-expression>` statements.
 //!
-//! Returns a `ParsedRequirement` carrying the LHS as an [`Expression`], the
-//! [`ComparisonOperator`], and the RHS [`Expression`]. The current grammar
-//! restricts the LHS to a single variable identifier (wrapped as
-//! [`Expression::Variable`]), but the data model is symmetric so future
-//! grammar relaxation `req x + 1 > y * 2` is purely a parser change.
+//! The boolean grammar (lowercase `and`/`or`/`not`, parens, and comparison
+//! leaves) lives in [`crate::boolean_expression`]; this module is a thin
+//! wrapper that:
+//!
+//! 1. Strips the leading `req` keyword.
+//! 2. Delegates to [`parse_boolean_expression`] to build the tree.
+//! 3. Walks each leaf comparison through [`infer_type`] so type/ordering
+//!    errors are surfaced with their original Rust diagnostics.
+//! 4. Maps the parser's typed errors into [`RequirementParseError`]
+//!    variants ready for [`crate::ParseError`] formatting.
 
-use cuentitos_common::{ComparisonOperator, Database, Expression, ValueKind, VariableId};
+use cuentitos_common::{
+    BooleanExpression, ComparisonOperator, Database, RequirementStatement, ValueKind, VariableId,
+};
 
-use crate::expression::{parse_expression, ParseExpressionError, VariableResolver};
+use crate::boolean_expression::{
+    parse_boolean_expression, BooleanParseError, LogicalKeyword, VariableResolver,
+};
 use crate::parsers::type_inference::{infer_type, TypeInferenceError};
-use crate::parsers::variables_parser::is_valid_identifier;
 
 /// Result of parsing a `req` line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedRequirement {
-    pub left: Expression,
-    pub operator: ComparisonOperator,
-    pub right: Expression,
+    pub expression: BooleanExpression,
 }
 
 /// Errors specific to parsing a `req` statement.
-///
-/// Top-level callers re-map these to `ParseError` variants with file/line
-/// context.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RequirementParseError {
-    /// The line did not begin with `req` followed by something parseable.
-    NotARequirementStatement,
+    /// `req` followed by no condition.
+    MissingCondition,
     /// LHS or RHS referenced a variable that was never declared.
     UndefinedVariable { name: String },
-    /// RHS expression had a syntactic problem. Carries the full payload
-    /// after `req ` so the caller can format an error message like
-    /// `Malformed expression in 'req': 'x > 5 +'.`.
+    /// Generic structural failure that surfaces as
+    /// `Malformed expression in 'req': '<source>'`.
     MalformedExpression { expression: String },
-    /// LHS variable name was syntactically invalid.
-    InvalidLhs { name: String },
-    /// LHS was missing entirely (e.g. `req`, `req > 5`).
-    MissingLhs,
-    /// A symbol was found between LHS and RHS that isn't one of the
-    /// supported comparison operators. Carries the offending token.
-    UnknownOperator { op: String },
-    /// LHS and RHS inferred to different kinds.
+    /// The tokenizer hit a symbol that isn't part of any `req`-grammar
+    /// token (e.g. `&`, `|`, `~`). Not all of these are comparison
+    /// operators — the diagnostic must say "unknown operator", not
+    /// "unknown comparison operator".
+    UnknownSymbol { symbol: String },
+    /// LHS and RHS of a comparison inferred to different kinds.
     TypeMismatch { left: ValueKind, right: ValueKind },
-    /// An ordering operator (`<`, `<=`, `>`, `>=`) was applied to a kind
-    /// that doesn't support ordering. Today unreachable through normal
-    /// parsing because only `Integer` exists and it is ordered; wired now
-    /// so the error surface is ready for future kinds.
+    /// An ordering operator was applied to a non-ordered kind.
     NonOrderedComparison {
         operator: ComparisonOperator,
         kind: ValueKind,
     },
     /// An arithmetic subexpression operates on a non-numeric kind.
     NonNumericArithmetic { kind: ValueKind },
+
+    // Logical-operator-specific errors with rich payloads.
+    /// `and`/`or` had a bare arithmetic operand (left or right) instead of
+    /// a comparison.
+    LogicalBareIntegerOperand { operator: LogicalKeyword },
+    /// `not` had a bare arithmetic operand instead of a comparison.
+    LogicalBareIntegerOperandOfNot,
+    /// `and`/`or` had no left operand. Source is the trimmed condition.
+    LogicalMissingLeftOperand {
+        operator: LogicalKeyword,
+        source: String,
+    },
+    /// `and`/`or` had no right operand. Source is the trimmed condition.
+    LogicalMissingRightOperand {
+        operator: LogicalKeyword,
+        source: String,
+    },
+    /// `not` had no operand. Source is the trimmed condition.
+    LogicalMissingNotOperand { source: String },
+    /// Unbalanced parens in the condition. Source is the trimmed condition.
+    LogicalUnbalancedParentheses { source: String },
+    /// A literal in the condition's arithmetic exceeded the integer
+    /// range. Carries the offending literal text.
+    LiteralOverflow { literal: String },
+    /// The boolean condition nested deeper than the parser's recursion
+    /// cap. See [`crate::boolean_expression::MAX_EXPRESSION_DEPTH`].
+    ExpressionTooDeep,
+    /// `==` was used in a comparison. Cuentitos uses `=` for equality;
+    /// this variant carries no payload because the caller knows the
+    /// context. See [`BooleanParseError::DoubleEquals`].
+    DoubleEquals,
 }
 
 /// Try to parse `content` as a `req` statement.
 ///
-/// `content` should already have indentation stripped. Returns
-/// `Err(NotARequirementStatement)` if the line doesn't begin with the
-/// `req` keyword.
-pub fn parse_requirement(
+/// `content` should already have indentation stripped, and the caller is
+/// responsible for filtering with [`is_requirement_line`] first —
+/// calling this on a non-`req` line is a contract violation. In debug
+/// builds it panics; in release it surfaces as a `MissingCondition` so
+/// the parser still makes progress.
+///
+/// `pub(crate)` so the predicate-then-parse contract is enforced by
+/// crate-level visibility — external callers cannot bypass
+/// `is_requirement_line` and stumble into the misleading
+/// `MissingCondition` fallback.
+pub(crate) fn parse_requirement(
     content: &str,
     database: &Database,
 ) -> Result<ParsedRequirement, RequirementParseError> {
     let rest = match strip_keyword(content, "req") {
         StripResult::Stripped(rest) => rest,
-        StripResult::BareKeyword => return Err(RequirementParseError::MissingLhs),
-        StripResult::NotKeyword => return Err(RequirementParseError::NotARequirementStatement),
+        StripResult::BareKeyword => return Err(RequirementParseError::MissingCondition),
+        StripResult::NotKeyword => {
+            debug_assert!(
+                false,
+                "parse_requirement called on non-req line — caller must filter with is_requirement_line: {content:?}"
+            );
+            return Err(RequirementParseError::MissingCondition);
+        }
     };
 
     let payload = rest.trim();
     if payload.is_empty() {
-        return Err(RequirementParseError::MissingLhs);
-    }
-
-    let (lhs, after_lhs) = split_lhs(payload);
-    if lhs.is_empty() {
-        return Err(RequirementParseError::MissingLhs);
-    }
-    if !is_valid_identifier(lhs) {
-        return Err(RequirementParseError::InvalidLhs {
-            name: lhs.to_string(),
-        });
-    }
-
-    let variable_id =
-        database
-            .variable_id(lhs)
-            .ok_or_else(|| RequirementParseError::UndefinedVariable {
-                name: lhs.to_string(),
-            })?;
-
-    let after_lhs = after_lhs.trim_start();
-    let (operator, after_op) = match parse_compare_op(after_lhs) {
-        Some((operator, rest)) => (operator, rest),
-        None => {
-            if let Some(token) = leading_symbol_token(after_lhs) {
-                return Err(RequirementParseError::UnknownOperator { op: token });
-            }
-            return Err(RequirementParseError::MalformedExpression {
-                expression: payload.to_string(),
-            });
-        }
-    };
-
-    let rhs = after_op.trim();
-    if rhs.is_empty() {
-        return Err(RequirementParseError::MalformedExpression {
-            expression: payload.to_string(),
-        });
+        return Err(RequirementParseError::MissingCondition);
     }
 
     let resolver = DatabaseResolver { database };
-    let right = match parse_expression(rhs, &resolver) {
+    let expression = match parse_boolean_expression(payload, &resolver) {
         Ok(expression) => expression,
-        Err(ParseExpressionError::UndefinedVariable { name }) => {
-            return Err(RequirementParseError::UndefinedVariable { name });
-        }
-        Err(ParseExpressionError::Malformed) | Err(ParseExpressionError::Overflow) => {
-            return Err(RequirementParseError::MalformedExpression {
-                expression: payload.to_string(),
-            });
-        }
+        Err(error) => return Err(map_boolean_error(error, payload)),
     };
 
-    let left = Expression::Variable(variable_id);
+    // Walk each leaf comparison so type/ordering errors surface with the
+    // same diagnostics the single-comparison parser used to emit.
+    validate_leaves(&expression, database)?;
 
-    let left_kind = infer_kind(&left, database)?;
-    let right_kind = infer_kind(&right, database)?;
+    Ok(ParsedRequirement { expression })
+}
 
+fn map_boolean_error(error: BooleanParseError, source: &str) -> RequirementParseError {
+    match error {
+        BooleanParseError::BareIntegerOperandOfLogical { operator } => {
+            RequirementParseError::LogicalBareIntegerOperand { operator }
+        }
+        BooleanParseError::BareIntegerOperandOfNot => {
+            RequirementParseError::LogicalBareIntegerOperandOfNot
+        }
+        BooleanParseError::BareIntegerAtTop => RequirementParseError::MalformedExpression {
+            expression: source.to_string(),
+        },
+        BooleanParseError::MissingLeftOperand { operator } => {
+            RequirementParseError::LogicalMissingLeftOperand {
+                operator,
+                source: source.to_string(),
+            }
+        }
+        BooleanParseError::MissingRightOperand { operator } => {
+            RequirementParseError::LogicalMissingRightOperand {
+                operator,
+                source: source.to_string(),
+            }
+        }
+        BooleanParseError::MissingNotOperand => RequirementParseError::LogicalMissingNotOperand {
+            source: source.to_string(),
+        },
+        BooleanParseError::UnbalancedParentheses => {
+            RequirementParseError::LogicalUnbalancedParentheses {
+                source: source.to_string(),
+            }
+        }
+        BooleanParseError::UndefinedVariable { name } => {
+            RequirementParseError::UndefinedVariable { name }
+        }
+        BooleanParseError::UnknownSymbol { symbol } => {
+            RequirementParseError::UnknownSymbol { symbol }
+        }
+        BooleanParseError::LiteralOverflow { literal } => {
+            RequirementParseError::LiteralOverflow { literal }
+        }
+        BooleanParseError::ExpressionTooDeep => RequirementParseError::ExpressionTooDeep,
+        BooleanParseError::DoubleEquals => RequirementParseError::DoubleEquals,
+        BooleanParseError::Malformed => RequirementParseError::MalformedExpression {
+            expression: source.to_string(),
+        },
+    }
+}
+
+// TODO: thread a sub-expression index or snippet through TypeMismatch /
+// NonOrderedComparison / NonNumericArithmetic when non-Integer kinds
+// land. Today the first failing comparison surfaces with no breadcrumb
+// about which leaf in the tree it was — fine while Integer is the only
+// kind, but `a > 0 and b > c` with a Float `c` will be hard to debug.
+fn validate_leaves(
+    expression: &BooleanExpression,
+    database: &Database,
+) -> Result<(), RequirementParseError> {
+    match expression {
+        BooleanExpression::Comparison(statement) => validate_comparison(statement, database),
+        BooleanExpression::And(left, right) | BooleanExpression::Or(left, right) => {
+            validate_leaves(left, database)?;
+            validate_leaves(right, database)
+        }
+        BooleanExpression::Not(inner) => validate_leaves(inner, database),
+    }
+}
+
+fn validate_comparison(
+    statement: &RequirementStatement,
+    database: &Database,
+) -> Result<(), RequirementParseError> {
+    let left_kind = infer_kind(&statement.left, database)?;
+    let right_kind = infer_kind(&statement.right, database)?;
     if left_kind != right_kind {
         return Err(RequirementParseError::TypeMismatch {
             left: left_kind,
             right: right_kind,
         });
     }
-
-    if operator.requires_ordering() && !left_kind.is_ordered() {
+    if statement.operator.requires_ordering() && !left_kind.is_ordered() {
         return Err(RequirementParseError::NonOrderedComparison {
-            operator,
+            operator: statement.operator,
             kind: left_kind,
         });
     }
-
-    Ok(ParsedRequirement {
-        left,
-        operator,
-        right,
-    })
+    Ok(())
 }
 
 fn infer_kind(
-    expression: &Expression,
+    expression: &cuentitos_common::Expression,
     database: &Database,
 ) -> Result<ValueKind, RequirementParseError> {
     infer_type(expression, database).map_err(|err| match err {
@@ -175,13 +241,24 @@ impl VariableResolver for DatabaseResolver<'_> {
     }
 }
 
+/// Cheap predicate: does `content` (already trimmed of indentation)
+/// begin with the `req` keyword followed by ASCII whitespace? Callers
+/// must filter with this before [`parse_requirement`] — calling
+/// `parse_requirement` on anything else is a contract violation.
+pub fn is_requirement_line(content: &str) -> bool {
+    matches!(
+        strip_keyword(content, "req"),
+        StripResult::Stripped(_) | StripResult::BareKeyword
+    )
+}
+
 enum StripResult<'a> {
     Stripped(&'a str),
     BareKeyword,
     NotKeyword,
 }
 
-/// See `set_parser::strip_keyword` — same shape: tolerates space *or* tab
+/// Same shape as `set_parser::strip_keyword`: tolerates space *or* tab
 /// after the keyword so `req\tx > 5` parses cleanly.
 fn strip_keyword<'a>(content: &'a str, keyword: &str) -> StripResult<'a> {
     if content == keyword {
@@ -199,69 +276,10 @@ fn strip_keyword<'a>(content: &'a str, keyword: &str) -> StripResult<'a> {
     }
 }
 
-/// Take the leading identifier-shaped run of characters from `s` and return
-/// `(lhs, rest)`. An empty string is returned when `s` doesn't begin with an
-/// identifier character — the caller surfaces the appropriate error.
-fn split_lhs(s: &str) -> (&str, &str) {
-    let end = s
-        .char_indices()
-        .find(|(_, c)| !(c.is_ascii_alphanumeric() || *c == '_'))
-        .map(|(i, _)| i)
-        .unwrap_or(s.len());
-    s.split_at(end)
-}
-
-/// Try to consume a comparison operator from the start of `s`. Longer
-/// prefixes (`>=`, `<=`, `!=`) must be tried before their single-char
-/// counterparts.
-fn parse_compare_op(s: &str) -> Option<(ComparisonOperator, &str)> {
-    if let Some(rest) = s.strip_prefix(">=") {
-        return Some((ComparisonOperator::GreaterOrEqual, rest));
-    }
-    if let Some(rest) = s.strip_prefix("<=") {
-        return Some((ComparisonOperator::LessOrEqual, rest));
-    }
-    if let Some(rest) = s.strip_prefix("!=") {
-        return Some((ComparisonOperator::NotEqual, rest));
-    }
-    if let Some(rest) = s.strip_prefix('=') {
-        return Some((ComparisonOperator::Equal, rest));
-    }
-    if let Some(rest) = s.strip_prefix('>') {
-        return Some((ComparisonOperator::Greater, rest));
-    }
-    if let Some(rest) = s.strip_prefix('<') {
-        return Some((ComparisonOperator::Less, rest));
-    }
-    None
-}
-
-/// Read a contiguous run of operator-shaped characters from the start of
-/// `s` to surface as an "Unknown comparison operator" payload. Returns
-/// `None` when the leading char isn't operator-shaped (in which case the
-/// caller falls back to a generic malformed-expression error).
-fn leading_symbol_token(s: &str) -> Option<String> {
-    let mut chars = s.chars();
-    let first = chars.next()?;
-    if first.is_ascii_alphanumeric() || first == '_' || first.is_whitespace() {
-        return None;
-    }
-    let mut token = String::new();
-    token.push(first);
-    for c in chars {
-        if c.is_ascii_alphanumeric() || c == '_' || c.is_whitespace() || c == '(' || c == ')' {
-            break;
-        }
-        token.push(c);
-    }
-    Some(token)
-}
-
 #[cfg(test)]
 mod tests {
-    // TODO: when Float/Boolean ValueKinds land, add type-mismatch coverage here.
     use super::*;
-    use cuentitos_common::{Value, Variable};
+    use cuentitos_common::{Expression, Value, Variable};
 
     fn db_with(vars: &[&str]) -> Database {
         let mut db = Database::new();
@@ -269,6 +287,19 @@ mod tests {
             db.add_variable(Variable::new_integer(*name, 0));
         }
         db
+    }
+
+    fn assert_comparison(
+        expression: &BooleanExpression,
+        expected_operator: ComparisonOperator,
+    ) -> &RequirementStatement {
+        match expression {
+            BooleanExpression::Comparison(stmt) => {
+                assert_eq!(stmt.operator, expected_operator);
+                stmt
+            }
+            other => panic!("expected Comparison, got {:?}", other),
+        }
     }
 
     #[test]
@@ -283,25 +314,47 @@ mod tests {
             ("req x != 0", ComparisonOperator::NotEqual),
         ] {
             let parsed = parse_requirement(input, &db).unwrap();
-            assert_eq!(parsed.operator, expected_operator, "input: {input}");
-            assert_eq!(parsed.left, Expression::Variable(0));
-            assert_eq!(parsed.right, Expression::Literal(Value::Integer(0)));
+            let stmt = assert_comparison(&parsed.expression, expected_operator);
+            assert_eq!(stmt.left, Expression::Variable(0));
+            assert_eq!(stmt.right, Expression::Literal(Value::Integer(0)));
         }
+    }
+
+    #[test]
+    fn parses_logical_and() {
+        let db = db_with(&["x", "y"]);
+        let parsed = parse_requirement("req x > 0 and y > 0", &db).unwrap();
+        assert!(matches!(parsed.expression, BooleanExpression::And(_, _)));
+    }
+
+    #[test]
+    fn parses_logical_or() {
+        let db = db_with(&["x", "y"]);
+        let parsed = parse_requirement("req x > 0 or y > 0", &db).unwrap();
+        assert!(matches!(parsed.expression, BooleanExpression::Or(_, _)));
+    }
+
+    #[test]
+    fn parses_logical_not() {
+        let db = db_with(&["x"]);
+        let parsed = parse_requirement("req not x > 0", &db).unwrap();
+        assert!(matches!(parsed.expression, BooleanExpression::Not(_)));
     }
 
     #[test]
     fn parses_arithmetic_rhs() {
         let db = db_with(&["x", "y"]);
         let parsed = parse_requirement("req x > y + 1", &db).unwrap();
-        assert_eq!(parsed.operator, ComparisonOperator::Greater);
-        assert!(matches!(parsed.right, Expression::Binary { .. }));
+        let stmt = assert_comparison(&parsed.expression, ComparisonOperator::Greater);
+        assert!(matches!(stmt.right, Expression::Binary { .. }));
     }
 
     #[test]
     fn parses_negative_literal_rhs() {
         let db = db_with(&["x"]);
         let parsed = parse_requirement("req x > -10", &db).unwrap();
-        assert_eq!(parsed.right, Expression::Literal(Value::Integer(-10)));
+        let stmt = assert_comparison(&parsed.expression, ComparisonOperator::Greater);
+        assert_eq!(stmt.right, Expression::Literal(Value::Integer(-10)));
     }
 
     #[test]
@@ -309,17 +362,6 @@ mod tests {
         let db = db_with(&[]);
         assert_eq!(
             parse_requirement("req mana > 0", &db).unwrap_err(),
-            RequirementParseError::UndefinedVariable {
-                name: "mana".to_string()
-            }
-        );
-    }
-
-    #[test]
-    fn returns_undefined_for_rhs() {
-        let db = db_with(&["health"]);
-        assert_eq!(
-            parse_requirement("req health > mana", &db).unwrap_err(),
             RequirementParseError::UndefinedVariable {
                 name: "mana".to_string()
             }
@@ -349,65 +391,132 @@ mod tests {
     }
 
     #[test]
-    fn returns_unknown_operator_for_tilde() {
+    fn returns_unknown_symbol_for_tilde() {
         let db = db_with(&["x"]);
         assert_eq!(
             parse_requirement("req x ~ 5", &db).unwrap_err(),
-            RequirementParseError::UnknownOperator {
-                op: "~".to_string()
+            RequirementParseError::UnknownSymbol {
+                symbol: "~".to_string()
             }
         );
     }
 
     #[test]
-    fn returns_not_a_req_for_unrelated_lines() {
-        let db = db_with(&[]);
+    fn returns_unknown_symbol_for_ampersand() {
+        // `&` is the most common typo for `and` — surface it as an
+        // unknown operator (not "unknown comparison operator", since `&`
+        // isn't a comparison operator at all).
+        let db = db_with(&["x", "y"]);
         assert_eq!(
-            parse_requirement("Hello world", &db).unwrap_err(),
-            RequirementParseError::NotARequirementStatement
+            parse_requirement("req x > 0 & y > 0", &db).unwrap_err(),
+            RequirementParseError::UnknownSymbol {
+                symbol: "&".to_string()
+            }
         );
     }
 
     #[test]
-    fn bare_keyword_is_missing_lhs() {
+    fn is_requirement_line_filters_non_keyword_lines() {
+        assert!(is_requirement_line("req x > 0"));
+        assert!(is_requirement_line("req\tx > 0"));
+        assert!(is_requirement_line("req"));
+        assert!(!is_requirement_line("Hello world"));
+        assert!(!is_requirement_line("require x > 0"));
+    }
+
+    #[test]
+    fn bare_keyword_is_missing_condition() {
         let db = db_with(&[]);
         assert_eq!(
             parse_requirement("req", &db).unwrap_err(),
-            RequirementParseError::MissingLhs
+            RequirementParseError::MissingCondition
         );
     }
 
     #[test]
     fn tab_after_keyword_parses() {
-        // Regression: same shape as the set-parser tab fix.
         let db = db_with(&["x"]);
         let parsed = parse_requirement("req\tx > 0", &db).unwrap();
-        assert_eq!(parsed.left, Expression::Variable(0));
-        assert_eq!(parsed.operator, ComparisonOperator::Greater);
+        let stmt = assert_comparison(&parsed.expression, ComparisonOperator::Greater);
+        assert_eq!(stmt.left, Expression::Variable(0));
     }
 
     #[test]
-    fn evaluates_compare_op_on_integers() {
-        let cases = [
-            (ComparisonOperator::Greater, 2, 1, true),
-            (ComparisonOperator::Greater, 1, 1, false),
-            (ComparisonOperator::GreaterOrEqual, 1, 1, true),
-            (ComparisonOperator::LessOrEqual, 1, 1, true),
-            (ComparisonOperator::Less, 0, 1, true),
-            (ComparisonOperator::Equal, 5, 5, true),
-            (ComparisonOperator::Equal, 5, 4, false),
-            (ComparisonOperator::NotEqual, 5, 4, true),
-            (ComparisonOperator::NotEqual, 5, 5, false),
-        ];
-        for (op, l, r, expected) in cases {
-            assert_eq!(
-                op.apply(&Value::Integer(l), &Value::Integer(r)),
-                Ok(expected),
-                "op={:?}, l={}, r={}",
-                op,
-                l,
-                r,
-            );
-        }
+    fn rejects_bare_integer_left_of_and() {
+        let db = db_with(&["health", "shield"]);
+        assert_eq!(
+            parse_requirement("req health and shield > 0", &db).unwrap_err(),
+            RequirementParseError::LogicalBareIntegerOperand {
+                operator: LogicalKeyword::And,
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_bare_integer_right_of_and() {
+        let db = db_with(&["x", "y"]);
+        assert_eq!(
+            parse_requirement("req x > 0 and y", &db).unwrap_err(),
+            RequirementParseError::LogicalBareIntegerOperand {
+                operator: LogicalKeyword::And,
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_bare_integer_right_of_or() {
+        let db = db_with(&["x", "y"]);
+        assert_eq!(
+            parse_requirement("req x > 0 or y", &db).unwrap_err(),
+            RequirementParseError::LogicalBareIntegerOperand {
+                operator: LogicalKeyword::Or,
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_missing_right_operand_and() {
+        let db = db_with(&["x"]);
+        assert_eq!(
+            parse_requirement("req x > 0 and", &db).unwrap_err(),
+            RequirementParseError::LogicalMissingRightOperand {
+                operator: LogicalKeyword::And,
+                source: "x > 0 and".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_unbalanced_open_paren() {
+        let db = db_with(&["x"]);
+        assert_eq!(
+            parse_requirement("req (x > 0 and x < 10", &db).unwrap_err(),
+            RequirementParseError::LogicalUnbalancedParentheses {
+                source: "(x > 0 and x < 10".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_literal_overflow_with_literal_in_error() {
+        let db = db_with(&["x"]);
+        assert_eq!(
+            parse_requirement("req x > 99999999999999999999", &db).unwrap_err(),
+            RequirementParseError::LiteralOverflow {
+                literal: "99999999999999999999".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_double_equals_with_dedicated_error() {
+        // `==` is what C/Python users type instead of `=` for equality.
+        // The dedicated error lets the caller emit a message that names
+        // the right operator instead of falling through to "malformed".
+        let db = db_with(&["x"]);
+        assert_eq!(
+            parse_requirement("req x == 5", &db).unwrap_err(),
+            RequirementParseError::DoubleEquals
+        );
     }
 }

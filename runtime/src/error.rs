@@ -1,4 +1,4 @@
-use cuentitos_common::PathResolutionError;
+use cuentitos_common::{PathResolutionError, ValueKind};
 use std::fmt;
 use std::path::PathBuf;
 
@@ -24,6 +24,22 @@ pub enum RuntimeError {
     DivisionByZero { file: Option<PathBuf>, line: usize },
     /// An arithmetic expression evaluated at runtime overflowed an `i64`.
     IntegerOverflow { file: Option<PathBuf>, line: usize },
+    /// A binary operator's operands had mismatched value kinds at
+    /// runtime. Unreachable while `Value` has only the `Integer`
+    /// variant — parser-time type inference catches every reachable
+    /// mismatch on the call path that surfaces here — but the variant
+    /// exists today so the runtime path doesn't `panic!` once a second
+    /// `Value` variant lands.
+    ///
+    /// TODO: covered once Float/String land in `Value`. The fields
+    /// match the upstream [`cuentitos_common::EvaluationError::TypeMismatch`]
+    /// payload so the mapping is a direct field copy.
+    EvaluationTypeMismatch {
+        expected: ValueKind,
+        found: ValueKind,
+        file: Option<PathBuf>,
+        line: usize,
+    },
 }
 
 impl fmt::Display for RuntimeError {
@@ -62,6 +78,23 @@ impl fmt::Display for RuntimeError {
                     .and_then(|n| n.to_str())
                     .unwrap_or("<script>");
                 write!(f, "{}:{}: RUNTIME ERROR: Integer overflow.", prefix, line)
+            }
+            RuntimeError::EvaluationTypeMismatch {
+                expected,
+                found,
+                file,
+                line,
+            } => {
+                let prefix = file
+                    .as_ref()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("<script>");
+                write!(
+                    f,
+                    "{}:{}: RUNTIME ERROR: Type mismatch in expression: expected {}, found {}.",
+                    prefix, line, expected, found
+                )
             }
         }
     }

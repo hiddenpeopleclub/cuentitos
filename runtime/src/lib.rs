@@ -600,29 +600,21 @@ impl Runtime {
     /// walks past them and either presents the next passing option or, if
     /// none remain, lands on the post-options content.
     fn evaluate_requirement_gating(&self, block_id: BlockId) -> Result<bool, RuntimeError> {
+        // The lookup closure captures `&self.state.variable_values` and
+        // is identical for every sibling `req`. Build it once outside
+        // the loop — same shape `apply_set` uses for its one-shot eval.
+        let lookup = cuentitos_common::variable_lookup(&self.state.variable_values);
         for &child_id in &self.database.blocks[block_id].children {
             let BlockType::Requirement(requirement_id) = self.database.blocks[child_id].block_type
             else {
                 continue;
             };
-            let statement = &self.database.requirements[requirement_id];
+            let expression = &self.database.requirements[requirement_id];
             let line = self.database.blocks[child_id].line;
-            let values = &self.state.variable_values;
-            let lookup = |id: VariableId| values[id].clone();
-            let left = match cuentitos_common::evaluate(&statement.left, &lookup) {
-                Ok(value) => value,
-                Err(err) => return Err(self.evaluation_error_to_runtime(err, line)),
-            };
-            let right = match cuentitos_common::evaluate(&statement.right, &lookup) {
-                Ok(value) => value,
-                Err(err) => return Err(self.evaluation_error_to_runtime(err, line)),
-            };
-            // Parser-time inference guarantees both sides have the same kind
-            // and that ordering operators only apply to ordered kinds, so a
-            // `TypeMismatch` here is unreachable today; if a future operator
-            // can produce one, it propagates through the same channel as
-            // arithmetic errors.
-            let outcome = match statement.operator.apply(&left, &right) {
+            // `BooleanExpression::evaluate` short-circuits internally for
+            // `and`/`or`/`not`. Sibling `req`s remain implicitly ANDed by
+            // the loop here — failing one short-circuits the whole gate.
+            let outcome = match expression.evaluate(&lookup) {
                 Ok(value) => value,
                 Err(err) => return Err(self.evaluation_error_to_runtime(err, line)),
             };
@@ -635,9 +627,12 @@ impl Runtime {
 
     /// Translate an [`EvaluationError`] into a [`RuntimeError`] using the
     /// file/line context for this runtime. Today only `DivisionByZero` and
-    /// `Overflow` are reachable through normal scripts; `TypeMismatch` is
-    /// surfaced if it ever fires (parser-time inference makes it
-    /// unreachable today).
+    /// `Overflow` are reachable through normal scripts; `TypeMismatch`
+    /// is unreachable while `Value` has the single `Integer` variant
+    /// because parser-time inference rejects mixed-kind operands, but
+    /// it is plumbed through to a typed [`RuntimeError::EvaluationTypeMismatch`]
+    /// so the runtime path doesn't `panic!` once a second `Value`
+    /// variant lands. TODO: covered once Float/String land in `Value`.
     fn evaluation_error_to_runtime(&self, err: EvaluationError, line: usize) -> RuntimeError {
         match err {
             EvaluationError::DivisionByZero => RuntimeError::DivisionByZero {
@@ -648,10 +643,13 @@ impl Runtime {
                 file: self.file_path.clone(),
                 line,
             },
-            EvaluationError::TypeMismatch { .. } => {
-                unreachable!(
-                    "type-checked at parse time; binary operators reject mixed-kind operands"
-                )
+            EvaluationError::TypeMismatch { expected, found } => {
+                RuntimeError::EvaluationTypeMismatch {
+                    expected,
+                    found,
+                    file: self.file_path.clone(),
+                    line,
+                }
             }
         }
     }
@@ -664,12 +662,11 @@ impl Runtime {
         // before the final write to `self.state.variable_values`.
         let (operator, variable_id, rhs_value) = {
             let statement = &self.database.sets[set_id];
-            let values = &self.state.variable_values;
-            let rhs =
-                match cuentitos_common::evaluate(&statement.expression, &|id| values[id].clone()) {
-                    Ok(value) => value,
-                    Err(err) => return Err(self.evaluation_error_to_runtime(err, line)),
-                };
+            let lookup = cuentitos_common::variable_lookup(&self.state.variable_values);
+            let rhs = match cuentitos_common::evaluate(&statement.expression, &lookup) {
+                Ok(value) => value.into_owned(),
+                Err(err) => return Err(self.evaluation_error_to_runtime(err, line)),
+            };
             (statement.operator, statement.variable_id, rhs)
         };
 
@@ -681,7 +678,6 @@ impl Runtime {
             self.state.variable_values[variable_id] = rhs_value;
             return Ok(());
         }
-        let current = self.state.variable_values[variable_id].clone();
         let binary_operator = match operator {
             AssignmentOperator::Assign => unreachable!("handled by the early return above"),
             AssignmentOperator::AddAssign => BinaryOperator::Add,
@@ -690,7 +686,7 @@ impl Runtime {
             AssignmentOperator::DivideAssign => BinaryOperator::Divide,
         };
         let new_value = binary_operator
-            .apply(current, rhs_value)
+            .apply(&self.state.variable_values[variable_id], &rhs_value)
             .map_err(|err| self.evaluation_error_to_runtime(err, line))?;
         self.state.variable_values[variable_id] = new_value;
         Ok(())

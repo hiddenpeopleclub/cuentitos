@@ -26,10 +26,6 @@ pub struct ParsedSet {
 /// message like `Malformed 'set' statement: '5 +'.`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetParseError {
-    /// The line did not begin with `set ` followed by something parseable.
-    /// Carries the trimmed line so the caller can decide whether to emit a
-    /// targeted error or fall through to other parsers.
-    NotASetStatement,
     /// LHS or RHS referenced a variable that was never declared.
     UndefinedVariable { name: String },
     /// RHS expression had a syntactic problem.
@@ -50,18 +46,35 @@ pub enum SetParseError {
     },
     /// A compound assignment (`+=` etc.) targets a non-numeric variable.
     NonNumericAssignment { variable: String, kind: ValueKind },
+    /// A literal in the RHS arithmetic exceeded the integer range.
+    /// Carries the offending literal text. Mirrors
+    /// [`crate::parsers::requirement_parser::RequirementParseError::LiteralOverflow`]
+    /// so the two sibling parsers produce parallel diagnostics.
+    LiteralOverflow { literal: String },
 }
 
 /// Try to parse `content` as a `set` statement.
 ///
-/// `content` should already have indentation stripped. Returns
-/// `Err(NotASetStatement)` if the line doesn't begin with the `set` keyword
-/// — callers fall through to other parsers in that case.
-pub fn parse_set(content: &str, database: &Database) -> Result<ParsedSet, SetParseError> {
+/// `content` should already have indentation stripped, and the caller is
+/// responsible for filtering with [`is_set_line`] first — calling this
+/// on a non-`set` line is a contract violation. In debug builds it
+/// panics; in release it surfaces as a `MissingLhs` so the parser still
+/// makes progress.
+///
+/// `pub(crate)` so the predicate-then-parse contract is enforced by
+/// crate-level visibility — external callers cannot bypass `is_set_line`
+/// and stumble into the misleading `MissingLhs` fallback.
+pub(crate) fn parse_set(content: &str, database: &Database) -> Result<ParsedSet, SetParseError> {
     let rest = match strip_keyword(content, "set") {
         StripResult::Stripped(rest) => rest,
         StripResult::BareKeyword => return Err(SetParseError::MissingLhs),
-        StripResult::NotKeyword => return Err(SetParseError::NotASetStatement),
+        StripResult::NotKeyword => {
+            debug_assert!(
+                false,
+                "parse_set called on non-set line — caller must filter with is_set_line: {content:?}"
+            );
+            return Err(SetParseError::MissingLhs);
+        }
     };
 
     let (lhs_raw, operator, rhs_raw) = split_lhs_op_rhs(rest)?;
@@ -94,7 +107,10 @@ pub fn parse_set(content: &str, database: &Database) -> Result<ParsedSet, SetPar
         Err(ParseExpressionError::UndefinedVariable { name }) => {
             return Err(SetParseError::UndefinedVariable { name });
         }
-        Err(ParseExpressionError::Malformed) | Err(ParseExpressionError::Overflow) => {
+        Err(ParseExpressionError::Overflow { literal }) => {
+            return Err(SetParseError::LiteralOverflow { literal });
+        }
+        Err(ParseExpressionError::Malformed) => {
             return Err(SetParseError::MalformedExpression {
                 expression: rhs.to_string(),
             });
@@ -139,6 +155,17 @@ pub fn parse_set(content: &str, database: &Database) -> Result<ParsedSet, SetPar
         operator,
         expression,
     })
+}
+
+/// Cheap predicate: does `content` (already trimmed of indentation) begin
+/// with the `set` keyword followed by ASCII whitespace? Callers must
+/// filter with this before [`parse_set`] — calling `parse_set` on
+/// anything else is a contract violation.
+pub fn is_set_line(content: &str) -> bool {
+    matches!(
+        strip_keyword(content, "set"),
+        StripResult::Stripped(_) | StripResult::BareKeyword
+    )
 }
 
 enum StripResult<'a> {
@@ -297,12 +324,54 @@ mod tests {
     }
 
     #[test]
-    fn returns_not_a_set_for_unrelated_lines() {
-        let db = db_with(&[]);
+    fn returns_literal_overflow_for_positive_literal() {
+        // A bare positive literal above the `u64` range surfaces with
+        // its text intact so the diagnostic can name it. Previously
+        // collapsed into MalformedExpression because the set tokenizer
+        // discarded the offending text on `u64::from_str` failure.
+        let db = db_with(&["x"]);
         assert_eq!(
-            parse_set("Hello", &db).unwrap_err(),
-            SetParseError::NotASetStatement
+            parse_set("set x = 99999999999999999999", &db).unwrap_err(),
+            SetParseError::LiteralOverflow {
+                literal: "99999999999999999999".to_string(),
+            }
         );
+    }
+
+    #[test]
+    fn returns_literal_overflow_for_negative_literal() {
+        // `-9223372036854775809` = -(i64::MAX + 2). The magnitude fits
+        // in u64 so the tokenizer accepts it, then `parse_unary` folds
+        // the sign and `negate_u64_literal` catches the overflow.
+        let db = db_with(&["x"]);
+        assert_eq!(
+            parse_set("set x = -9223372036854775809", &db).unwrap_err(),
+            SetParseError::LiteralOverflow {
+                literal: "-9223372036854775809".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn returns_literal_overflow_for_positive_one_above_i64_max() {
+        // `9223372036854775808` = i64::MAX + 1. Fits in u64 but not i64.
+        // Surfaces from the shared arith `parse_primary` int branch.
+        let db = db_with(&["x"]);
+        assert_eq!(
+            parse_set("set x = 9223372036854775808", &db).unwrap_err(),
+            SetParseError::LiteralOverflow {
+                literal: "9223372036854775808".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn is_set_line_filters_non_keyword_lines() {
+        assert!(is_set_line("set x = 5"));
+        assert!(is_set_line("set\tx = 5"));
+        assert!(is_set_line("set"));
+        assert!(!is_set_line("Hello"));
+        assert!(!is_set_line("seth = 1"));
     }
 
     #[test]
