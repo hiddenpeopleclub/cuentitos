@@ -46,6 +46,11 @@ pub enum SetParseError {
     },
     /// A compound assignment (`+=` etc.) targets a non-numeric variable.
     NonNumericAssignment { variable: String, kind: ValueKind },
+    /// A literal in the RHS arithmetic exceeded the integer range.
+    /// Carries the offending literal text. Mirrors
+    /// [`crate::parsers::requirement_parser::RequirementParseError::LiteralOverflow`]
+    /// so the two sibling parsers produce parallel diagnostics.
+    LiteralOverflow { literal: String },
 }
 
 /// Try to parse `content` as a `set` statement.
@@ -102,7 +107,10 @@ pub(crate) fn parse_set(content: &str, database: &Database) -> Result<ParsedSet,
         Err(ParseExpressionError::UndefinedVariable { name }) => {
             return Err(SetParseError::UndefinedVariable { name });
         }
-        Err(ParseExpressionError::Malformed) | Err(ParseExpressionError::Overflow) => {
+        Err(ParseExpressionError::Overflow { literal }) => {
+            return Err(SetParseError::LiteralOverflow { literal });
+        }
+        Err(ParseExpressionError::Malformed) => {
             return Err(SetParseError::MalformedExpression {
                 expression: rhs.to_string(),
             });
@@ -311,6 +319,48 @@ mod tests {
             err,
             SetParseError::MalformedExpression {
                 expression: "5 +".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn returns_literal_overflow_for_positive_literal() {
+        // A bare positive literal above the `u64` range surfaces with
+        // its text intact so the diagnostic can name it. Previously
+        // collapsed into MalformedExpression because the set tokenizer
+        // discarded the offending text on `u64::from_str` failure.
+        let db = db_with(&["x"]);
+        assert_eq!(
+            parse_set("set x = 99999999999999999999", &db).unwrap_err(),
+            SetParseError::LiteralOverflow {
+                literal: "99999999999999999999".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn returns_literal_overflow_for_negative_literal() {
+        // `-9223372036854775809` = -(i64::MAX + 2). The magnitude fits
+        // in u64 so the tokenizer accepts it, then `parse_unary` folds
+        // the sign and `negate_u64_literal` catches the overflow.
+        let db = db_with(&["x"]);
+        assert_eq!(
+            parse_set("set x = -9223372036854775809", &db).unwrap_err(),
+            SetParseError::LiteralOverflow {
+                literal: "-9223372036854775809".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn returns_literal_overflow_for_positive_one_above_i64_max() {
+        // `9223372036854775808` = i64::MAX + 1. Fits in u64 but not i64.
+        // Surfaces from the shared arith `parse_primary` int branch.
+        let db = db_with(&["x"]);
+        assert_eq!(
+            parse_set("set x = 9223372036854775808", &db).unwrap_err(),
+            SetParseError::LiteralOverflow {
+                literal: "9223372036854775808".to_string(),
             }
         );
     }

@@ -273,6 +273,15 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    /// A literal in a `set` RHS exceeded the integer range. Carries the
+    /// offending literal text. Parallel to
+    /// [`RequirementLiteralOverflow`](Self::RequirementLiteralOverflow)
+    /// so the two sibling parsers produce parallel diagnostics.
+    SetLiteralOverflow {
+        literal: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
     /// A `req` boolean condition nested deeper than the parser's
     /// recursion cap.
     ExpressionTooDeep {
@@ -736,6 +745,19 @@ impl fmt::Display for ParseError {
                 write!(
                     f,
                     "{}:{}: ERROR: Integer overflow in 'req' expression: literal '{}' exceeds the integer range.",
+                    file_prefix(file),
+                    line,
+                    literal
+                )
+            }
+            ParseError::SetLiteralOverflow {
+                literal,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Integer overflow in 'set' expression: literal '{}' exceeds the integer range.",
                     file_prefix(file),
                     line,
                     literal
@@ -1324,6 +1346,13 @@ impl Parser {
                                         ParseError::NonNumericAssignment {
                                             variable,
                                             kind,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    SetParseError::LiteralOverflow { literal } => {
+                                        ParseError::SetLiteralOverflow {
+                                            literal,
                                             file: self.file_path.clone(),
                                             line: context.current_line,
                                         }

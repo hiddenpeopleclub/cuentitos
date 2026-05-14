@@ -27,9 +27,11 @@ pub enum ParseExpressionError {
     Malformed,
     /// Identifier was not found in the supplied resolver.
     UndefinedVariable { name: String },
-    /// A constant subexpression overflowed at parse time. Triggered only by
-    /// negating a literal magnitude greater than `i64::MIN`.
-    Overflow,
+    /// A literal exceeded the `i64` range. Carries the offending literal
+    /// text (including any leading sign), parallel to
+    /// [`crate::arithmetic::ArithmeticError::LiteralOverflow`], so the
+    /// caller can format a diagnostic that names the literal.
+    Overflow { literal: String },
 }
 
 /// Look up a declared variable by name.
@@ -48,7 +50,10 @@ pub fn parse_expression(
     input: &str,
     resolver: &dyn VariableResolver,
 ) -> Result<Expression, ParseExpressionError> {
-    let tokens = tokenize(input).map_err(|_| ParseExpressionError::Malformed)?;
+    let tokens = tokenize(input).map_err(|err| match err {
+        TokenizeError::Malformed => ParseExpressionError::Malformed,
+        TokenizeError::LiteralOverflow(literal) => ParseExpressionError::Overflow { literal },
+    })?;
     if tokens.is_empty() {
         return Err(ParseExpressionError::Malformed);
     }
@@ -70,7 +75,7 @@ fn map_arithmetic_error(error: ArithmeticError) -> ParseExpressionError {
         ArithmeticError::Malformed | ArithmeticError::UnbalancedParentheses => {
             ParseExpressionError::Malformed
         }
-        ArithmeticError::LiteralOverflow { .. } => ParseExpressionError::Overflow,
+        ArithmeticError::LiteralOverflow { literal } => ParseExpressionError::Overflow { literal },
         ArithmeticError::UndefinedVariable { name } => {
             ParseExpressionError::UndefinedVariable { name }
         }
@@ -149,8 +154,20 @@ impl<'a> ArithmeticSource for SliceArithmeticSource<'a> {
 // `parse_unary` in the shared arithmetic body folds a leading `-` into the
 // literal so the full negative range is usable.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct TokenizeError;
+/// Errors the set-side tokenizer can surface. Kept as an enum (rather
+/// than a zero-sized struct) so a literal that exceeds the `u64` range
+/// at lex time carries its source text — parallel to the boolean-side
+/// tokenizer — and the eventual diagnostic can name the offending
+/// literal instead of falling through to the generic "malformed" error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum TokenizeError {
+    /// Catch-all for unrecognized symbols (anything that isn't a known
+    /// operator, paren, identifier-start, or digit).
+    Malformed,
+    /// An integer literal exceeded `u64`. Carries the offending text so
+    /// the caller can surface it as a literal-overflow diagnostic.
+    LiteralOverflow(String),
+}
 
 fn tokenize(input: &str) -> Result<Vec<ArithmeticToken>, TokenizeError> {
     let mut tokens = Vec::new();
@@ -195,8 +212,14 @@ fn tokenize(input: &str) -> Result<Vec<ArithmeticToken>, TokenizeError> {
                         break;
                     }
                 }
-                let n: u64 = buf.parse().map_err(|_| TokenizeError)?;
-                tokens.push(ArithmeticToken::Int(n));
+                // `u64::from_str` only fails here for magnitudes greater
+                // than `u64::MAX`. Preserve the literal text so the caller
+                // can surface the same overflow message as for in-range
+                // literals that exceed `i64`.
+                let parsed: u64 = buf
+                    .parse()
+                    .map_err(|_| TokenizeError::LiteralOverflow(buf.clone()))?;
+                tokens.push(ArithmeticToken::Int(parsed));
             }
             c if c.is_ascii_alphabetic() || c == '_' => {
                 let mut buf = String::new();
@@ -210,7 +233,7 @@ fn tokenize(input: &str) -> Result<Vec<ArithmeticToken>, TokenizeError> {
                 }
                 tokens.push(ArithmeticToken::Ident(buf));
             }
-            _ => return Err(TokenizeError),
+            _ => return Err(TokenizeError::Malformed),
         }
     }
     Ok(tokens)
@@ -281,7 +304,22 @@ mod tests {
         let resolver = no_vars();
         assert_eq!(
             parse_expression("-9223372036854775809", &resolver).unwrap_err(),
-            ParseExpressionError::Overflow
+            ParseExpressionError::Overflow {
+                literal: "-9223372036854775809".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_positive_overflow_carries_literal() {
+        // A bare positive literal larger than i64::MAX surfaces with
+        // its text intact so the caller can name it in the diagnostic.
+        let resolver = no_vars();
+        assert_eq!(
+            parse_expression("99999999999999999999", &resolver).unwrap_err(),
+            ParseExpressionError::Overflow {
+                literal: "99999999999999999999".to_string(),
+            }
         );
     }
 
