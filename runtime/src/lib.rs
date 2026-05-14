@@ -627,9 +627,12 @@ impl Runtime {
 
     /// Translate an [`EvaluationError`] into a [`RuntimeError`] using the
     /// file/line context for this runtime. Today only `DivisionByZero` and
-    /// `Overflow` are reachable through normal scripts; `TypeMismatch` is
-    /// surfaced if it ever fires (parser-time inference makes it
-    /// unreachable today).
+    /// `Overflow` are reachable through normal scripts; `TypeMismatch`
+    /// is unreachable while `Value` has the single `Integer` variant
+    /// because parser-time inference rejects mixed-kind operands, but
+    /// it is plumbed through to a typed [`RuntimeError::EvaluationTypeMismatch`]
+    /// so the runtime path doesn't `panic!` once a second `Value`
+    /// variant lands. TODO: covered once Float/String land in `Value`.
     fn evaluation_error_to_runtime(&self, err: EvaluationError, line: usize) -> RuntimeError {
         match err {
             EvaluationError::DivisionByZero => RuntimeError::DivisionByZero {
@@ -640,10 +643,13 @@ impl Runtime {
                 file: self.file_path.clone(),
                 line,
             },
-            EvaluationError::TypeMismatch { .. } => {
-                unreachable!(
-                    "type-checked at parse time; binary operators reject mixed-kind operands"
-                )
+            EvaluationError::TypeMismatch { expected, found } => {
+                RuntimeError::EvaluationTypeMismatch {
+                    expected,
+                    found,
+                    file: self.file_path.clone(),
+                    line,
+                }
             }
         }
     }
