@@ -282,6 +282,14 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    /// `==` appeared in a `req` comparison. Cuentitos spells equality
+    /// as a single `=`; the doubled form is the most common typo from
+    /// C/Python users and gets a dedicated message so the author isn't
+    /// left guessing at a generic "malformed expression" diagnostic.
+    DoubleEqualsInRequirement {
+        file: Option<PathBuf>,
+        line: usize,
+    },
     /// A `req` boolean condition nested deeper than the parser's
     /// recursion cap.
     ExpressionTooDeep {
@@ -761,6 +769,14 @@ impl fmt::Display for ParseError {
                     file_prefix(file),
                     line,
                     literal
+                )
+            }
+            ParseError::DoubleEqualsInRequirement { file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Use '=' for equality, not '=='.",
+                    file_prefix(file),
+                    line
                 )
             }
             ParseError::ExpressionTooDeep { file, line } => {
@@ -1501,6 +1517,9 @@ impl Parser {
                                     }
                                     RequirementParseError::ExpressionTooDeep => {
                                         ParseError::ExpressionTooDeep { file, line }
+                                    }
+                                    RequirementParseError::DoubleEquals => {
+                                        ParseError::DoubleEqualsInRequirement { file, line }
                                     }
                                 };
                                 self.collect_error_and_skip(parse_error, &mut context);

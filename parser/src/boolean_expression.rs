@@ -58,6 +58,9 @@ pub fn parse_boolean_expression(
         Err(TokenizeError::LiteralOverflow(literal)) => {
             return Err(BooleanParseError::LiteralOverflow { literal });
         }
+        Err(TokenizeError::DoubleEquals) => {
+            return Err(BooleanParseError::DoubleEquals);
+        }
     };
 
     if tokens.is_empty() {
@@ -139,6 +142,10 @@ pub enum BooleanParseError {
     /// Capping parse depth bounds validation and evaluation depth too —
     /// see [`MAX_EXPRESSION_DEPTH`] for the rationale.
     ExpressionTooDeep,
+    /// `==` was used in a comparison. Cuentitos spells equality `=`;
+    /// surface a dedicated diagnostic instead of letting the parse fail
+    /// later as "malformed."
+    DoubleEquals,
 }
 
 /// Maximum nesting depth accepted in a `req` boolean expression. Each
@@ -201,6 +208,12 @@ enum Token {
 enum TokenizeError {
     UnknownSymbol(String),
     LiteralOverflow(String),
+    /// `==` was used in equality position. Cuentitos uses `=` for both
+    /// assignment (in `set`) and equality (in `req`); `==` is the most
+    /// common typo from C/Python users. Surface a targeted diagnostic
+    /// so the author isn't left guessing at a generic "malformed
+    /// expression" message.
+    DoubleEquals,
 }
 
 fn tokenize(input: &str) -> Result<Vec<Token>, TokenizeError> {
@@ -256,6 +269,15 @@ fn tokenize(input: &str) -> Result<Vec<Token>, TokenizeError> {
             }
             '=' => {
                 chars.next();
+                // Detect `==` before falling through to single-`=`
+                // equality. Without this, `==` produces two `Equal`
+                // tokens and the parse fails as "malformed" several
+                // grammar layers later — confusing for the C/Python
+                // user who just typed the wrong equality operator.
+                if matches!(chars.peek(), Some('=')) {
+                    chars.next();
+                    return Err(TokenizeError::DoubleEquals);
+                }
                 tokens.push(Token::Equal);
             }
             '!' => {
@@ -996,6 +1018,26 @@ mod tests {
                 name: "NOT".to_string()
             }
         );
+    }
+
+    #[test]
+    fn double_equals_surfaces_as_dedicated_error() {
+        // `==` is the most common typo from C/Python users. Without the
+        // tokenizer's targeted detection, `x == 5` would lex as two
+        // `Equal` tokens and the parse would fail several layers later
+        // as "Malformed". The dedicated `DoubleEquals` variant tells
+        // the author exactly what to change.
+        let err = parse("x == 5", &[("x", 0)]).unwrap_err();
+        assert_eq!(err, BooleanParseError::DoubleEquals);
+    }
+
+    #[test]
+    fn double_equals_inside_logical_expression_still_caught() {
+        // The tokenizer runs before the boolean grammar, so the `==`
+        // detection fires even when the offending operator is buried
+        // inside an and/or expression.
+        let err = parse("x > 0 and y == 5", &[("x", 0), ("y", 1)]).unwrap_err();
+        assert_eq!(err, BooleanParseError::DoubleEquals);
     }
 
     #[test]

@@ -77,6 +77,10 @@ pub enum RequirementParseError {
     /// The boolean condition nested deeper than the parser's recursion
     /// cap. See [`crate::boolean_expression::MAX_EXPRESSION_DEPTH`].
     ExpressionTooDeep,
+    /// `==` was used in a comparison. Cuentitos uses `=` for equality;
+    /// this variant carries no payload because the caller knows the
+    /// context. See [`BooleanParseError::DoubleEquals`].
+    DoubleEquals,
 }
 
 /// Try to parse `content` as a `req` statement.
@@ -166,6 +170,7 @@ fn map_boolean_error(error: BooleanParseError, source: &str) -> RequirementParse
             RequirementParseError::LiteralOverflow { literal }
         }
         BooleanParseError::ExpressionTooDeep => RequirementParseError::ExpressionTooDeep,
+        BooleanParseError::DoubleEquals => RequirementParseError::DoubleEquals,
         BooleanParseError::Malformed => RequirementParseError::MalformedExpression {
             expression: source.to_string(),
         },
@@ -500,6 +505,18 @@ mod tests {
             RequirementParseError::LiteralOverflow {
                 literal: "99999999999999999999".to_string(),
             }
+        );
+    }
+
+    #[test]
+    fn rejects_double_equals_with_dedicated_error() {
+        // `==` is what C/Python users type instead of `=` for equality.
+        // The dedicated error lets the caller emit a message that names
+        // the right operator instead of falling through to "malformed".
+        let db = db_with(&["x"]);
+        assert_eq!(
+            parse_requirement("req x == 5", &db).unwrap_err(),
+            RequirementParseError::DoubleEquals
         );
     }
 }
