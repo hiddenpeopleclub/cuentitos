@@ -15,7 +15,7 @@ This is another line of text
 
 ### Indentation and Nesting
 
-Text blocks can be nested using indentation. The indentation must be exactly 2 spaces per level. Using any other number of spaces (like 3) will result in a parse error.
+Text blocks can be nested using indentation. The indentation must be exactly 2 spaces per level. Using any other number of spaces (like 3) will give an error.
 
 Example of correct nesting:
 
@@ -59,8 +59,8 @@ Sections organize content into navigable segments using markdown-style headers w
 ### Section Syntax Rules
 
 1. **Format**: `# section_id: Display Name`
-   - The `section_id` is used for programmatic reference (navigation, jumps)
-   - The `Display Name` is shown to users
+   - The `section_id` is the short name used to jump to or refer to the section from elsewhere in the script
+   - The `Display Name` is what the reader sees
 
 2. **Hierarchy Levels**:
    - `#` = Top-level section (level 0)
@@ -89,19 +89,21 @@ Correct version:
   Some content with proper indentation  # OK: Content is indented
 ```
 
-### Runtime Behavior
+### What the Reader Sees
 
-When navigating through sections, the runtime displays:
-- Section entry messages showing the hierarchy path
+When the story moves into a section, an entry message is shown with the path through the section hierarchy:
+
 - Example: `Entered Section: First Section > Subsection (section_1/subsection_1)`
 
-Sections will be essential for future navigation features like "Go To Section" and menu systems
+Sections will be the foundation for future navigation features like "Go To Section" and menu systems.
 
 ## Variables
 
+Variables let your story remember things — a hero's health, how many coins the player has, whether a door is open. Cuentitos variables hold whole numbers (no decimals).
+
 ### Declaring Variables
 
-Variables are declared in a `--- variables` block that must appear at the top of the script, before any story content. Each line inside the block declares one variable using the `int` keyword:
+Every variable used in a story must first be listed in a `--- variables` block at the top of the script, before any story content. Each line inside the block names one variable, with the keyword `int` (short for "integer", meaning whole number):
 
 ```cuentitos
 --- variables
@@ -113,14 +115,14 @@ int max_health = 100
 The adventure begins.
 ```
 
-- `int <name>` — declares a variable with a default of `0`.
-- `int <name> = <expr>` — declares a variable with a computed default.
+- `int <name>` — creates a variable that starts at `0`.
+- `int <name> = <starting value>` — creates a variable with the starting value you choose.
 
-Variable names may contain letters, digits, and underscores. The names `and`, `or`, and `not` are reserved and cannot be used.
+Variable names can contain letters, digits, and underscores. The words `and`, `or`, and `not` are reserved for conditions (see `req` below) and cannot be used as variable names.
 
-### Default Values
+### Starting Values
 
-Default expressions are evaluated at **parse time**, not at runtime. They may reference literals, arithmetic operators (`+ - * /`), parentheses, and variables declared **earlier** in the same block. Forward references (referencing a name declared later) are a parse-time error.
+A starting value can be a number, a small piece of math (using `+ - * /` and parentheses), or another variable from earlier in the same block. Starting values are worked out once, when the story loads, so any mistake — like dividing by zero or going past the largest allowed number — is caught and shown to you before the story starts.
 
 ```cuentitos
 --- variables
@@ -130,7 +132,9 @@ int c = (a + b) * 2
 ---
 ```
 
-Negative literals are allowed:
+You can only refer to variables that were already declared above. A variable cannot be used in its own line or in any line before its own declaration.
+
+Negative numbers are allowed:
 
 ```cuentitos
 --- variables
@@ -139,13 +143,11 @@ int adjusted = -(penalty + 5)
 ---
 ```
 
-Because defaults are evaluated at parse time, division by zero or integer overflow in a default expression is reported immediately as a parse-time error.
-
 An empty `--- variables` block is valid and declares no variables.
 
-### Querying Variables
+### Checking Variable Values
 
-At the CLI, send `?` to print the current value of all declared variables in declaration order:
+While running a story in the CLI, type `?` to see the current value of every declared variable, in the order they were declared:
 
 ```
 START
@@ -156,7 +158,7 @@ END
 
 ### The `set` Statement
 
-`set` assigns a new value to a declared variable at runtime. It can appear anywhere a regular block can — at the top level, inside sections, or inside indented blocks.
+`set` changes a variable's value while the story is playing. It can appear anywhere a normal line can — at the top level, inside a section, or under another block.
 
 **Simple assignment:**
 
@@ -168,9 +170,9 @@ set health = 5
 You are wounded.
 ```
 
-**Arithmetic on the right-hand side:**
+**Math on the right side:**
 
-The RHS may use `+`, `-`, `*`, `/`, parentheses, integer literals, and references to any declared variable (including the variable being assigned):
+The right side of a `set` can use `+`, `-`, `*`, `/`, parentheses, numbers, and any declared variable — including the one being changed:
 
 ```cuentitos
 --- variables
@@ -180,17 +182,17 @@ int bonus = 3
 set score = (score + bonus) * 2
 ```
 
-Standard arithmetic precedence applies: `*` and `/` bind tighter than `+` and `-`. Parentheses override precedence.
+Math follows the usual rules: `*` and `/` happen before `+` and `-`, and parentheses change the order.
 
-**Compound assignment operators:**
+**Shortcuts for common changes:**
 
-| Form | Meaning |
+| Form | What it does |
 | --- | --- |
-| `set x = expr` | Assign `expr` to `x` |
-| `set x += expr` | Add `expr` to `x` |
-| `set x -= expr` | Subtract `expr` from `x` |
-| `set x *= expr` | Multiply `x` by `expr` |
-| `set x /= expr` | Divide `x` by `expr` (truncates toward zero) |
+| `set x = value` | Sets `x` to `value` |
+| `set x += value` | Adds `value` to `x` |
+| `set x -= value` | Subtracts `value` from `x` |
+| `set x *= value` | Multiplies `x` by `value` |
+| `set x /= value` | Divides `x` by `value` |
 
 ```cuentitos
 --- variables
@@ -200,17 +202,17 @@ set score += 5
 set score *= 2
 ```
 
-`set` is an assignment statement only; comparison operators are not valid on the RHS.
+`set` only assigns values — it cannot use comparison operators like `=` (equal), `<`, or `>`. Those belong in `req` (see below).
 
-Integer division truncates toward zero: `-7 / 2` is `-3`, not `-4`.
+**A note on division:** because variables hold only whole numbers, division drops the fractional part toward zero. So `7 / 2` is `3` (not `3.5`), and `-7 / 2` is `-3` (not `-4`).
 
-`set` expressions are always evaluated at runtime against the variable's current value, even when the RHS contains only constants. Runtime errors (division by zero, overflow) are reported on the line where the `set` appears.
+`set` is worked out while the story is playing, against the variable's current value. If something goes wrong on a `set` line — like dividing by zero or going past the largest allowed number — the story stops and reports the error on that line.
 
 ### The `req` Statement
 
-`req` (short for "require") gates the block it is a child of. If the condition is false, the parent block and all its descendants are skipped.
+`req` (short for "require") puts a condition on the block it sits under. If the condition is false, that block — and everything inside it — is skipped.
 
-`req` must be indented under the block it guards — it cannot appear at the top level of the script.
+`req` must be indented underneath the block it guards. It cannot stand on its own at the top level of the script.
 
 ```cuentitos
 --- variables
@@ -225,9 +227,9 @@ The door is locked.
 You step inside.
 ```
 
-Only `The door is open.` is shown because `door_open` equals `1`.
+Only `The door is open.` is shown, because `door_open` is `1`.
 
-When a gated block has children of its own, the entire subtree is skipped when the `req` fails:
+When a guarded block has children of its own, the whole branch is skipped if the `req` is false:
 
 ```cuentitos
 --- variables
@@ -253,11 +255,11 @@ You leave the hallway.
 | `>` | Greater than |
 | `>=` | Greater than or equal |
 
-The LHS and RHS of a comparison may each be a full arithmetic expression (literals, variables, `+ - * /`, parentheses). Standard arithmetic precedence applies within each side.
+Each side of a comparison can be math (numbers, variables, `+ - * /`, parentheses), with the usual order of operations.
 
-**Multiple `req` siblings — implicit AND:**
+**Several `req` lines under the same block — all must pass:**
 
-When a block has more than one `req` child, all of them must pass for the parent to be shown. This is an implicit AND across sibling `req`s:
+When a block has more than one `req` underneath it, every one of them must be true for the block to show.
 
 ```cuentitos
 --- variables
@@ -269,9 +271,9 @@ In range.
   req x < 10
 ```
 
-**`req` and `set` interact at runtime:**
+**`req` reflects the latest values:**
 
-`req` conditions are evaluated against the variable's current value at the moment that block is reached. A `set` earlier in the script changes what subsequent `req`s see:
+A `req` is checked against the variable's current value at the moment that block is reached. A `set` earlier in the story changes what later `req`s see:
 
 ```cuentitos
 --- variables
@@ -285,9 +287,9 @@ After set, flag is one.
   req flag = 1
 ```
 
-### Logical Operators in `req`
+### Combining Conditions: `and`, `or`, `not`
 
-A single `req` can combine multiple conditions using `and`, `or`, and `not`. These keywords are lowercase only — `AND`, `OR`, `NOT` are treated as variable names and will produce an "undefined variable" error.
+A single `req` can combine several conditions using `and`, `or`, and `not`. These words must be lowercase — `AND`, `OR`, `NOT` are treated as variable names and will give an "undefined variable" error.
 
 ```cuentitos
 --- variables
@@ -299,15 +301,15 @@ Alive but exposed.
   req health > 0 and not shield > 0
 ```
 
-**Precedence (tightest to loosest):**
+**Order conditions are read in (strongest first):**
 
-1. `not` — prefix negation of a comparison
-2. `and` — logical conjunction
-3. `or` — logical disjunction
+1. `not` — flips a single condition
+2. `and` — both sides must be true
+3. `or` — at least one side must be true
 
-So `a or b and c` parses as `a or (b and c)`, and `not a and b` parses as `(not a) and b`.
+So `a or b and c` is read as `a or (b and c)`, and `not a and b` is read as `(not a) and b`.
 
-Use parentheses to override the default grouping:
+Use parentheses to group conditions your own way:
 
 ```cuentitos
 --- variables
@@ -320,15 +322,15 @@ With explicit grouping.
   req (a > 0 or b > 0) and c > 0
 ```
 
-Without the parentheses, `a > 0 or b > 0 and c > 0` would parse as `a > 0 or (b > 0 and c > 0)` and evaluate to true (because `a > 0` is true); with them, the `and c > 0` applies to the whole `or` sub-expression, which makes it false.
+Without the parentheses, `a > 0 or b > 0 and c > 0` would be read as `a > 0 or (b > 0 and c > 0)` and would be true (because `a > 0` is true). With them, the `and c > 0` applies to the whole `or`, which makes the line false.
 
-**Short-circuit evaluation:**
+**Conditions stop being checked once the answer is known:**
 
-`and` and `or` short-circuit: the right operand is not evaluated when the result is already determined by the left. Similarly, when a parent block's `req` fails, none of the child blocks' `req` expressions are evaluated.
+In `a or b`, if `a` is already true, `b` isn't checked. In `a and b`, if `a` is already false, `b` isn't checked. The same goes for branches: if a parent block's `req` fails, none of its children's `req`s are checked at all.
 
-**Combining inline `and`/`or` with sibling `req`s:**
+**Mixing `and`/`or` on one line with several `req` lines:**
 
-An inline logical expression counts as one condition in the implicit sibling AND. Both the inline expression and any sibling `req`s must pass:
+An `and`/`or` line counts as one condition. If a block has both kinds, every line must still be true:
 
 ```cuentitos
 --- variables
@@ -342,18 +344,20 @@ Both conditions pass.
   req mana > 0
 ```
 
-### Errors
+### When Errors Are Reported
 
-| Situation | When reported |
+Some mistakes are caught when the story loads, before any text is shown. Others can only be caught while the story is playing, because they depend on values that change.
+
+| Situation | When it's reported |
 | --- | --- |
-| Division by zero in a default expression | Parse time |
-| Integer overflow in a default expression | Parse time |
-| Division by zero in a `set` or `req` expression | Runtime |
-| Integer overflow in a `set` or `req` expression | Runtime |
-| Undeclared variable referenced in `set` or `req` | Parse time |
-| Forward reference in a default expression | Parse time |
-| Duplicate variable name | Parse time |
-| Reserved keyword used as a variable name | Parse time |
-| `req` at the top level (no parent block) | Parse time |
+| Dividing by zero in a starting value | When the story loads |
+| Going past the largest allowed number in a starting value | When the story loads |
+| Dividing by zero in a `set` or `req` | While playing |
+| Going past the largest allowed number in a `set` or `req` | While playing |
+| Using a variable that was never declared | When the story loads |
+| Using a variable in a starting value before it's declared | When the story loads |
+| Declaring two variables with the same name | When the story loads |
+| Using a reserved word (`and`, `or`, `not`) as a variable name | When the story loads |
+| `req` at the top level (with no block above it) | When the story loads |
 
-Integers are stored as 64-bit signed values (i64). The maximum value is `9223372036854775807`; the minimum is `-9223372036854775808`.
+Variables hold whole numbers between `-9223372036854775808` and `9223372036854775807`. Going past either end is what "the largest allowed number" refers to in the table above.
