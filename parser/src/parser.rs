@@ -282,6 +282,22 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    /// A literal in a variables-block default expression exceeded the
+    /// integer range. Carries both the variable being defined and the
+    /// offending literal text — parallel to
+    /// [`SetLiteralOverflow`](Self::SetLiteralOverflow) and
+    /// [`RequirementLiteralOverflow`](Self::RequirementLiteralOverflow)
+    /// so the three parse-time arithmetic sites produce wording that
+    /// only differs by which expression context they name. Binary
+    /// overflow at constant-fold time (e.g. `i64::MAX + 1`) keeps using
+    /// [`IntegerOverflow`](Self::IntegerOverflow); this variant fires
+    /// only when a *single* literal is the cause.
+    DefaultLiteralOverflow {
+        variable: String,
+        literal: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
     /// `==` appeared in a `req` comparison. Cuentitos spells equality
     /// as a single `=`; the doubled form is the most common typo from
     /// C/Python users and gets a dedicated message so the author isn't
@@ -768,6 +784,21 @@ impl fmt::Display for ParseError {
                     "{}:{}: ERROR: Integer overflow in 'set' expression: literal '{}' exceeds the integer range.",
                     file_prefix(file),
                     line,
+                    literal
+                )
+            }
+            ParseError::DefaultLiteralOverflow {
+                variable,
+                literal,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Integer overflow in default expression for '{}': literal '{}' exceeds the integer range.",
+                    file_prefix(file),
+                    line,
+                    variable,
                     literal
                 )
             }
