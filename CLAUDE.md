@@ -57,6 +57,16 @@ cargo run --bin cuentitos-compat -- ./target/debug/cuentitos ./compatibility-tes
 
 Compatibility tests define how the engine should work - they are the source of truth.
 
+## Task Bookkeeping
+
+Tasks live as Markdown files in `.cubil/` (`backlog/`, `doing/`, `done/`). When you are picking up a task:
+
+1. Run `cubil start <slug>` before you begin work (moves it from `backlog/` to `doing/`).
+2. Run `cubil finish <slug>` when the task is complete and merged/pushed (moves it from `doing/` to `done/`).
+3. Commit both transitions — the file moves are tracked in git.
+
+This applies to any agent (local or remote) acting on a roadmapped task. The roadmap (`.cubil/roadmaps/`) renders status by reading those folders, so keeping them current is what drives `cubil roadmap next` and `cubil roadmap show`.
+
 ## Architecture
 
 ### Workspace Structure
