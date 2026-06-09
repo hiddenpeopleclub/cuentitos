@@ -26,7 +26,10 @@ set mood = sad
 ## What to cover
 
 - `feature/` — set to each declared value, multiple sets in sequence, `?`
-  reflects the change (and `?` before first set shows unset).
+  reflects the change (and `?` before first set shows unset). Includes the
+  `query-after-set` test moved here from the declaration suite, plus setting to
+  a value that was declared with surrounding whitespace (e.g. `enum mood =
+  happy ,sad,  angry` then `set mood = angry`).
 - `errors/` — set to value not in list (parse-time), set to another enum
   variable of a different enum (type mismatch), set to a string/int/bool
   literal, set to an undeclared name.

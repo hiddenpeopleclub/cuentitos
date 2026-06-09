@@ -1,8 +1,10 @@
 # Edge Case: Two Enums Sharing A Value Name
 
 Enum values are scoped to their own variable, so two enums may both declare a
-value with the same name (`happy` here). References are always qualified by
-the variable, so assigning `happy` to each is unambiguous.
+value with the same name (`happy` here) without colliding. The duplicate-value
+check is per-enum, not global: declaring `happy` in both `mood` and `weather`
+raises no error. Both stay unset until a `set` runs; assigning each (and
+proving the references are unambiguous) is exercised by the `set` suite.
 
 ## Script
 ```cuentitos
@@ -10,14 +12,12 @@ the variable, so assigning `happy` to each is unambiguous.
 enum mood = happy, sad
 enum weather = sunny, happy
 ---
-set mood = happy
-set weather = happy
-Hello
+
+This is the story.
 ```
 
 ## Input
 ```input
-n
 ?
 s
 ```
@@ -25,8 +25,8 @@ s
 ## Result
 ```result
 START
-Hello
-mood: happy
-weather: happy
+mood: <unset>
+weather: <unset>
+This is the story.
 END
 ```
