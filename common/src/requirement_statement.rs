@@ -41,6 +41,14 @@ impl ComparisonOperator {
                 ComparisonOperator::Greater => l > r,
                 ComparisonOperator::GreaterOrEqual => l >= r,
             }),
+            // Operands of differing kinds (e.g. an `Integer` against a
+            // `Boolean`) are a type error. Parse-time inference is expected to
+            // make this unreachable; the arm keeps the match total as `Value`
+            // grows new variants.
+            (left, right) => Err(EvaluationError::TypeMismatch {
+                expected: left.kind(),
+                found: right.kind(),
+            }),
         }
     }
 }

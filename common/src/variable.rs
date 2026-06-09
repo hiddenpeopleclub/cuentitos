@@ -27,6 +27,11 @@ impl Variable {
         Self::new(name, Value::Integer(default))
     }
 
+    /// Convenience constructor for boolean variables.
+    pub fn new_boolean<S: Into<String>>(name: S, default: bool) -> Self {
+        Self::new(name, Value::Boolean(default))
+    }
+
     /// The static [`ValueKind`] of this variable, derived from its declared
     /// default. Single source of truth — kept as a method (rather than a
     /// stored field) so parse-time inference and runtime dispatch can never
@@ -59,5 +64,14 @@ mod tests {
     fn initial_value_clones_default() {
         let v = Variable::new_integer("x", 7);
         assert_eq!(v.initial_value(), Value::Integer(7));
+    }
+
+    #[test]
+    fn new_boolean_builds_variable() {
+        let v = Variable::new_boolean("is_alive", true);
+        assert_eq!(v.name, "is_alive");
+        assert_eq!(v.kind(), ValueKind::Boolean);
+        assert_eq!(v.default, Value::Boolean(true));
+        assert_eq!(v.initial_value(), Value::Boolean(true));
     }
 }

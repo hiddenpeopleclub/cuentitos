@@ -52,6 +52,14 @@ impl BinaryOperator {
                         .ok_or(EvaluationError::Overflow)
                 }
             }
+            // Any non-`(Integer, Integer)` pairing — e.g. a `Boolean` operand —
+            // is a type error. Parse-time inference is expected to reject these
+            // before the runtime ever folds them; the arm keeps the surface
+            // total as `Value` grows new variants.
+            (_, left, right) => Err(EvaluationError::TypeMismatch {
+                expected: left.kind(),
+                found: right.kind(),
+            }),
         }
     }
 }
