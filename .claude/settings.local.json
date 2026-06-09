@@ -1,1 +1,0 @@
-{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"mkdir -p ~/.skulk/state && printf idle > ~/.skulk/state/cuentitos-logical-ops-impl"}]}],"UserPromptSubmit":[{"hooks":[{"type":"command","command":"mkdir -p ~/.skulk/state && printf busy > ~/.skulk/state/cuentitos-logical-ops-impl"}]}]}}
