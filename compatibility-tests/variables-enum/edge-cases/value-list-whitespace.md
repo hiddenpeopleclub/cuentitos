@@ -1,12 +1,14 @@
 # Edge Case: Whitespace Variants In Value List
 
-Whitespace around the `=`, around commas, and trailing on the line is
-insignificant. Each value is trimmed, so `  happy ,sad,  angry  ` declares
-exactly three values: `happy`, `sad`, and `angry`. If trimming were broken the
-surrounding spaces would make a value an invalid identifier and the declaration
-would error; instead it parses cleanly and the variable is unset until a `set`
-runs. (Setting to a value declared with surrounding whitespace is exercised by
-the `set` suite.)
+Messy whitespace around the `=`, around commas, and trailing on the line still
+parses without error: `  happy ,sad,  angry  ` is a valid declaration and the
+variable is unset, so `?` reports `mood: <unset>`.
+
+This test only asserts that the declaration parses cleanly — declaration-scope
+output (`<unset>`) cannot observe what each value was trimmed *to*, so it does
+not prove the trimmed values are exactly `happy`, `sad`, `angry`. That proof
+(setting to a value declared with surrounding whitespace and reading it back)
+belongs to the `set` suite.
 
 Note: the trailing spaces after `angry` on the declaration line are
 intentional and load-bearing — do not let an editor or formatter strip them.
