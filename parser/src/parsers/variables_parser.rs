@@ -252,8 +252,10 @@ fn integer_default_value(
 
     // The arithmetic folder only sees integer-typed variables; project the
     // mixed-kind `declared` map down to its integer entries. A reference to a
-    // bool variable therefore reads as undefined here, which the dispatch
-    // below reports just like any other undefined reference.
+    // bool variable therefore reads as undefined to the folder, which the
+    // dispatch below resolves: an already-declared non-integer is a type
+    // mismatch (handled first), so it never falls through to the forward /
+    // undefined arms.
     let integer_view: HashMap<String, i64> = declared
         .iter()
         .filter_map(|(name, value)| value.as_integer().map(|n| (name.clone(), n)))
@@ -269,6 +271,21 @@ fn integer_default_value(
         Err(EvalError::UndefinedVariable {
             name: referenced_name,
         }) => {
+            // A name the folder couldn't resolve may still be declared earlier
+            // with a non-integer kind (e.g. `int x = flag` where `flag` is an
+            // earlier bool). That is a type mismatch, not a missing reference —
+            // report it before the self / forward / undefined arms so the
+            // diagnostic is symmetric with the bool folder's wrong-kind path.
+            if let Some(value) = declared.get(&referenced_name) {
+                return Err(ParseError::DefaultTypeMismatch {
+                    variable: name.to_string(),
+                    expected: ValueKind::Integer,
+                    found_token: referenced_name,
+                    found: value.kind(),
+                    file: file_path.clone(),
+                    line: line_number,
+                });
+            }
             if referenced_name == name {
                 Err(ParseError::SelfReferenceInDefault {
                     name: referenced_name,
@@ -1302,6 +1319,35 @@ mod tests {
                 assert_eq!(variable, "b");
                 assert_eq!(found_token, "count");
                 assert_eq!(found, ValueKind::Integer);
+                assert_eq!(line, 3);
+            }
+            other => panic!("expected DefaultTypeMismatch, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_block_int_default_references_earlier_bool() {
+        // The inverse of `parse_block_bool_default_references_non_bool`: an
+        // `int` default referencing an earlier `bool` must report a type
+        // mismatch — not a forward/undefined reference, since the bool is
+        // declared on the previous line.
+        let script = "--- variables\nbool flag = true\nint x = flag\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        match expect_single_error(outcome) {
+            ParseError::DefaultTypeMismatch {
+                variable,
+                expected,
+                found_token,
+                found,
+                line,
+                ..
+            } => {
+                assert_eq!(variable, "x");
+                assert_eq!(expected, ValueKind::Integer);
+                assert_eq!(found_token, "flag");
+                assert_eq!(found, ValueKind::Boolean);
                 assert_eq!(line, 3);
             }
             other => panic!("expected DefaultTypeMismatch, got {:?}", other),
