@@ -27,10 +27,14 @@ impl ComparisonOperator {
         )
     }
 
-    /// Apply this comparison to two values of the same kind. Returns
-    /// [`EvaluationError::TypeMismatch`] if the operands have different
-    /// kinds — parse-time type inference is expected to make that
-    /// unreachable. Today only integer comparisons are implemented.
+    /// Apply this comparison to two values.
+    ///
+    /// Integers support the full operator set. Booleans support only equality
+    /// (`=`/`!=`); ordering operators on booleans are rejected at parse time
+    /// (see the `NonOrderedComparison` guard in the requirement parser) and so
+    /// never reach this method. Operands of differing kinds return
+    /// [`EvaluationError::TypeMismatch`] — parse-time inference is expected to
+    /// make that unreachable too, but the arm keeps the match total.
     pub fn apply(self, left: &Value, right: &Value) -> Result<bool, EvaluationError> {
         match (left, right) {
             (Value::Integer(l), Value::Integer(r)) => Ok(match self {
@@ -40,6 +44,27 @@ impl ComparisonOperator {
                 ComparisonOperator::LessOrEqual => l <= r,
                 ComparisonOperator::Greater => l > r,
                 ComparisonOperator::GreaterOrEqual => l >= r,
+            }),
+            (Value::Boolean(l), Value::Boolean(r)) => match self {
+                ComparisonOperator::Equal => Ok(l == r),
+                ComparisonOperator::NotEqual => Ok(l != r),
+                // Ordering two booleans is meaningless and is rejected at parse
+                // time, so this is structurally unreachable through the normal
+                // pipeline.
+                ComparisonOperator::Less
+                | ComparisonOperator::LessOrEqual
+                | ComparisonOperator::Greater
+                | ComparisonOperator::GreaterOrEqual => {
+                    unreachable!("ordering comparison on booleans is rejected at parse time")
+                }
+            },
+            // Operands of differing kinds (e.g. an `Integer` against a
+            // `Boolean`) are a type error. Parse-time inference is expected to
+            // make this unreachable; the arm keeps the match total as `Value`
+            // grows new variants.
+            (left, right) => Err(EvaluationError::TypeMismatch {
+                expected: left.kind(),
+                found: right.kind(),
             }),
         }
     }
@@ -66,5 +91,42 @@ impl RequirementStatement {
             operator,
             right,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::value::ValueKind;
+
+    #[test]
+    fn boolean_equality_compares_by_value() {
+        let t = Value::Boolean(true);
+        let f = Value::Boolean(false);
+        assert_eq!(ComparisonOperator::Equal.apply(&t, &t), Ok(true));
+        assert_eq!(ComparisonOperator::Equal.apply(&t, &f), Ok(false));
+        assert_eq!(ComparisonOperator::NotEqual.apply(&t, &f), Ok(true));
+        assert_eq!(ComparisonOperator::NotEqual.apply(&t, &t), Ok(false));
+    }
+
+    #[test]
+    fn integer_equality_still_works() {
+        let one = Value::Integer(1);
+        let two = Value::Integer(2);
+        assert_eq!(ComparisonOperator::Equal.apply(&one, &one), Ok(true));
+        assert_eq!(ComparisonOperator::Less.apply(&one, &two), Ok(true));
+    }
+
+    #[test]
+    fn mixed_kinds_are_a_type_mismatch() {
+        let int = Value::Integer(1);
+        let boolean = Value::Boolean(true);
+        assert_eq!(
+            ComparisonOperator::Equal.apply(&int, &boolean),
+            Err(EvaluationError::TypeMismatch {
+                expected: ValueKind::Integer,
+                found: ValueKind::Boolean,
+            })
+        );
     }
 }

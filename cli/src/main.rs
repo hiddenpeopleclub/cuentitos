@@ -457,10 +457,11 @@ fn print_debug_variables(runtime: &cuentitos_runtime::Runtime, script_path: &Pat
     debug_assert_eq!(values.len(), runtime.database.variables.len());
     for (variable, value) in runtime.database.variables.iter().zip(values) {
         // Dispatch on the `Value` variant so each kind controls its own
-        // textual rendering. New variants (Boolean/Float/String) just add
-        // a match arm here.
+        // textual rendering. New variants (Float/String) just add a match
+        // arm here.
         let formatted = match value {
             cuentitos_common::Value::Integer(n) => format!("{n}"),
+            cuentitos_common::Value::Boolean(b) => format!("{b}"),
         };
         println!("{}: {}", variable.name, formatted);
     }

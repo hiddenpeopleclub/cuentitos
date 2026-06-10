@@ -1,4 +1,6 @@
-use cuentitos_common::{evaluate, Database, EvaluationError, Value, Variable, VariableId};
+use cuentitos_common::{
+    evaluate, Database, EvaluationError, Value, ValueKind, Variable, VariableId,
+};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
@@ -67,9 +69,12 @@ pub fn parse_variables_block(
     // happens in the main pass via `declared_lines`.
     let future_names = collect_future_names(lines, start_line_index + 1, closing_line_index);
 
-    // Second pass: parse and evaluate each declaration in order.
+    // Second pass: parse and evaluate each declaration in order. `declared`
+    // maps each already-declared name to its folded default value, carrying
+    // both the value and (via `Value::kind`) its type so later defaults can
+    // reference earlier variables and type-check across kinds.
     let mut declared_lines: HashMap<String, usize> = HashMap::new();
-    let mut declared_values: HashMap<String, i64> = HashMap::new();
+    let mut declared: HashMap<String, Value> = HashMap::new();
 
     for (offset, raw_line) in lines
         .iter()
@@ -91,7 +96,7 @@ pub fn parse_variables_block(
             file_path,
             &future_names,
             &mut declared_lines,
-            &mut declared_values,
+            &mut declared,
             database,
         ) {
             return VariablesBlockOutcome {
@@ -115,7 +120,7 @@ fn parse_one_declaration(
     file_path: &Option<PathBuf>,
     future_names: &HashSet<String>,
     declared_lines: &mut HashMap<String, usize>,
-    declared_values: &mut HashMap<String, i64>,
+    declared: &mut HashMap<String, Value>,
     database: &mut Database,
 ) -> Result<(), ParseError> {
     if raw_line.starts_with(' ') || raw_line.starts_with('\t') {
@@ -126,10 +131,13 @@ fn parse_one_declaration(
         });
     }
 
-    let rest = match trimmed.strip_prefix("int ") {
-        Some(rest) => rest.trim_start(),
+    // Dispatch on the declared type keyword. Each recognized keyword consumes
+    // its `<keyword> ` prefix; a bare keyword with no name is a missing-name
+    // error, and anything else is a malformed declaration.
+    let (kind, rest) = match declaration_kind(trimmed) {
+        Some((kind, rest)) => (kind, rest),
         None => {
-            if trimmed == "int" {
+            if trimmed == "int" || trimmed == "bool" {
                 return Err(ParseError::MissingVariableName {
                     file: file_path.clone(),
                     line: line_number,
@@ -183,81 +191,287 @@ fn parse_one_declaration(
         });
     }
 
-    let value = if let Some(expr) = default_expr {
-        match evaluate_expression(expr, declared_values) {
-            Ok(value) => value,
-            Err(EvalError::Malformed) => {
-                return Err(ParseError::MalformedDefaultExpression {
-                    expr: expr.to_string(),
-                    file: file_path.clone(),
-                    line: line_number,
-                });
-            }
-            Err(EvalError::UndefinedVariable {
-                name: referenced_name,
-            }) => {
-                if referenced_name == name {
-                    return Err(ParseError::SelfReferenceInDefault {
-                        name: referenced_name,
-                        file: file_path.clone(),
-                        line: line_number,
-                    });
-                }
-                if future_names.contains(&referenced_name) {
-                    return Err(ParseError::ForwardVariableReference {
-                        name: referenced_name,
-                        file: file_path.clone(),
-                        line: line_number,
-                    });
-                }
-                return Err(ParseError::UndefinedVariableReference {
-                    name: referenced_name,
-                    file: file_path.clone(),
-                    line: line_number,
-                });
-            }
-            Err(EvalError::LiteralOverflow { literal }) => {
-                return Err(ParseError::DefaultLiteralOverflow {
-                    variable: name.to_string(),
-                    literal,
-                    file: file_path.clone(),
-                    line: line_number,
-                });
-            }
-            Err(EvalError::DivisionByZero) => {
-                return Err(ParseError::DivisionByZero {
-                    variable: name.to_string(),
-                    file: file_path.clone(),
-                    line: line_number,
-                });
-            }
-            Err(EvalError::Overflow) => {
-                return Err(ParseError::IntegerOverflow {
-                    variable: name.to_string(),
-                    file: file_path.clone(),
-                    line: line_number,
-                });
-            }
-        }
-    } else {
-        0
+    // Fold the default into a concrete `Value` of the declared kind. Each
+    // kind owns its own default grammar: integers fold arithmetic; booleans
+    // accept only `true`/`false` or a reference to an earlier bool.
+    let value = match kind {
+        ValueKind::Integer => integer_default_value(
+            name,
+            default_expr,
+            declared,
+            future_names,
+            file_path,
+            line_number,
+        )?,
+        ValueKind::Boolean => boolean_default_value(
+            name,
+            default_expr,
+            declared,
+            future_names,
+            file_path,
+            line_number,
+        )?,
     };
 
     declared_lines.insert(name.to_string(), line_number);
-    declared_values.insert(name.to_string(), value);
-    database.add_variable(Variable::new_integer(name, value));
+    declared.insert(name.to_string(), value.clone());
+    database.add_variable(Variable::new(name, value));
     Ok(())
 }
 
-/// Scan lines `[start, end)` (exclusive end) for identifiers that follow
-/// `int `, collecting them into a set. Duplicate identifiers are merged
-/// silently here; duplicate-declaration detection lives in the main pass.
+/// Recognize a declaration's leading type keyword. Returns the declared
+/// [`ValueKind`] and the remainder of the line (the name and optional
+/// default), with leading whitespace after the keyword stripped. `None`
+/// means the line is not a recognized `<keyword> ...` declaration.
+fn declaration_kind(trimmed: &str) -> Option<(ValueKind, &str)> {
+    if let Some(rest) = trimmed.strip_prefix("int ") {
+        Some((ValueKind::Integer, rest.trim_start()))
+    } else if let Some(rest) = trimmed.strip_prefix("bool ") {
+        Some((ValueKind::Boolean, rest.trim_start()))
+    } else {
+        None
+    }
+}
+
+/// Fold an integer variable's default into a [`Value::Integer`]. With no
+/// default the value is `0`. Errors are mapped to the integer-specific
+/// `ParseError` diagnostics (overflow, division-by-zero, forward/undefined
+/// references) so the existing wording is preserved verbatim.
+fn integer_default_value(
+    name: &str,
+    default_expr: Option<&str>,
+    declared: &HashMap<String, Value>,
+    future_names: &HashSet<String>,
+    file_path: &Option<PathBuf>,
+    line_number: usize,
+) -> Result<Value, ParseError> {
+    let expr = match default_expr {
+        Some(expr) => expr,
+        None => return Ok(Value::Integer(0)),
+    };
+
+    // The arithmetic folder only sees integer-typed variables; project the
+    // mixed-kind `declared` map down to its integer entries. A reference to a
+    // bool variable therefore reads as undefined to the folder, which the
+    // dispatch below resolves: an already-declared non-integer is a type
+    // mismatch (handled first), so it never falls through to the forward /
+    // undefined arms.
+    let integer_view: HashMap<String, i64> = declared
+        .iter()
+        .filter_map(|(name, value)| value.as_integer().map(|n| (name.clone(), n)))
+        .collect();
+
+    match evaluate_expression(expr, &integer_view) {
+        Ok(value) => Ok(Value::Integer(value)),
+        Err(EvalError::Malformed) => Err(ParseError::MalformedDefaultExpression {
+            expr: expr.to_string(),
+            file: file_path.clone(),
+            line: line_number,
+        }),
+        Err(EvalError::UndefinedVariable {
+            name: referenced_name,
+        }) => {
+            // A name the folder couldn't resolve may still be declared earlier
+            // with a non-integer kind (e.g. `int x = flag` where `flag` is an
+            // earlier bool). That is a type mismatch, not a missing reference —
+            // report it before the self / forward / undefined arms so the
+            // diagnostic is symmetric with the bool folder's wrong-kind path.
+            if let Some(value) = declared.get(&referenced_name) {
+                return Err(ParseError::DefaultTypeMismatch {
+                    variable: name.to_string(),
+                    expected: ValueKind::Integer,
+                    found_token: referenced_name,
+                    found: value.kind(),
+                    file: file_path.clone(),
+                    line: line_number,
+                });
+            }
+            if referenced_name == name {
+                Err(ParseError::SelfReferenceInDefault {
+                    name: referenced_name,
+                    file: file_path.clone(),
+                    line: line_number,
+                })
+            } else if future_names.contains(&referenced_name) {
+                Err(ParseError::ForwardVariableReference {
+                    name: referenced_name,
+                    file: file_path.clone(),
+                    line: line_number,
+                })
+            } else {
+                Err(ParseError::UndefinedVariableReference {
+                    name: referenced_name,
+                    file: file_path.clone(),
+                    line: line_number,
+                })
+            }
+        }
+        Err(EvalError::LiteralOverflow { literal }) => Err(ParseError::DefaultLiteralOverflow {
+            variable: name.to_string(),
+            literal,
+            file: file_path.clone(),
+            line: line_number,
+        }),
+        Err(EvalError::DivisionByZero) => Err(ParseError::DivisionByZero {
+            variable: name.to_string(),
+            file: file_path.clone(),
+            line: line_number,
+        }),
+        Err(EvalError::Overflow) => Err(ParseError::IntegerOverflow {
+            variable: name.to_string(),
+            file: file_path.clone(),
+            line: line_number,
+        }),
+    }
+}
+
+/// Fold a boolean variable's default into a [`Value::Boolean`]. With no
+/// default the value is `false`. Errors are mapped to the relevant
+/// `ParseError` diagnostics.
+fn boolean_default_value(
+    name: &str,
+    default_expr: Option<&str>,
+    declared: &HashMap<String, Value>,
+    future_names: &HashSet<String>,
+    file_path: &Option<PathBuf>,
+    line_number: usize,
+) -> Result<Value, ParseError> {
+    let expr = match default_expr {
+        Some(expr) => expr,
+        None => return Ok(Value::Boolean(false)),
+    };
+
+    match evaluate_bool_default(expr, name, declared, future_names) {
+        Ok(value) => Ok(Value::Boolean(value)),
+        Err(BoolDefaultError::LogicalOperator) => Err(ParseError::LogicalOperatorInDefault {
+            file: file_path.clone(),
+            line: line_number,
+        }),
+        Err(BoolDefaultError::TypeMismatch { token, found }) => {
+            Err(ParseError::DefaultTypeMismatch {
+                variable: name.to_string(),
+                expected: ValueKind::Boolean,
+                found_token: token,
+                found,
+                file: file_path.clone(),
+                line: line_number,
+            })
+        }
+        Err(BoolDefaultError::SelfReference) => Err(ParseError::SelfReferenceInDefault {
+            name: name.to_string(),
+            file: file_path.clone(),
+            line: line_number,
+        }),
+        Err(BoolDefaultError::ForwardReference {
+            name: referenced_name,
+        }) => Err(ParseError::ForwardVariableReference {
+            name: referenced_name,
+            file: file_path.clone(),
+            line: line_number,
+        }),
+        Err(BoolDefaultError::UndefinedReference {
+            name: referenced_name,
+        }) => Err(ParseError::UndefinedVariableReference {
+            name: referenced_name,
+            file: file_path.clone(),
+            line: line_number,
+        }),
+    }
+}
+
+/// Errors that can surface while folding a boolean default. Kept as a private
+/// enum so [`boolean_default_value`] owns the mapping to `ParseError`,
+/// mirroring how [`EvalError`] decouples the integer folder from its
+/// diagnostics.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BoolDefaultError {
+    /// A logical operator (`and`/`or`/`not`) appeared in the default.
+    LogicalOperator,
+    /// The default is a non-bool value used where a bool is required.
+    /// `token` is the offending text; `found` is the kind it actually has.
+    TypeMismatch { token: String, found: ValueKind },
+    /// The default references the variable being declared.
+    SelfReference,
+    /// The default references a variable declared later in the same block.
+    ForwardReference { name: String },
+    /// The default references a name that is never declared.
+    UndefinedReference { name: String },
+}
+
+/// Fold a boolean default expression against the variables declared earlier
+/// in the same block.
+///
+/// A bool default is intentionally narrow: it is `true`, `false`, or a
+/// reference to an earlier bool variable. Logical operators belong in `req`
+/// and are rejected outright. Anything else is a type mismatch — and since
+/// the language's only other value kind today is `int`, any non-bool,
+/// non-logical default is reported as `int`.
+fn evaluate_bool_default(
+    expression: &str,
+    variable_name: &str,
+    declared: &HashMap<String, Value>,
+    future_names: &HashSet<String>,
+) -> Result<bool, BoolDefaultError> {
+    // Reject logical operators as whole whitespace-delimited tokens so
+    // identifiers like `or_flag` and the (unreserved) uppercase `AND` are
+    // unaffected. This must precede the literal check so `true or false`
+    // routes here rather than matching the leading `true`.
+    if expression
+        .split_whitespace()
+        .any(|token| matches!(token, "and" | "or" | "not"))
+    {
+        return Err(BoolDefaultError::LogicalOperator);
+    }
+
+    let trimmed = expression.trim();
+    match trimmed {
+        "true" => return Ok(true),
+        "false" => return Ok(false),
+        _ => {}
+    }
+
+    if is_valid_identifier(trimmed) {
+        if trimmed == variable_name {
+            return Err(BoolDefaultError::SelfReference);
+        }
+        if let Some(value) = declared.get(trimmed) {
+            return match value {
+                Value::Boolean(b) => Ok(*b),
+                other => Err(BoolDefaultError::TypeMismatch {
+                    token: trimmed.to_string(),
+                    found: other.kind(),
+                }),
+            };
+        }
+        if future_names.contains(trimmed) {
+            return Err(BoolDefaultError::ForwardReference {
+                name: trimmed.to_string(),
+            });
+        }
+        return Err(BoolDefaultError::UndefinedReference {
+            name: trimmed.to_string(),
+        });
+    }
+
+    // Not a bool literal and not a bare identifier: today that can only be an
+    // integer-typed expression (e.g. `1`). Name the whole token and report it
+    // as `int`. When float/string defaults land, refine the inferred kind.
+    Err(BoolDefaultError::TypeMismatch {
+        token: trimmed.to_string(),
+        found: ValueKind::Integer,
+    })
+}
+
+/// Scan lines `[start, end)` (exclusive end) for identifiers that follow a
+/// type keyword (`int `/`bool `), collecting them into a set regardless of
+/// declared type. Duplicate identifiers are merged silently here; duplicate-
+/// declaration detection lives in the main pass.
 fn collect_future_names(lines: &[&str], start: usize, end: usize) -> HashSet<String> {
     let mut names = HashSet::new();
     for line in &lines[start..end] {
         let trimmed = line.trim();
-        let rest = match trimmed.strip_prefix("int ") {
-            Some(r) => r.trim_start(),
+        let rest = match declaration_kind(trimmed) {
+            Some((_, rest)) => rest,
             None => continue,
         };
         let name = if let Some(eq_idx) = rest.find('=') {
@@ -373,16 +587,21 @@ pub fn evaluate_expression(
     match evaluate(&expression_ast, &|id: VariableId| &values[id]) {
         Ok(folded) => match folded.into_owned() {
             Value::Integer(n) => Ok(n),
+            // The resolver only exposes integer-typed variables and the shared
+            // parser only produces integer arithmetic, so the fold never
+            // yields a boolean. (Boolean defaults bypass this folder entirely
+            // — see `evaluate_bool_default`.)
+            Value::Boolean(_) => unreachable!("integer-default fold never yields a boolean"),
         },
         Err(EvaluationError::DivisionByZero) => Err(EvalError::DivisionByZero),
         Err(EvaluationError::Overflow) => Err(EvalError::Overflow),
-        // The variables block only declares integer-typed values today
-        // (`Value::Integer` is the sole variant), and the shared parser
-        // only produces integer-shaped expressions, so the fold step
-        // cannot mismatch types. If `Value` grows a non-integer variant,
-        // this assertion will fire and force a deliberate fix here.
+        // This folder is the integer-default path: its resolver hands back
+        // only `Value::Integer`s and the shared parser only produces integer-
+        // shaped expressions, so the fold step cannot mismatch types. Boolean
+        // defaults never reach here. If this path ever folds a mixed-kind
+        // expression, the assertion fires and forces a deliberate fix.
         Err(EvaluationError::TypeMismatch { .. }) => {
-            unreachable!("variables-block defaults are integer-only")
+            unreachable!("integer-default fold is integer-only")
         }
     }
 }
@@ -893,6 +1112,349 @@ mod tests {
             }
             other => panic!("expected MalformedDefaultExpression, got {:?}", other),
         }
+    }
+
+    // -- boolean declarations --------------------------------------------
+
+    fn declared_from(pairs: &[(&str, Value)]) -> HashMap<String, Value> {
+        pairs
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn eval_bool_literal_true_and_false() {
+        let declared = HashMap::new();
+        let future = HashSet::new();
+        assert_eq!(
+            evaluate_bool_default("true", "b", &declared, &future),
+            Ok(true)
+        );
+        assert_eq!(
+            evaluate_bool_default("false", "b", &declared, &future),
+            Ok(false)
+        );
+    }
+
+    #[test]
+    fn eval_bool_reference_to_earlier_bool() {
+        let declared = declared_from(&[("source", Value::Boolean(true))]);
+        let future = HashSet::new();
+        assert_eq!(
+            evaluate_bool_default("source", "mirror", &declared, &future),
+            Ok(true)
+        );
+    }
+
+    #[test]
+    fn eval_bool_int_literal_is_type_mismatch() {
+        let declared = HashMap::new();
+        let future = HashSet::new();
+        assert_eq!(
+            evaluate_bool_default("1", "b", &declared, &future),
+            Err(BoolDefaultError::TypeMismatch {
+                token: "1".to_string(),
+                found: ValueKind::Integer,
+            })
+        );
+    }
+
+    #[test]
+    fn eval_bool_reference_to_int_is_type_mismatch() {
+        let declared = declared_from(&[("count", Value::Integer(3))]);
+        let future = HashSet::new();
+        assert_eq!(
+            evaluate_bool_default("count", "b", &declared, &future),
+            Err(BoolDefaultError::TypeMismatch {
+                token: "count".to_string(),
+                found: ValueKind::Integer,
+            })
+        );
+    }
+
+    #[test]
+    fn eval_bool_logical_operators_are_rejected() {
+        let declared = HashMap::new();
+        let future = HashSet::new();
+        for expr in ["not true", "true or false", "true and false"] {
+            assert_eq!(
+                evaluate_bool_default(expr, "b", &declared, &future),
+                Err(BoolDefaultError::LogicalOperator),
+                "expr: {expr}"
+            );
+        }
+    }
+
+    #[test]
+    fn eval_bool_uppercase_logical_words_are_ordinary_identifiers() {
+        // `AND`/`OR`/`NOT` are not reserved; as a lone reference they resolve
+        // like any other identifier (here: undefined), never as an operator.
+        let declared = HashMap::new();
+        let future = HashSet::new();
+        assert_eq!(
+            evaluate_bool_default("AND", "b", &declared, &future),
+            Err(BoolDefaultError::UndefinedReference {
+                name: "AND".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn eval_bool_self_reference() {
+        let declared = HashMap::new();
+        let future = HashSet::new();
+        assert_eq!(
+            evaluate_bool_default("a", "a", &declared, &future),
+            Err(BoolDefaultError::SelfReference)
+        );
+    }
+
+    #[test]
+    fn eval_bool_forward_reference() {
+        let declared = HashMap::new();
+        let future: HashSet<String> = std::iter::once("b".to_string()).collect();
+        assert_eq!(
+            evaluate_bool_default("b", "a", &declared, &future),
+            Err(BoolDefaultError::ForwardReference {
+                name: "b".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn parse_block_bool_literal_defaults() {
+        let script = "--- variables\nbool t = true\nbool f = false\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        assert!(outcome.errors.is_empty(), "errors: {:?}", outcome.errors);
+        assert_eq!(db.variables[0].default, Value::Boolean(true));
+        assert_eq!(db.variables[0].kind(), ValueKind::Boolean);
+        assert_eq!(db.variables[1].default, Value::Boolean(false));
+    }
+
+    #[test]
+    fn parse_block_bool_no_default_is_false() {
+        let script = "--- variables\nbool a\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        assert!(outcome.errors.is_empty());
+        assert_eq!(db.variables[0].default, Value::Boolean(false));
+    }
+
+    #[test]
+    fn parse_block_bool_reference_earlier() {
+        let script = "--- variables\nbool source = true\nbool mirror = source\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        assert!(outcome.errors.is_empty());
+        assert_eq!(db.variables[1].default, Value::Boolean(true));
+    }
+
+    #[test]
+    fn parse_block_bool_int_interleaved_preserves_order_and_kinds() {
+        let script = "--- variables\nint a = 1\nbool b = true\nint c\nbool d\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        assert!(outcome.errors.is_empty());
+        let kinds: Vec<_> = db
+            .variables
+            .iter()
+            .map(|v| (v.name.as_str(), &v.default))
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                ("a", &Value::Integer(1)),
+                ("b", &Value::Boolean(true)),
+                ("c", &Value::Integer(0)),
+                ("d", &Value::Boolean(false)),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_block_bool_default_not_bool_literal() {
+        let script = "--- variables\nbool b = 1\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        match expect_single_error(outcome) {
+            ParseError::DefaultTypeMismatch {
+                variable,
+                expected,
+                found_token,
+                found,
+                line,
+                ..
+            } => {
+                assert_eq!(variable, "b");
+                assert_eq!(expected, ValueKind::Boolean);
+                assert_eq!(found_token, "1");
+                assert_eq!(found, ValueKind::Integer);
+                assert_eq!(line, 2);
+            }
+            other => panic!("expected DefaultTypeMismatch, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_block_bool_default_references_non_bool() {
+        let script = "--- variables\nint count = 3\nbool b = count\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        match expect_single_error(outcome) {
+            ParseError::DefaultTypeMismatch {
+                variable,
+                found_token,
+                found,
+                line,
+                ..
+            } => {
+                assert_eq!(variable, "b");
+                assert_eq!(found_token, "count");
+                assert_eq!(found, ValueKind::Integer);
+                assert_eq!(line, 3);
+            }
+            other => panic!("expected DefaultTypeMismatch, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_block_int_default_references_earlier_bool() {
+        // The inverse of `parse_block_bool_default_references_non_bool`: an
+        // `int` default referencing an earlier `bool` must report a type
+        // mismatch — not a forward/undefined reference, since the bool is
+        // declared on the previous line.
+        let script = "--- variables\nbool flag = true\nint x = flag\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        match expect_single_error(outcome) {
+            ParseError::DefaultTypeMismatch {
+                variable,
+                expected,
+                found_token,
+                found,
+                line,
+                ..
+            } => {
+                assert_eq!(variable, "x");
+                assert_eq!(expected, ValueKind::Integer);
+                assert_eq!(found_token, "flag");
+                assert_eq!(found, ValueKind::Boolean);
+                assert_eq!(line, 3);
+            }
+            other => panic!("expected DefaultTypeMismatch, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_block_bool_logical_operator_in_default() {
+        let script = "--- variables\nbool b = true or false\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        match expect_single_error(outcome) {
+            ParseError::LogicalOperatorInDefault { line, .. } => assert_eq!(line, 2),
+            other => panic!("expected LogicalOperatorInDefault, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_block_bool_forward_reference() {
+        let script = "--- variables\nbool a = b\nbool b = true\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        match expect_single_error(outcome) {
+            ParseError::ForwardVariableReference { name, line, .. } => {
+                assert_eq!(name, "b");
+                assert_eq!(line, 2);
+            }
+            other => panic!("expected ForwardVariableReference, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_block_bool_reserved_keyword() {
+        let script = "--- variables\nbool and = true\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        match expect_single_error(outcome) {
+            ParseError::ReservedKeyword { name, line, .. } => {
+                assert_eq!(name, "and");
+                assert_eq!(line, 2);
+            }
+            other => panic!("expected ReservedKeyword, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_block_duplicate_name_across_types() {
+        let script = "--- variables\nint x\nbool x = true\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        match expect_single_error(outcome) {
+            ParseError::DuplicateVariable {
+                name,
+                previous_line,
+                line,
+                ..
+            } => {
+                assert_eq!(name, "x");
+                assert_eq!(previous_line, 2);
+                assert_eq!(line, 3);
+            }
+            other => panic!("expected DuplicateVariable, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_block_bool_missing_name() {
+        let script = "--- variables\nbool\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        match expect_single_error(outcome) {
+            ParseError::MissingVariableName { line, .. } => assert_eq!(line, 2),
+            other => panic!("expected MissingVariableName, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn bool_default_type_mismatch_display_names_both_keywords() {
+        let err = ParseError::DefaultTypeMismatch {
+            variable: "b".to_string(),
+            expected: ValueKind::Boolean,
+            found_token: "1".to_string(),
+            found: ValueKind::Integer,
+            file: None,
+            line: 2,
+        };
+        assert_eq!(
+            format!("{}", err),
+            "<script>:2: ERROR: Type mismatch: default for bool 'b' must be a bool, but '1' is int."
+        );
+    }
+
+    #[test]
+    fn logical_operator_in_default_display() {
+        let err = ParseError::LogicalOperatorInDefault {
+            file: None,
+            line: 2,
+        };
+        assert_eq!(
+            format!("{}", err),
+            "<script>:2: ERROR: Logical operators (and/or/not) are not allowed in variable defaults; use 'req' for boolean expressions."
+        );
     }
 
     #[test]

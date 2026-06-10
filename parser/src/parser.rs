@@ -298,6 +298,28 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    /// A typed variable's default evaluated to a value of the wrong kind
+    /// (e.g. an `int` literal or a reference to an `int` variable used as a
+    /// `bool` default). Carries the declared kind, the offending token text,
+    /// and the kind that token actually has so the diagnostic can name both —
+    /// parallel in shape to [`SetTypeMismatch`](Self::SetTypeMismatch) and
+    /// [`RequirementTypeMismatch`](Self::RequirementTypeMismatch), differing
+    /// only in that it names a default declaration.
+    DefaultTypeMismatch {
+        variable: String,
+        expected: cuentitos_common::ValueKind,
+        found_token: String,
+        found: cuentitos_common::ValueKind,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// A variable default used a logical operator (`and`/`or`/`not`). Boolean
+    /// expressions belong in `req`, not in a default; defaults are limited to
+    /// literals and references to earlier variables.
+    LogicalOperatorInDefault {
+        file: Option<PathBuf>,
+        line: usize,
+    },
     /// `==` appeared in a `req` comparison. Cuentitos spells equality
     /// as a single `=`; the doubled form is the most common typo from
     /// C/Python users and gets a dedicated message so the author isn't
@@ -800,6 +822,34 @@ impl fmt::Display for ParseError {
                     line,
                     variable,
                     literal
+                )
+            }
+            ParseError::DefaultTypeMismatch {
+                variable,
+                expected,
+                found_token,
+                found,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Type mismatch: default for {} '{}' must be a {}, but '{}' is {}.",
+                    file_prefix(file),
+                    line,
+                    expected.keyword(),
+                    variable,
+                    expected.keyword(),
+                    found_token,
+                    found.keyword()
+                )
+            }
+            ParseError::LogicalOperatorInDefault { file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Logical operators (and/or/not) are not allowed in variable defaults; use 'req' for boolean expressions.",
+                    file_prefix(file),
+                    line
                 )
             }
             ParseError::DoubleEqualsInRequirement { file, line } => {
