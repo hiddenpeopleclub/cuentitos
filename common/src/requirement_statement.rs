@@ -27,6 +27,21 @@ impl ComparisonOperator {
         )
     }
 
+    /// The source-syntax spelling of this operator (`=`, `!=`, `<`, `<=`,
+    /// `>`, `>=`). Used by diagnostics that echo the operator the author
+    /// typed — e.g. the bool ordering-operator rejection.
+    #[must_use]
+    pub fn symbol(self) -> &'static str {
+        match self {
+            ComparisonOperator::Equal => "=",
+            ComparisonOperator::NotEqual => "!=",
+            ComparisonOperator::Less => "<",
+            ComparisonOperator::LessOrEqual => "<=",
+            ComparisonOperator::Greater => ">",
+            ComparisonOperator::GreaterOrEqual => ">=",
+        }
+    }
+
     /// Apply this comparison to two values.
     ///
     /// Integers support the full operator set. Booleans support only equality

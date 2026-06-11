@@ -12,7 +12,8 @@
 //!    variants ready for [`crate::ParseError`] formatting.
 
 use cuentitos_common::{
-    BooleanExpression, ComparisonOperator, Database, RequirementStatement, ValueKind, VariableId,
+    BooleanExpression, ComparisonOperator, Database, Expression, RequirementStatement, ValueKind,
+    VariableId,
 };
 
 use crate::boolean_expression::{
@@ -43,6 +44,16 @@ pub enum RequirementParseError {
     UnknownSymbol { symbol: String },
     /// LHS and RHS of a comparison inferred to different kinds.
     TypeMismatch { left: ValueKind, right: ValueKind },
+    /// A comparison directly pairs two operands of different declared
+    /// kinds (e.g. `door_open = 1`). Carries each operand's rendered
+    /// source token and kind so the diagnostic can name both — e.g.
+    /// `cannot compare bool 'door_open' with int '1'`.
+    ComparisonTypeMismatch {
+        left_kind: ValueKind,
+        left_token: String,
+        right_kind: ValueKind,
+        right_token: String,
+    },
     /// An ordering operator was applied to a non-ordered kind.
     NonOrderedComparison {
         operator: ComparisonOperator,
@@ -203,9 +214,11 @@ fn validate_comparison(
     let left_kind = infer_kind(&statement.left, database)?;
     let right_kind = infer_kind(&statement.right, database)?;
     if left_kind != right_kind {
-        return Err(RequirementParseError::TypeMismatch {
-            left: left_kind,
-            right: right_kind,
+        return Err(RequirementParseError::ComparisonTypeMismatch {
+            left_kind,
+            left_token: render_operand(&statement.left, database),
+            right_kind,
+            right_token: render_operand(&statement.right, database),
         });
     }
     if statement.operator.requires_ordering() && !left_kind.is_ordered() {
@@ -215,6 +228,19 @@ fn validate_comparison(
         });
     }
     Ok(())
+}
+
+/// Render a comparison operand back to the source token a reader would
+/// recognize: a variable's declared name, or a literal's textual value
+/// (`1`, `true`). Compound arithmetic doesn't reduce to a single token, so
+/// it falls back to a generic word — the bool comparison diagnostics that
+/// consume this only ever pair a variable or literal across the operator.
+fn render_operand(expression: &Expression, database: &Database) -> String {
+    match expression {
+        Expression::Variable(id) => database.variables[*id].name.clone(),
+        Expression::Literal(value) => value.to_string(),
+        Expression::Binary { .. } => "expression".to_string(),
+    }
 }
 
 fn infer_kind(
@@ -238,6 +264,13 @@ struct DatabaseResolver<'a> {
 impl VariableResolver for DatabaseResolver<'_> {
     fn resolve(&self, name: &str) -> Option<VariableId> {
         self.database.variable_id(name)
+    }
+
+    fn kind_of(&self, id: VariableId) -> Option<ValueKind> {
+        self.database
+            .variables
+            .get(id)
+            .map(|variable| variable.kind())
     }
 }
 
@@ -517,6 +550,129 @@ mod tests {
         assert_eq!(
             parse_requirement("req x == 5", &db).unwrap_err(),
             RequirementParseError::DoubleEquals
+        );
+    }
+
+    // -- bool `req` ------------------------------------------------------
+
+    fn db_with_bools(vars: &[&str]) -> Database {
+        let mut db = Database::new();
+        for name in vars {
+            db.add_variable(Variable::new_boolean(*name, false));
+        }
+        db
+    }
+
+    #[test]
+    fn truthiness_shortcut_desugars_to_equals_true() {
+        // `req flag` on a bool variable is the truthiness shortcut: it
+        // desugars to `flag = true`.
+        let db = db_with_bools(&["flag"]);
+        let parsed = parse_requirement("req flag", &db).unwrap();
+        let stmt = assert_comparison(&parsed.expression, ComparisonOperator::Equal);
+        assert_eq!(stmt.left, Expression::Variable(0));
+        assert_eq!(stmt.right, Expression::Literal(Value::Boolean(true)));
+    }
+
+    #[test]
+    fn truthiness_shortcut_negated_with_not() {
+        let db = db_with_bools(&["flag"]);
+        let parsed = parse_requirement("req not flag", &db).unwrap();
+        match parsed.expression {
+            BooleanExpression::Not(inner) => {
+                assert_comparison(&inner, ComparisonOperator::Equal);
+            }
+            other => panic!("expected Not, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn truthiness_shortcuts_combine_with_and() {
+        let db = db_with_bools(&["a", "b"]);
+        let parsed = parse_requirement("req a and b", &db).unwrap();
+        assert!(matches!(parsed.expression, BooleanExpression::And(_, _)));
+    }
+
+    #[test]
+    fn bare_int_operand_is_not_truthiness() {
+        // The truthiness shortcut is bool-only; a bare int operand keeps
+        // its existing malformed-expression diagnostic.
+        let db = db_with(&["health"]);
+        assert_eq!(
+            parse_requirement("req health", &db).unwrap_err(),
+            RequirementParseError::MalformedExpression {
+                expression: "health".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn compares_bool_variable_to_literal() {
+        let db = db_with_bools(&["flag"]);
+        let parsed = parse_requirement("req flag = true", &db).unwrap();
+        let stmt = assert_comparison(&parsed.expression, ComparisonOperator::Equal);
+        assert_eq!(stmt.left, Expression::Variable(0));
+        assert_eq!(stmt.right, Expression::Literal(Value::Boolean(true)));
+    }
+
+    #[test]
+    fn compares_two_bool_variables() {
+        let db = db_with_bools(&["a", "b"]);
+        let parsed = parse_requirement("req a != b", &db).unwrap();
+        let stmt = assert_comparison(&parsed.expression, ComparisonOperator::NotEqual);
+        assert_eq!(stmt.left, Expression::Variable(0));
+        assert_eq!(stmt.right, Expression::Variable(1));
+    }
+
+    #[test]
+    fn ordering_operator_on_bool_is_rejected() {
+        let db = db_with_bools(&["flag"]);
+        assert_eq!(
+            parse_requirement("req flag > false", &db).unwrap_err(),
+            RequirementParseError::NonOrderedComparison {
+                operator: ComparisonOperator::Greater,
+                kind: ValueKind::Boolean,
+            }
+        );
+    }
+
+    #[test]
+    fn comparing_bool_to_int_literal_is_type_mismatch() {
+        let db = db_with_bools(&["flag"]);
+        assert_eq!(
+            parse_requirement("req flag = 1", &db).unwrap_err(),
+            RequirementParseError::ComparisonTypeMismatch {
+                left_kind: ValueKind::Boolean,
+                left_token: "flag".to_string(),
+                right_kind: ValueKind::Integer,
+                right_token: "1".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn comparing_bool_to_int_variable_is_type_mismatch() {
+        let mut db = db_with_bools(&["flag"]);
+        db.add_variable(Variable::new_integer("health", 0));
+        assert_eq!(
+            parse_requirement("req flag = health", &db).unwrap_err(),
+            RequirementParseError::ComparisonTypeMismatch {
+                left_kind: ValueKind::Boolean,
+                left_token: "flag".to_string(),
+                right_kind: ValueKind::Integer,
+                right_token: "health".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn truthiness_shortcut_on_undeclared_is_undefined_variable() {
+        let db = db_with_bools(&["flag"]);
+        assert_eq!(
+            parse_requirement("req missing", &db).unwrap_err(),
+            RequirementParseError::UndefinedVariable {
+                name: "missing".to_string(),
+            }
         );
     }
 }
