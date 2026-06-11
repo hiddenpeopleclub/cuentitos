@@ -37,6 +37,7 @@ use cuentitos_common::{BinaryOperator, Expression, Value, VariableId};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArithmeticTokenKind {
     Int,
+    Bool,
     Ident,
     Plus,
     Minus,
@@ -53,6 +54,7 @@ pub enum ArithmeticTokenKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ArithmeticToken {
     Int(u64),
+    Bool(bool),
     Ident(String),
     Plus,
     Minus,
@@ -66,6 +68,7 @@ impl ArithmeticToken {
     pub fn kind(&self) -> ArithmeticTokenKind {
         match self {
             ArithmeticToken::Int(_) => ArithmeticTokenKind::Int,
+            ArithmeticToken::Bool(_) => ArithmeticTokenKind::Bool,
             ArithmeticToken::Ident(_) => ArithmeticTokenKind::Ident,
             ArithmeticToken::Plus => ArithmeticTokenKind::Plus,
             ArithmeticToken::Minus => ArithmeticTokenKind::Minus,
@@ -126,6 +129,12 @@ pub trait ArithmeticSource {
     /// callers in this module `.expect()` on that since the surrounding
     /// `match` already verified the kind.
     fn take_int(&mut self) -> Option<u64>;
+    /// Consume the current `Bool` token and return its value.
+    /// Returns `None` if the cursor is not pointing at a `Bool` (i.e.
+    /// the caller forgot to guard with [`peek_kind`](Self::peek_kind));
+    /// callers in this module `.expect()` on that since the surrounding
+    /// `match` already verified the kind.
+    fn take_bool(&mut self) -> Option<bool>;
     /// Consume the current `Ident` token and return its text.
     /// Returns `None` if the cursor is not pointing at an `Ident` (i.e.
     /// the caller forgot to guard with [`peek_kind`](Self::peek_kind));
@@ -245,6 +254,10 @@ fn parse_primary<S: ArithmeticSource>(stream: &mut S) -> Result<Expression, Arit
                 });
             }
             Ok(Expression::Literal(Value::Integer(n as i64)))
+        }
+        Some(ArithmeticTokenKind::Bool) => {
+            let value = stream.take_bool().expect("peek_kind guarded this");
+            Ok(Expression::Literal(Value::Boolean(value)))
         }
         Some(ArithmeticTokenKind::Ident) => {
             let name = stream.take_ident().expect("peek_kind guarded this");

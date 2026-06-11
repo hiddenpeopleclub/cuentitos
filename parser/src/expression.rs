@@ -119,6 +119,15 @@ impl<'a> ArithmeticSource for SliceArithmeticSource<'a> {
         Some(value)
     }
 
+    fn take_bool(&mut self) -> Option<bool> {
+        let ArithmeticToken::Bool(b) = self.tokens.get(self.position)? else {
+            return None;
+        };
+        let value = *b;
+        self.position += 1;
+        Some(value)
+    }
+
     fn take_ident(&mut self) -> Option<String> {
         let ArithmeticToken::Ident(name) = self.tokens.get(self.position)? else {
             return None;
@@ -231,7 +240,14 @@ fn tokenize(input: &str) -> Result<Vec<ArithmeticToken>, TokenizeError> {
                         break;
                     }
                 }
-                tokens.push(ArithmeticToken::Ident(buf));
+                // `true`/`false` are boolean literals, not identifiers, so
+                // `set flag = true` folds to a `Value::Boolean` rather than
+                // resolving a (non-existent) variable named `true`.
+                match buf.as_str() {
+                    "true" => tokens.push(ArithmeticToken::Bool(true)),
+                    "false" => tokens.push(ArithmeticToken::Bool(false)),
+                    _ => tokens.push(ArithmeticToken::Ident(buf)),
+                }
             }
             _ => return Err(TokenizeError::Malformed),
         }
@@ -279,6 +295,21 @@ mod tests {
         assert_eq!(
             parse_expression("42", &resolver).unwrap(),
             Expression::Literal(Value::Integer(42))
+        );
+    }
+
+    #[test]
+    fn parses_true_and_false_as_bool_literals() {
+        // `set flag = true` folds to a boolean literal, not an identifier
+        // lookup of a (non-existent) variable named `true`.
+        let resolver = no_vars();
+        assert_eq!(
+            parse_expression("true", &resolver).unwrap(),
+            Expression::Literal(Value::Boolean(true))
+        );
+        assert_eq!(
+            parse_expression("false", &resolver).unwrap(),
+            Expression::Literal(Value::Boolean(false))
         );
     }
 

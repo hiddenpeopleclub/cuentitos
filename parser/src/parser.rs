@@ -209,9 +209,25 @@ pub enum ParseError {
         line: usize,
     },
     /// `req` used an ordering operator (`< <= > >=`) on a kind that doesn't
-    /// support ordering.
+    /// support ordering. Carries the operator so the diagnostic can echo the
+    /// exact symbol the author typed.
     NonOrderedComparison {
+        operator: cuentitos_common::ComparisonOperator,
         kind: cuentitos_common::ValueKind,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// `req` compared two operands of different declared kinds, naming each
+    /// operand's source token and kind (e.g. `cannot compare bool
+    /// 'door_open' with int '1'`). Distinct from
+    /// [`RequirementTypeMismatch`](Self::RequirementTypeMismatch), which
+    /// reports kinds only and covers a type clash inside one operand's
+    /// arithmetic.
+    RequirementComparisonTypeMismatch {
+        left_kind: cuentitos_common::ValueKind,
+        left_token: String,
+        right_kind: cuentitos_common::ValueKind,
+        right_token: String,
         file: Option<PathBuf>,
         line: usize,
     },
@@ -687,13 +703,38 @@ impl fmt::Display for ParseError {
                     right
                 )
             }
-            ParseError::NonOrderedComparison { kind, file, line } => {
+            ParseError::NonOrderedComparison {
+                operator,
+                kind,
+                file,
+                line,
+            } => {
                 write!(
                     f,
-                    "{}:{}: ERROR: Ordering comparison ('<', '<=', '>', '>=') is not supported for type {}.",
+                    "{}:{}: ERROR: Ordering operator '{}' is not supported on {} values.",
                     file_prefix(file),
                     line,
-                    kind
+                    operator.symbol(),
+                    kind.keyword()
+                )
+            }
+            ParseError::RequirementComparisonTypeMismatch {
+                left_kind,
+                left_token,
+                right_kind,
+                right_token,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Type mismatch: cannot compare {} '{}' with {} '{}'.",
+                    file_prefix(file),
+                    line,
+                    left_kind.keyword(),
+                    left_token,
+                    right_kind.keyword(),
+                    right_token
                 )
             }
             ParseError::NonNumericArithmetic { kind, file, line } => {
@@ -1549,9 +1590,28 @@ impl Parser {
                                             line,
                                         }
                                     }
+                                    RequirementParseError::ComparisonTypeMismatch {
+                                        left_kind,
+                                        left_token,
+                                        right_kind,
+                                        right_token,
+                                    } => ParseError::RequirementComparisonTypeMismatch {
+                                        left_kind,
+                                        left_token,
+                                        right_kind,
+                                        right_token,
+                                        file,
+                                        line,
+                                    },
                                     RequirementParseError::NonOrderedComparison {
-                                        kind, ..
-                                    } => ParseError::NonOrderedComparison { kind, file, line },
+                                        operator,
+                                        kind,
+                                    } => ParseError::NonOrderedComparison {
+                                        operator,
+                                        kind,
+                                        file,
+                                        line,
+                                    },
                                     RequirementParseError::NonNumericArithmetic { kind } => {
                                         ParseError::NonNumericArithmetic { kind, file, line }
                                     }

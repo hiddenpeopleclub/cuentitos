@@ -22,7 +22,8 @@
 //! `Missing right operand for 'and' in 'req': 'x > 0 and'.`
 
 use cuentitos_common::{
-    BooleanExpression, ComparisonOperator, Expression, RequirementStatement, VariableId,
+    BooleanExpression, ComparisonOperator, Expression, RequirementStatement, Value, ValueKind,
+    VariableId,
 };
 
 use crate::arithmetic::{
@@ -32,6 +33,17 @@ use crate::arithmetic::{
 /// Resolves identifiers (variable names) to declared [`VariableId`]s.
 pub trait VariableResolver {
     fn resolve(&self, name: &str) -> Option<VariableId>;
+
+    /// Declared kind of a resolved variable, by id. Used to decide whether
+    /// a bare operand is a bool truthiness shortcut (`req door_open`) or an
+    /// int expression in comparison position (an error). The default
+    /// returns `None` — "unknown kind" — so resolvers that don't carry type
+    /// information (e.g. the bare closures used in tests) keep treating bare
+    /// operands as non-bool. The real [`crate::parsers::requirement_parser`]
+    /// resolver overrides it with the database's declared kinds.
+    fn kind_of(&self, _id: VariableId) -> Option<ValueKind> {
+        None
+    }
 }
 
 impl<F: Fn(&str) -> Option<VariableId>> VariableResolver for F {
@@ -186,6 +198,7 @@ impl LogicalKeyword {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Token {
     Int(u64),
+    Bool(bool),
     Ident(String),
     LogicalAnd,
     LogicalOr,
@@ -322,6 +335,8 @@ fn tokenize(input: &str) -> Result<Vec<Token>, TokenizeError> {
                     "and" => Token::LogicalAnd,
                     "or" => Token::LogicalOr,
                     "not" => Token::LogicalNot,
+                    "true" => Token::Bool(true),
+                    "false" => Token::Bool(false),
                     _ => Token::Ident(name),
                 };
                 tokens.push(token);
@@ -598,6 +613,18 @@ impl<'a> BooleanParser<'a> {
                 left, operator, right,
             )));
         }
+        // No comparison operator. A bare bool operand (a bool variable or a
+        // `true`/`false` literal) is the truthiness shortcut: `req door_open`
+        // desugars to `door_open = true`, and it is valid in every logical
+        // context (top level, operand of `not`/`and`/`or`). A bare *int*
+        // operand has no truthiness and stays an error, dispatched below.
+        if self.expression_is_bool(&left) {
+            return Ok(BooleanExpression::Comparison(RequirementStatement::new(
+                left,
+                ComparisonOperator::Equal,
+                Expression::Literal(Value::Boolean(true)),
+            )));
+        }
         // No comparison operator — we got an arithmetic expression where
         // a boolean was expected. Surface a context-aware error.
         match self.peek() {
@@ -630,12 +657,26 @@ impl<'a> BooleanParser<'a> {
     fn parse_arith(&mut self) -> Result<Expression, BooleanParseError> {
         parse_arithmetic_expression(self).map_err(map_arithmetic_error)
     }
+
+    /// True when `expression` is a bool-typed leaf eligible for the
+    /// truthiness shortcut: a `true`/`false` literal or a reference to a
+    /// bool variable. Arithmetic combinations and int variables are not —
+    /// they keep their existing bare-operand error so int `req` diagnostics
+    /// are unchanged.
+    fn expression_is_bool(&self, expression: &Expression) -> bool {
+        match expression {
+            Expression::Literal(Value::Boolean(_)) => true,
+            Expression::Variable(id) => self.resolver.kind_of(*id) == Some(ValueKind::Boolean),
+            _ => false,
+        }
+    }
 }
 
 impl<'a> ArithmeticSource for BooleanParser<'a> {
     fn peek_kind(&self) -> Option<ArithmeticTokenKind> {
         match self.tokens.get(self.position)? {
             Token::Int(_) => Some(ArithmeticTokenKind::Int),
+            Token::Bool(_) => Some(ArithmeticTokenKind::Bool),
             Token::Ident(_) => Some(ArithmeticTokenKind::Ident),
             Token::Plus => Some(ArithmeticTokenKind::Plus),
             Token::Minus => Some(ArithmeticTokenKind::Minus),
@@ -660,6 +701,15 @@ impl<'a> ArithmeticSource for BooleanParser<'a> {
             return None;
         };
         let value = *n;
+        self.position += 1;
+        Some(value)
+    }
+
+    fn take_bool(&mut self) -> Option<bool> {
+        let Token::Bool(b) = self.tokens.get(self.position)? else {
+            return None;
+        };
+        let value = *b;
         self.position += 1;
         Some(value)
     }
@@ -1181,5 +1231,71 @@ mod tests {
                 symbol: "∧".to_string()
             }
         );
+    }
+
+    /// Resolver that reports every declared name as a bool variable, so the
+    /// truthiness shortcut applies. The `Fn`-based `make_resolver` can't do
+    /// this because its `kind_of` falls back to the trait default (`None`).
+    struct BoolResolver {
+        names: HashMap<String, VariableId>,
+    }
+
+    impl BoolResolver {
+        fn new(pairs: &[(&str, VariableId)]) -> Self {
+            Self {
+                names: pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
+            }
+        }
+    }
+
+    impl VariableResolver for BoolResolver {
+        fn resolve(&self, name: &str) -> Option<VariableId> {
+            self.names.get(name).copied()
+        }
+
+        fn kind_of(&self, _id: VariableId) -> Option<ValueKind> {
+            Some(ValueKind::Boolean)
+        }
+    }
+
+    #[test]
+    fn parses_true_and_false_literals_as_bool() {
+        // A `true`/`false` operand folds to a boolean literal rather than
+        // resolving an identifier named `true`.
+        let result = parse("x = true", &[("x", 0)]).unwrap();
+        match result {
+            BooleanExpression::Comparison(stmt) => {
+                assert_eq!(stmt.right, Expression::Literal(Value::Boolean(true)));
+            }
+            other => panic!("expected Comparison, got {:?}", other),
+        }
+        let result = parse("x != false", &[("x", 0)]).unwrap();
+        match result {
+            BooleanExpression::Comparison(stmt) => {
+                assert_eq!(stmt.right, Expression::Literal(Value::Boolean(false)));
+            }
+            other => panic!("expected Comparison, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn bool_truthiness_shortcut_desugars_to_equals_true() {
+        let resolver = BoolResolver::new(&[("flag", 0)]);
+        let result = parse_boolean_expression("flag", &resolver).unwrap();
+        match result {
+            BooleanExpression::Comparison(stmt) => {
+                assert_eq!(stmt.left, Expression::Variable(0));
+                assert_eq!(stmt.operator, ComparisonOperator::Equal);
+                assert_eq!(stmt.right, Expression::Literal(Value::Boolean(true)));
+            }
+            other => panic!("expected Comparison, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn bool_truthiness_shortcuts_combine_with_and() {
+        let resolver = BoolResolver::new(&[("a", 0), ("b", 1)]);
+        let result = parse_boolean_expression("a and b", &resolver).unwrap();
+        assert!(matches!(result, BooleanExpression::And(_, _)));
     }
 }
