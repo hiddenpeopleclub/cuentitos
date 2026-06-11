@@ -92,7 +92,10 @@ impl ComparisonOperator {
 /// current parser only accepts `<var> <op> <expr>` (and wraps the LHS as
 /// [`Expression::Variable`]), but relaxing the grammar to accept arbitrary
 /// expressions on both sides is purely a parser change.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Not `Eq`: the `left`/`right` expressions may carry `Value::Float` literals,
+/// whose `f64` payload has no total equality.
+#[derive(Debug, Clone, PartialEq)]
 pub struct RequirementStatement {
     pub left: Expression,
     pub operator: ComparisonOperator,

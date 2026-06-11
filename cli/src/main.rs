@@ -462,6 +462,7 @@ fn print_debug_variables(runtime: &cuentitos_runtime::Runtime, script_path: &Pat
         let formatted = match value {
             cuentitos_common::Value::Integer(n) => format!("{n}"),
             cuentitos_common::Value::Boolean(b) => format!("{b}"),
+            cuentitos_common::Value::Float(x) => cuentitos_common::value::format_float(*x),
         };
         println!("{}: {}", variable.name, formatted);
     }

@@ -15,7 +15,10 @@ use crate::VariableId;
 
 /// A `req` condition. Either a single comparison leaf or a logical
 /// combination of sub-expressions.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Not `Eq`: leaves carry [`RequirementStatement`]s whose expressions may hold
+/// `Value::Float` literals, and `f64` has no total equality.
+#[derive(Debug, Clone, PartialEq)]
 pub enum BooleanExpression {
     Comparison(RequirementStatement),
     And(Box<BooleanExpression>, Box<BooleanExpression>),

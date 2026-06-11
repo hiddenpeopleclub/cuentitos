@@ -137,7 +137,7 @@ fn parse_one_declaration(
     let (kind, rest) = match declaration_kind(trimmed) {
         Some((kind, rest)) => (kind, rest),
         None => {
-            if trimmed == "int" || trimmed == "bool" {
+            if trimmed == "int" || trimmed == "bool" || trimmed == "float" {
                 return Err(ParseError::MissingVariableName {
                     file: file_path.clone(),
                     line: line_number,
@@ -211,6 +211,14 @@ fn parse_one_declaration(
             file_path,
             line_number,
         )?,
+        ValueKind::Float => float_default_value(
+            name,
+            default_expr,
+            declared,
+            future_names,
+            file_path,
+            line_number,
+        )?,
     };
 
     declared_lines.insert(name.to_string(), line_number);
@@ -228,6 +236,8 @@ fn declaration_kind(trimmed: &str) -> Option<(ValueKind, &str)> {
         Some((ValueKind::Integer, rest.trim_start()))
     } else if let Some(rest) = trimmed.strip_prefix("bool ") {
         Some((ValueKind::Boolean, rest.trim_start()))
+    } else if let Some(rest) = trimmed.strip_prefix("float ") {
+        Some((ValueKind::Float, rest.trim_start()))
     } else {
         None
     }
@@ -462,10 +472,391 @@ fn evaluate_bool_default(
     })
 }
 
+/// Fold a float variable's default into a [`Value::Float`]. With no default
+/// the value is `0.0`. Errors are mapped to the float-specific `ParseError`
+/// diagnostics (invalid literal, division-by-zero, overflow-to-infinity,
+/// cross-type / forward / undefined references).
+fn float_default_value(
+    name: &str,
+    default_expr: Option<&str>,
+    declared: &HashMap<String, Value>,
+    future_names: &HashSet<String>,
+    file_path: &Option<PathBuf>,
+    line_number: usize,
+) -> Result<Value, ParseError> {
+    let expr = match default_expr {
+        Some(expr) => expr,
+        None => return Ok(Value::Float(0.0)),
+    };
+
+    match evaluate_float_default(expr, name, declared, future_names) {
+        Ok(value) => Ok(Value::Float(value)),
+        Err(FloatDefaultError::InvalidLiteral { literal }) => {
+            Err(ParseError::InvalidFloatLiteral {
+                literal,
+                file: file_path.clone(),
+                line: line_number,
+            })
+        }
+        Err(FloatDefaultError::Malformed) => Err(ParseError::MalformedDefaultExpression {
+            expr: expr.to_string(),
+            file: file_path.clone(),
+            line: line_number,
+        }),
+        Err(FloatDefaultError::DivisionByZero) => Err(ParseError::DivisionByZero {
+            variable: name.to_string(),
+            file: file_path.clone(),
+            line: line_number,
+        }),
+        Err(FloatDefaultError::Overflow) => Err(ParseError::FloatOverflow {
+            variable: name.to_string(),
+            file: file_path.clone(),
+            line: line_number,
+        }),
+        Err(FloatDefaultError::TypeMismatch { token, found }) => {
+            Err(ParseError::FloatDefaultTypeMismatch {
+                variable: name.to_string(),
+                found_token: token,
+                found,
+                file: file_path.clone(),
+                line: line_number,
+            })
+        }
+        Err(FloatDefaultError::ForwardReference {
+            name: referenced_name,
+        }) => Err(ParseError::ForwardVariableReference {
+            name: referenced_name,
+            file: file_path.clone(),
+            line: line_number,
+        }),
+        Err(FloatDefaultError::UndefinedReference {
+            name: referenced_name,
+        }) => Err(ParseError::UndefinedVariableReference {
+            name: referenced_name,
+            file: file_path.clone(),
+            line: line_number,
+        }),
+    }
+}
+
+/// Errors that can surface while folding a float default. Kept private so
+/// [`float_default_value`] owns the mapping to `ParseError`, mirroring how
+/// [`BoolDefaultError`] decouples the bool folder from its diagnostics.
+#[derive(Debug, Clone, PartialEq)]
+enum FloatDefaultError {
+    /// A numeric token wasn't a valid `<digits>.<digits>` float literal
+    /// (e.g. `.5`, `1.`, `1e3`, or a bare integer). Carries the offending
+    /// text so the diagnostic can name it.
+    InvalidLiteral { literal: String },
+    /// The expression didn't parse (dangling operator, unbalanced paren,
+    /// unexpected symbol, or excessive nesting depth).
+    Malformed,
+    /// A `/ 0.0` was constant-folded. Defaults evaluate at parse time, so
+    /// this is an error rather than an IEEE infinity.
+    DivisionByZero,
+    /// A finite operation produced a non-finite result (magnitude beyond the
+    /// largest finite `f64`). Reported rather than storing an infinity.
+    Overflow,
+    /// The default referenced a non-float value where a float was required.
+    /// `token` is the offending text; `found` is the kind it actually has.
+    TypeMismatch { token: String, found: ValueKind },
+    /// The default references a variable declared later in the same block.
+    /// (A self-reference lands here too — the name is not yet in scope on its
+    /// own declaration line.)
+    ForwardReference { name: String },
+    /// The default references a name that is never declared.
+    UndefinedReference { name: String },
+}
+
+/// The float default sublanguage's token alphabet. Float literals are
+/// pre-folded to `f64` during tokenization so the parser only ever sees
+/// finished numbers.
+#[derive(Debug, Clone, PartialEq)]
+enum FloatToken {
+    Float(f64),
+    Identifier(String),
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    LeftParen,
+    RightParen,
+}
+
+/// Constant-fold a float default expression against the variables declared
+/// earlier in the same block.
+///
+/// A float default is `+ - * /`, parentheses, and unary minus over float
+/// literals (`<digits>.<digits>`) and references to earlier float variables.
+/// Division is IEEE (no truncation); division by zero and overflow-to-infinity
+/// are parse-time errors because defaults fold here rather than at runtime.
+fn evaluate_float_default(
+    expression: &str,
+    variable_name: &str,
+    declared: &HashMap<String, Value>,
+    future_names: &HashSet<String>,
+) -> Result<f64, FloatDefaultError> {
+    let tokens = tokenize_float_expression(expression)?;
+    if tokens.is_empty() {
+        return Err(FloatDefaultError::Malformed);
+    }
+    let mut folder = FloatFolder {
+        tokens: &tokens,
+        position: 0,
+        variable_name,
+        declared,
+        future_names,
+        depth: 0,
+    };
+    let value = folder.parse_additive()?;
+    if folder.position != tokens.len() {
+        return Err(FloatDefaultError::Malformed);
+    }
+    Ok(value)
+}
+
+/// Lex a float default expression. Numeric tokens are validated as
+/// `<digits>.<digits>` and folded to `f64`; anything that starts like a number
+/// but isn't (`.5`, `1.`, `1e3`, a bare integer) is captured whole and
+/// reported as an invalid literal.
+fn tokenize_float_expression(input: &str) -> Result<Vec<FloatToken>, FloatDefaultError> {
+    let mut tokens = Vec::new();
+    let mut chars = input.chars().peekable();
+    while let Some(&c) = chars.peek() {
+        if c.is_whitespace() {
+            chars.next();
+            continue;
+        }
+        match c {
+            '+' => {
+                chars.next();
+                tokens.push(FloatToken::Plus);
+            }
+            '-' => {
+                chars.next();
+                tokens.push(FloatToken::Minus);
+            }
+            '*' => {
+                chars.next();
+                tokens.push(FloatToken::Star);
+            }
+            '/' => {
+                chars.next();
+                tokens.push(FloatToken::Slash);
+            }
+            '(' => {
+                chars.next();
+                tokens.push(FloatToken::LeftParen);
+            }
+            ')' => {
+                chars.next();
+                tokens.push(FloatToken::RightParen);
+            }
+            // A number-like run starts with a digit or a `.`. Consume the
+            // maximal contiguous run of alphanumerics and dots so a malformed
+            // literal (`1e3`, `1.5.5`, `.5`, `1.`) is captured whole for the
+            // diagnostic, then validate it as `<digits>.<digits>`.
+            c if c.is_ascii_digit() || c == '.' => {
+                let mut lexeme = String::new();
+                while let Some(&c) = chars.peek() {
+                    if c.is_ascii_alphanumeric() || c == '.' {
+                        lexeme.push(c);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                tokens.push(FloatToken::Float(parse_float_literal(&lexeme)?));
+            }
+            c if c.is_ascii_alphabetic() || c == '_' => {
+                let mut buf = String::new();
+                while let Some(&c) = chars.peek() {
+                    if c.is_ascii_alphanumeric() || c == '_' {
+                        buf.push(c);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                tokens.push(FloatToken::Identifier(buf));
+            }
+            _ => return Err(FloatDefaultError::Malformed),
+        }
+    }
+    Ok(tokens)
+}
+
+/// Validate a numeric lexeme as a `<digits>.<digits>` float literal and parse
+/// it to `f64`. Anything else (leading/trailing dot, exponent, extra dots, a
+/// bare integer) is an [`FloatDefaultError::InvalidLiteral`].
+fn parse_float_literal(lexeme: &str) -> Result<f64, FloatDefaultError> {
+    let invalid = || FloatDefaultError::InvalidLiteral {
+        literal: lexeme.to_string(),
+    };
+    let (integer_part, fractional_part) = lexeme.split_once('.').ok_or_else(invalid)?;
+    let is_digits = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
+    if !is_digits(integer_part) || !is_digits(fractional_part) {
+        return Err(invalid());
+    }
+    lexeme.parse::<f64>().map_err(|_| invalid())
+}
+
+/// Recursive-descent folder over a pre-lexed float default expression. Folds
+/// straight to `f64` (no AST) against the float-typed variables declared
+/// earlier in the block.
+struct FloatFolder<'a> {
+    tokens: &'a [FloatToken],
+    position: usize,
+    variable_name: &'a str,
+    declared: &'a HashMap<String, Value>,
+    future_names: &'a HashSet<String>,
+    depth: usize,
+}
+
+impl FloatFolder<'_> {
+    fn peek(&self) -> Option<&FloatToken> {
+        self.tokens.get(self.position)
+    }
+
+    fn enter_recursion(&mut self) -> Result<(), FloatDefaultError> {
+        self.depth += 1;
+        if self.depth > crate::boolean_expression::MAX_EXPRESSION_DEPTH {
+            return Err(FloatDefaultError::Malformed);
+        }
+        Ok(())
+    }
+
+    fn leave_recursion(&mut self) {
+        self.depth -= 1;
+    }
+
+    fn parse_additive(&mut self) -> Result<f64, FloatDefaultError> {
+        let mut left = self.parse_multiplicative()?;
+        loop {
+            let subtract = match self.peek() {
+                Some(FloatToken::Plus) => false,
+                Some(FloatToken::Minus) => true,
+                _ => break,
+            };
+            self.position += 1;
+            let right = self.parse_multiplicative()?;
+            left = finite(if subtract { left - right } else { left + right })?;
+        }
+        Ok(left)
+    }
+
+    fn parse_multiplicative(&mut self) -> Result<f64, FloatDefaultError> {
+        let mut left = self.parse_unary()?;
+        loop {
+            let divide = match self.peek() {
+                Some(FloatToken::Star) => false,
+                Some(FloatToken::Slash) => true,
+                _ => break,
+            };
+            self.position += 1;
+            let right = self.parse_unary()?;
+            if divide {
+                if right == 0.0 {
+                    return Err(FloatDefaultError::DivisionByZero);
+                }
+                left = finite(left / right)?;
+            } else {
+                left = finite(left * right)?;
+            }
+        }
+        Ok(left)
+    }
+
+    fn parse_unary(&mut self) -> Result<f64, FloatDefaultError> {
+        match self.peek() {
+            Some(FloatToken::Minus) => {
+                self.position += 1;
+                self.enter_recursion()?;
+                let inner = self.parse_unary()?;
+                self.leave_recursion();
+                Ok(-inner)
+            }
+            Some(FloatToken::Plus) => {
+                self.position += 1;
+                self.enter_recursion()?;
+                let inner = self.parse_unary()?;
+                self.leave_recursion();
+                Ok(inner)
+            }
+            _ => self.parse_primary(),
+        }
+    }
+
+    fn parse_primary(&mut self) -> Result<f64, FloatDefaultError> {
+        match self.peek() {
+            Some(FloatToken::Float(value)) => {
+                let value = *value;
+                self.position += 1;
+                Ok(value)
+            }
+            Some(FloatToken::Identifier(name)) => {
+                let name = name.clone();
+                self.position += 1;
+                self.resolve(&name)
+            }
+            Some(FloatToken::LeftParen) => {
+                self.position += 1;
+                self.enter_recursion()?;
+                let inner = self.parse_additive()?;
+                self.leave_recursion();
+                match self.peek() {
+                    Some(FloatToken::RightParen) => {
+                        self.position += 1;
+                        Ok(inner)
+                    }
+                    _ => Err(FloatDefaultError::Malformed),
+                }
+            }
+            _ => Err(FloatDefaultError::Malformed),
+        }
+    }
+
+    /// Resolve an identifier to the float value of an earlier declaration.
+    /// A reference to an earlier non-float variable is a type mismatch; a name
+    /// declared later in the block (including the variable's own name) is a
+    /// forward reference; anything else is undefined.
+    fn resolve(&self, name: &str) -> Result<f64, FloatDefaultError> {
+        if let Some(value) = self.declared.get(name) {
+            return match value.as_float() {
+                Some(folded) => Ok(folded),
+                None => Err(FloatDefaultError::TypeMismatch {
+                    token: name.to_string(),
+                    found: value.kind(),
+                }),
+            };
+        }
+        if name == self.variable_name || self.future_names.contains(name) {
+            return Err(FloatDefaultError::ForwardReference {
+                name: name.to_string(),
+            });
+        }
+        Err(FloatDefaultError::UndefinedReference {
+            name: name.to_string(),
+        })
+    }
+}
+
+/// Reject a non-finite fold result (overflow to ±infinity). NaN cannot arise
+/// here: operands are always finite (literals are validated finite and earlier
+/// variables already folded without overflow) and division-by-zero is caught
+/// before the division runs.
+fn finite(value: f64) -> Result<f64, FloatDefaultError> {
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(FloatDefaultError::Overflow)
+    }
+}
+
 /// Scan lines `[start, end)` (exclusive end) for identifiers that follow a
-/// type keyword (`int `/`bool `), collecting them into a set regardless of
-/// declared type. Duplicate identifiers are merged silently here; duplicate-
-/// declaration detection lives in the main pass.
+/// type keyword (`int `/`bool `/`float `), collecting them into a set
+/// regardless of declared type. Duplicate identifiers are merged silently
+/// here; duplicate-declaration detection lives in the main pass.
 fn collect_future_names(lines: &[&str], start: usize, end: usize) -> HashSet<String> {
     let mut names = HashSet::new();
     for line in &lines[start..end] {
@@ -589,9 +980,11 @@ pub fn evaluate_expression(
             Value::Integer(n) => Ok(n),
             // The resolver only exposes integer-typed variables and the shared
             // parser only produces integer arithmetic, so the fold never
-            // yields a boolean. (Boolean defaults bypass this folder entirely
-            // — see `evaluate_bool_default`.)
+            // yields a boolean or float. (Boolean and float defaults bypass
+            // this folder entirely — see `evaluate_bool_default` /
+            // `evaluate_float_default`.)
             Value::Boolean(_) => unreachable!("integer-default fold never yields a boolean"),
+            Value::Float(_) => unreachable!("integer-default fold never yields a float"),
         },
         Err(EvaluationError::DivisionByZero) => Err(EvalError::DivisionByZero),
         Err(EvaluationError::Overflow) => Err(EvalError::Overflow),
@@ -1470,6 +1863,249 @@ mod tests {
         assert_eq!(
             format!("{}", err),
             "<script>:2: ERROR: Integer overflow in default expression for 'a': literal '99999999999999999999' exceeds the integer range."
+        );
+    }
+
+    // -- float declarations ----------------------------------------------
+
+    fn eval_float(expr: &str, declared: &[(&str, Value)]) -> Result<f64, FloatDefaultError> {
+        let declared = declared_from(declared);
+        let future = HashSet::new();
+        evaluate_float_default(expr, "target", &declared, &future)
+    }
+
+    #[test]
+    fn eval_float_literal() {
+        assert_eq!(eval_float("10.5", &[]), Ok(10.5));
+    }
+
+    #[test]
+    fn eval_float_arithmetic_and_ieee_division() {
+        assert_eq!(eval_float("(1.0 + 2.0) * 2.0", &[]), Ok(6.0));
+        // Division is IEEE — no truncation, unlike the integer folder.
+        assert_eq!(eval_float("7.0 / 2.0", &[]), Ok(3.5));
+    }
+
+    #[test]
+    fn eval_float_unary_minus_on_literal_and_paren() {
+        assert_eq!(eval_float("-5.0", &[]), Ok(-5.0));
+        assert_eq!(eval_float("-(2.5 + 3.0)", &[]), Ok(-5.5));
+    }
+
+    #[test]
+    fn eval_float_reference_to_earlier_float() {
+        assert_eq!(
+            eval_float("source * 2.0", &[("source", Value::Float(10.5))]),
+            Ok(21.0)
+        );
+    }
+
+    #[test]
+    fn eval_float_division_by_zero_is_parse_error() {
+        assert_eq!(
+            eval_float("10.0 / 0.0", &[]),
+            Err(FloatDefaultError::DivisionByZero)
+        );
+    }
+
+    #[test]
+    fn eval_float_overflow_to_infinity_is_error() {
+        let huge = format!("{}.0", "1".to_string() + &"0".repeat(200));
+        let expr = format!("{huge} * {huge}");
+        assert_eq!(eval_float(&expr, &[]), Err(FloatDefaultError::Overflow));
+    }
+
+    #[test]
+    fn eval_float_negative_zero_is_preserved() {
+        // `-0.0` and `0.0 * -1.0` both fold to a negatively-signed zero.
+        assert!(eval_float("-0.0", &[]).unwrap().is_sign_negative());
+        assert!(eval_float("0.0 * -1.0", &[]).unwrap().is_sign_negative());
+        assert!(eval_float("0.0", &[]).unwrap().is_sign_positive());
+    }
+
+    #[test]
+    fn eval_float_invalid_literals() {
+        for literal in [".5", "1.", "1e3", "1.5.5", "5"] {
+            assert_eq!(
+                eval_float(literal, &[]),
+                Err(FloatDefaultError::InvalidLiteral {
+                    literal: literal.to_string()
+                }),
+                "literal: {literal}"
+            );
+        }
+    }
+
+    #[test]
+    fn eval_float_malformed_dangling_operator() {
+        assert_eq!(eval_float("5.0 +", &[]), Err(FloatDefaultError::Malformed));
+        assert_eq!(
+            eval_float("(1.0 + 2.0", &[]),
+            Err(FloatDefaultError::Malformed)
+        );
+    }
+
+    #[test]
+    fn eval_float_cross_type_reference_is_type_mismatch() {
+        assert_eq!(
+            eval_float("count * 2.0", &[("count", Value::Integer(3))]),
+            Err(FloatDefaultError::TypeMismatch {
+                token: "count".to_string(),
+                found: ValueKind::Integer,
+            })
+        );
+    }
+
+    #[test]
+    fn eval_float_self_reference_reported_as_forward_reference() {
+        let declared = HashMap::new();
+        let future = HashSet::new();
+        assert_eq!(
+            evaluate_float_default("a", "a", &declared, &future),
+            Err(FloatDefaultError::ForwardReference {
+                name: "a".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn eval_float_forward_and_undefined_references() {
+        let declared = HashMap::new();
+        let future: HashSet<String> = std::iter::once("later".to_string()).collect();
+        assert_eq!(
+            evaluate_float_default("later", "a", &declared, &future),
+            Err(FloatDefaultError::ForwardReference {
+                name: "later".to_string()
+            })
+        );
+        assert_eq!(
+            evaluate_float_default("missing", "a", &declared, &future),
+            Err(FloatDefaultError::UndefinedReference {
+                name: "missing".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn parse_block_float_literal_default() {
+        let script = "--- variables\nfloat starting_health = 10.5\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        assert!(outcome.errors.is_empty(), "errors: {:?}", outcome.errors);
+        assert_eq!(db.variables[0].kind(), ValueKind::Float);
+        assert_eq!(db.variables[0].default, Value::Float(10.5));
+    }
+
+    #[test]
+    fn parse_block_float_no_default_is_zero() {
+        let script = "--- variables\nfloat a\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        assert!(outcome.errors.is_empty());
+        assert_eq!(db.variables[0].default, Value::Float(0.0));
+    }
+
+    #[test]
+    fn parse_block_float_int_interleaved_preserves_order_and_kinds() {
+        let script = "--- variables\nint count = 3\nfloat ratio = 1.5\nint total = count + 4\nfloat half = ratio / 2.0\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        assert!(outcome.errors.is_empty(), "errors: {:?}", outcome.errors);
+        let rows: Vec<_> = db
+            .variables
+            .iter()
+            .map(|v| (v.name.as_str(), v.default.clone()))
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                ("count", Value::Integer(3)),
+                ("ratio", Value::Float(1.5)),
+                ("total", Value::Integer(7)),
+                ("half", Value::Float(0.75)),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_block_float_invalid_literal_surfaces_diagnostic() {
+        let script = "--- variables\nfloat x = .5\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        match expect_single_error(outcome) {
+            ParseError::InvalidFloatLiteral { literal, line, .. } => {
+                assert_eq!(literal, ".5");
+                assert_eq!(line, 2);
+            }
+            other => panic!("expected InvalidFloatLiteral, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_block_float_cross_type_default() {
+        let script = "--- variables\nint count = 3\nfloat ratio = count * 2.0\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        match expect_single_error(outcome) {
+            ParseError::FloatDefaultTypeMismatch {
+                variable,
+                found_token,
+                found,
+                line,
+                ..
+            } => {
+                assert_eq!(variable, "ratio");
+                assert_eq!(found_token, "count");
+                assert_eq!(found, ValueKind::Integer);
+                assert_eq!(line, 3);
+            }
+            other => panic!("expected FloatDefaultTypeMismatch, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn float_invalid_literal_display() {
+        let err = ParseError::InvalidFloatLiteral {
+            literal: "1e3".to_string(),
+            file: None,
+            line: 2,
+        };
+        assert_eq!(
+            format!("{}", err),
+            "<script>:2: ERROR: Invalid float literal: '1e3'. Float literals must be written as <digits>.<digits> (e.g. '1.5')."
+        );
+    }
+
+    #[test]
+    fn float_default_type_mismatch_display() {
+        let err = ParseError::FloatDefaultTypeMismatch {
+            variable: "ratio".to_string(),
+            found_token: "count".to_string(),
+            found: ValueKind::Integer,
+            file: None,
+            line: 3,
+        };
+        assert_eq!(
+            format!("{}", err),
+            "<script>:3: ERROR: Type mismatch: default for float ratio must be a float expression, but count is int."
+        );
+    }
+
+    #[test]
+    fn float_overflow_display() {
+        let err = ParseError::FloatOverflow {
+            variable: "boom".to_string(),
+            file: None,
+            line: 2,
+        };
+        assert_eq!(
+            format!("{}", err),
+            "<script>:2: ERROR: Float overflow in default expression for 'boom'."
         );
     }
 }

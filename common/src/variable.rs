@@ -7,7 +7,9 @@ use crate::value::{Value, ValueKind};
 /// Adding a new type means: extend [`Value`]/[`ValueKind`], add a constructor
 /// here, and dispatch on the new variant where needed — no storage migration
 /// for either the database or the runtime state.
-#[derive(Debug, Clone, PartialEq, Eq)]
+// Not `Eq`: `default` is a `Value`, which carries a non-`Eq` `f64` float
+// payload. `PartialEq` is enough for the equality checks in tests.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Variable {
     pub name: String,
     pub default: Value,

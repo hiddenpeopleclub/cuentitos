@@ -329,6 +329,35 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    /// A float default contained a numeric token that wasn't a valid
+    /// `<digits>.<digits>` literal (`.5`, `1.`, `1e3`, a bare integer).
+    /// Carries the offending text.
+    InvalidFloatLiteral {
+        literal: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// A float default constant-folded to a non-finite value — its magnitude
+    /// exceeded the largest finite `f64`. Distinct from the integer
+    /// [`IntegerOverflow`](Self::IntegerOverflow): floats overflow to infinity
+    /// rather than wrapping, and the wording names the float context.
+    FloatOverflow {
+        variable: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// A float default referenced a non-float value (an int literal or a
+    /// reference to an earlier non-float variable). Unlike
+    /// [`DefaultTypeMismatch`](Self::DefaultTypeMismatch), the float wording
+    /// names a "float expression" and does not quote the operands, matching
+    /// the float compatibility spec.
+    FloatDefaultTypeMismatch {
+        variable: String,
+        found_token: String,
+        found: cuentitos_common::ValueKind,
+        file: Option<PathBuf>,
+        line: usize,
+    },
     /// A variable default used a logical operator (`and`/`or`/`not`). Boolean
     /// expressions belong in `req`, not in a default; defaults are limited to
     /// literals and references to earlier variables.
@@ -541,6 +570,49 @@ impl fmt::Display for ParseError {
                     file_prefix(file),
                     line,
                     variable
+                )
+            }
+            ParseError::InvalidFloatLiteral {
+                literal,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Invalid float literal: '{}'. Float literals must be written as <digits>.<digits> (e.g. '1.5').",
+                    file_prefix(file),
+                    line,
+                    literal
+                )
+            }
+            ParseError::FloatOverflow {
+                variable,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Float overflow in default expression for '{}'.",
+                    file_prefix(file),
+                    line,
+                    variable
+                )
+            }
+            ParseError::FloatDefaultTypeMismatch {
+                variable,
+                found_token,
+                found,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Type mismatch: default for float {} must be a float expression, but {} is {}.",
+                    file_prefix(file),
+                    line,
+                    variable,
+                    found_token,
+                    found.keyword()
                 )
             }
             ParseError::InvalidVariableName { name, file, line } => {
