@@ -47,6 +47,16 @@ pub enum SetParseError {
         expected: ValueKind,
         found: ValueKind,
     },
+    /// A `set` on a float variable had a non-float RHS. Carries the offending
+    /// sub-expression's source text (`found_token`) and its kind so the
+    /// diagnostic can name it, parallel to the float *default* type-mismatch
+    /// (`Type mismatch: 'set' expression for float x must be a float
+    /// expression, but y is int.`).
+    FloatTypeMismatch {
+        variable: String,
+        found_token: String,
+        found: ValueKind,
+    },
     /// A compound assignment (`+=` etc.) targets a non-numeric variable.
     NonNumericAssignment { variable: String, kind: ValueKind },
     /// A literal in the RHS arithmetic exceeded the integer range.
@@ -139,6 +149,19 @@ pub(crate) fn parse_set(content: &str, database: &Database) -> Result<ParsedSet,
     };
 
     if lhs_kind != rhs_kind {
+        // A float LHS gets a float-specific message that names the offending
+        // non-float sub-expression, parallel to the float-default diagnostic.
+        // Other kinds keep the generic `has type X but expression has type Y`
+        // wording.
+        if lhs_kind == ValueKind::Float {
+            if let Some((found_token, found)) = first_non_float_leaf(&expression, database) {
+                return Err(SetParseError::FloatTypeMismatch {
+                    variable: lhs.to_string(),
+                    found_token,
+                    found,
+                });
+            }
+        }
         return Err(SetParseError::TypeMismatch {
             variable: lhs.to_string(),
             expected: lhs_kind,
@@ -158,6 +181,35 @@ pub(crate) fn parse_set(content: &str, database: &Database) -> Result<ParsedSet,
         operator,
         expression,
     })
+}
+
+/// Find the first leaf of `expression` whose kind is not `Float`, returning
+/// its source-facing text and kind. Used to build the float-specific
+/// type-mismatch diagnostic: for `set ratio = count` (an int variable on the
+/// RHS of a float `set`) this returns `("count", Integer)` so the message can
+/// say `but count is int.`. A variable leaf is named by its declared
+/// identifier; a literal leaf is named by its rendered value.
+fn first_non_float_leaf(
+    expression: &Expression,
+    database: &Database,
+) -> Option<(String, ValueKind)> {
+    match expression {
+        Expression::Literal(value) if value.kind() != ValueKind::Float => {
+            Some((value.to_string(), value.kind()))
+        }
+        Expression::Literal(_) => None,
+        Expression::Variable(id) => {
+            let variable = &database.variables[*id];
+            if variable.kind() == ValueKind::Float {
+                None
+            } else {
+                Some((variable.name.clone(), variable.kind()))
+            }
+        }
+        Expression::Binary { left, right, .. } => {
+            first_non_float_leaf(left, database).or_else(|| first_non_float_leaf(right, database))
+        }
+    }
 }
 
 /// Cheap predicate: does `content` (already trimmed of indentation) begin
@@ -394,5 +446,52 @@ mod tests {
         let parsed = parse_set("set\tx = 5", &db).unwrap();
         assert_eq!(parsed.variable_id, 0);
         assert_eq!(parsed.expression, Expression::Literal(Value::Integer(5)));
+    }
+
+    fn db_with_float(name: &str) -> Database {
+        let mut db = Database::new();
+        db.add_variable(Variable::new(name, Value::Float(0.0)));
+        db
+    }
+
+    #[test]
+    fn float_literal_rhs_parses() {
+        let db = db_with_float("x");
+        let parsed = parse_set("set x = 7.5", &db).unwrap();
+        assert_eq!(parsed.operator, AssignmentOperator::Assign);
+        assert_eq!(parsed.expression, Expression::Literal(Value::Float(7.5)));
+    }
+
+    #[test]
+    fn negative_float_literal_rhs_parses() {
+        let db = db_with_float("x");
+        let parsed = parse_set("set x = -7.5", &db).unwrap();
+        assert_eq!(parsed.expression, Expression::Literal(Value::Float(-7.5)));
+    }
+
+    #[test]
+    fn float_compound_assignment_parses() {
+        let db = db_with_float("score");
+        let parsed = parse_set("set score /= 2.0", &db).unwrap();
+        assert_eq!(parsed.operator, AssignmentOperator::DivideAssign);
+        assert_eq!(parsed.expression, Expression::Literal(Value::Float(2.0)));
+    }
+
+    #[test]
+    fn int_variable_on_rhs_of_float_set_is_a_float_type_mismatch() {
+        // `set ratio = count` with an int `count` and a float `ratio` names
+        // the offending RHS variable and its kind, parallel to the float
+        // default type-mismatch wording.
+        let mut db = Database::new();
+        db.add_variable(Variable::new_integer("count", 3));
+        db.add_variable(Variable::new("ratio", Value::Float(0.0)));
+        assert_eq!(
+            parse_set("set ratio = count", &db).unwrap_err(),
+            SetParseError::FloatTypeMismatch {
+                variable: "ratio".to_string(),
+                found_token: "count".to_string(),
+                found: ValueKind::Integer,
+            }
+        );
     }
 }

@@ -172,6 +172,17 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    /// A `set` on a float variable had a non-float RHS. Parallel in shape to
+    /// [`FloatDefaultTypeMismatch`](Self::FloatDefaultTypeMismatch): names the
+    /// offending sub-expression (`found_token`) and its kind rather than just
+    /// reporting two kinds, so the wording echoes what the author typed.
+    FloatSetTypeMismatch {
+        variable: String,
+        found_token: String,
+        found: cuentitos_common::ValueKind,
+        file: Option<PathBuf>,
+        line: usize,
+    },
     /// A compound `set` operator (`+= -= *= /=`) targeted a non-numeric
     /// variable.
     NonNumericAssignment {
@@ -713,6 +724,23 @@ impl fmt::Display for ParseError {
                     variable,
                     expected,
                     found
+                )
+            }
+            ParseError::FloatSetTypeMismatch {
+                variable,
+                found_token,
+                found,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Type mismatch: 'set' expression for float {} must be a float expression, but {} is {}.",
+                    file_prefix(file),
+                    line,
+                    variable,
+                    found_token,
+                    found.keyword()
                 )
             }
             ParseError::NonNumericAssignment {
@@ -1548,6 +1576,17 @@ impl Parser {
                                     } => ParseError::SetTypeMismatch {
                                         variable,
                                         expected,
+                                        found,
+                                        file: self.file_path.clone(),
+                                        line: context.current_line,
+                                    },
+                                    SetParseError::FloatTypeMismatch {
+                                        variable,
+                                        found_token,
+                                        found,
+                                    } => ParseError::FloatSetTypeMismatch {
+                                        variable,
+                                        found_token,
                                         found,
                                         file: self.file_path.clone(),
                                         line: context.current_line,

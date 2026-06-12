@@ -714,6 +714,14 @@ impl<'a> ArithmeticSource for BooleanParser<'a> {
         Some(value)
     }
 
+    /// The boolean tokenizer has no float literal yet (`req`-on-float is a
+    /// separate task), so `peek_kind` never yields `Float` and the shared
+    /// arithmetic parser never calls this. Returning `None` keeps the trait
+    /// total without committing to a float token alphabet here.
+    fn take_float(&mut self) -> Option<f64> {
+        None
+    }
+
     fn take_ident(&mut self) -> Option<String> {
         let Token::Ident(name) = self.tokens.get(self.position)? else {
             return None;

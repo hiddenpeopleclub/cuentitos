@@ -128,6 +128,15 @@ impl<'a> ArithmeticSource for SliceArithmeticSource<'a> {
         Some(value)
     }
 
+    fn take_float(&mut self) -> Option<f64> {
+        let ArithmeticToken::Float(value) = self.tokens.get(self.position)? else {
+            return None;
+        };
+        let value = *value;
+        self.position += 1;
+        Some(value)
+    }
+
     fn take_ident(&mut self) -> Option<String> {
         let ArithmeticToken::Ident(name) = self.tokens.get(self.position)? else {
             return None;
@@ -213,22 +222,54 @@ fn tokenize(input: &str) -> Result<Vec<ArithmeticToken>, TokenizeError> {
             }
             c if c.is_ascii_digit() => {
                 let mut buf = String::new();
-                while let Some(&c) = chars.peek() {
-                    if c.is_ascii_digit() {
-                        buf.push(c);
+                while let Some(&digit) = chars.peek() {
+                    if digit.is_ascii_digit() {
+                        buf.push(digit);
                         chars.next();
                     } else {
                         break;
                     }
                 }
-                // `u64::from_str` only fails here for magnitudes greater
-                // than `u64::MAX`. Preserve the literal text so the caller
-                // can surface the same overflow message as for in-range
-                // literals that exceed `i64`.
-                let parsed: u64 = buf
-                    .parse()
-                    .map_err(|_| TokenizeError::LiteralOverflow(buf.clone()))?;
-                tokens.push(ArithmeticToken::Int(parsed));
+                // A `.` immediately followed by at least one digit makes this
+                // a float literal (`<digits>.<digits>`). A bare trailing dot
+                // (`5.`) or a leading dot (`.5`) is not consumed here, so it
+                // falls through as a stray symbol — matching the float-default
+                // grammar, which accepts only `<digits>.<digits>`.
+                let mut is_float = false;
+                if chars.peek() == Some(&'.') {
+                    let mut lookahead = chars.clone();
+                    lookahead.next();
+                    if matches!(lookahead.peek(), Some(d) if d.is_ascii_digit()) {
+                        is_float = true;
+                        buf.push('.');
+                        chars.next();
+                        while let Some(&digit) = chars.peek() {
+                            if digit.is_ascii_digit() {
+                                buf.push(digit);
+                                chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                }
+                if is_float {
+                    // A `<digits>.<digits>` lexeme always parses; only an
+                    // out-of-`f64`-range magnitude yields ±infinity, which
+                    // `parse` reports as `Ok`, not `Err`. Treat any genuine
+                    // parse failure as malformed.
+                    let value: f64 = buf.parse().map_err(|_| TokenizeError::Malformed)?;
+                    tokens.push(ArithmeticToken::Float(value));
+                } else {
+                    // `u64::from_str` only fails here for magnitudes greater
+                    // than `u64::MAX`. Preserve the literal text so the caller
+                    // can surface the same overflow message as for in-range
+                    // literals that exceed `i64`.
+                    let parsed: u64 = buf
+                        .parse()
+                        .map_err(|_| TokenizeError::LiteralOverflow(buf.clone()))?;
+                    tokens.push(ArithmeticToken::Int(parsed));
+                }
             }
             c if c.is_ascii_alphabetic() || c == '_' => {
                 let mut buf = String::new();
@@ -516,6 +557,71 @@ mod tests {
         assert_eq!(
             evaluate(&expression, &|id| &values[&id]).unwrap_err(),
             EvaluationError::Overflow
+        );
+    }
+
+    fn eval_floatless(input: &str) -> Value {
+        let resolver = no_vars();
+        let expression = parse_expression(input, &resolver).expect("parse should succeed");
+        evaluate(&expression, &|_| unreachable!("no variables"))
+            .unwrap()
+            .into_owned()
+    }
+
+    #[test]
+    fn parses_float_literal() {
+        let resolver = no_vars();
+        assert_eq!(
+            parse_expression("7.5", &resolver).unwrap(),
+            Expression::Literal(Value::Float(7.5))
+        );
+    }
+
+    #[test]
+    fn parses_negative_float_literal() {
+        // `-7.5` folds into a single negative literal, not `0.0 - 7.5`.
+        let resolver = no_vars();
+        assert_eq!(
+            parse_expression("-7.5", &resolver).unwrap(),
+            Expression::Literal(Value::Float(-7.5))
+        );
+    }
+
+    #[test]
+    fn bare_integer_stays_integer_literal() {
+        // A digit run with no fractional part remains an `Int` token, so
+        // integer `set`s are unaffected by float tokenization.
+        let resolver = no_vars();
+        assert_eq!(
+            parse_expression("5", &resolver).unwrap(),
+            Expression::Literal(Value::Integer(5))
+        );
+    }
+
+    #[test]
+    fn trailing_dot_is_not_a_float_literal() {
+        // `5.` is not `<digits>.<digits>`: the `.` is left as a stray symbol
+        // and the parse is malformed, matching the float-default grammar.
+        let resolver = no_vars();
+        assert_eq!(
+            parse_expression("5.", &resolver).unwrap_err(),
+            ParseExpressionError::Malformed
+        );
+    }
+
+    #[test]
+    fn evaluates_float_arithmetic_without_truncation() {
+        assert_eq!(eval_floatless("7.0 / 2.0"), Value::Float(3.5));
+        assert_eq!(eval_floatless("(5.0 + 3.0) * 2.0"), Value::Float(16.0));
+    }
+
+    #[test]
+    fn float_division_by_zero_surfaces_at_eval() {
+        let resolver = no_vars();
+        let expression = parse_expression("10.0 / 0.0", &resolver).unwrap();
+        assert_eq!(
+            evaluate(&expression, &|_| unreachable!()).unwrap_err(),
+            EvaluationError::DivisionByZero
         );
     }
 }

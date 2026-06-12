@@ -643,6 +643,10 @@ impl Runtime {
                 file: self.file_path.clone(),
                 line,
             },
+            EvaluationError::FloatOverflow => RuntimeError::FloatOverflow {
+                file: self.file_path.clone(),
+                line,
+            },
             EvaluationError::TypeMismatch { expected, found } => {
                 RuntimeError::EvaluationTypeMismatch {
                     expected,

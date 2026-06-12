@@ -988,6 +988,12 @@ pub fn evaluate_expression(
         },
         Err(EvaluationError::DivisionByZero) => Err(EvalError::DivisionByZero),
         Err(EvaluationError::Overflow) => Err(EvalError::Overflow),
+        // The integer-default fold only produces integer arithmetic, so a
+        // float overflow can never arise here (float defaults use
+        // `evaluate_float_default`).
+        Err(EvaluationError::FloatOverflow) => {
+            unreachable!("integer-default fold never yields a float overflow")
+        }
         // This folder is the integer-default path: its resolver hands back
         // only `Value::Integer`s and the shared parser only produces integer-
         // shaped expressions, so the fold step cannot mismatch types. Boolean
