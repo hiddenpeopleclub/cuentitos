@@ -698,7 +698,17 @@ fn parse_float_literal(lexeme: &str) -> Result<f64, FloatDefaultError> {
     if !is_digits(integer_part) || !is_digits(fractional_part) {
         return Err(invalid());
     }
-    lexeme.parse::<f64>().map_err(|_| invalid())
+    // A well-formed `<digits>.<digits>` lexeme always parses, but a magnitude
+    // beyond the largest finite `f64` parses to `Ok(±infinity)` rather than
+    // `Err`. Reject that as an overflow rather than storing the infinity,
+    // mirroring how a constant-folded product overflow is caught — a single
+    // huge literal must not slip through where `1e200 * 1e200` is rejected.
+    let value = lexeme.parse::<f64>().map_err(|_| invalid())?;
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(FloatDefaultError::Overflow)
+    }
 }
 
 /// Recursive-descent folder over a pre-lexed float default expression. Folds
@@ -969,6 +979,13 @@ pub fn evaluate_expression(
         Err(ParseExpressionError::Malformed) => return Err(EvalError::Malformed),
         Err(ParseExpressionError::Overflow { literal }) => {
             return Err(EvalError::LiteralOverflow { literal });
+        }
+        // A float literal can only appear in a float default, which is folded
+        // by `evaluate_float_default`, not here — so an overflowing one never
+        // reaches the integer-default path. Mirrors the `Value::Float(_)`
+        // arm below, which rejects a finite float on the same grounds.
+        Err(ParseExpressionError::FloatOverflow { .. }) => {
+            unreachable!("integer-default fold never receives a float literal")
         }
         Err(ParseExpressionError::UndefinedVariable { name }) => {
             return Err(EvalError::UndefinedVariable { name });
@@ -1919,6 +1936,15 @@ mod tests {
         let huge = format!("{}.0", "1".to_string() + &"0".repeat(200));
         let expr = format!("{huge} * {huge}");
         assert_eq!(eval_float(&expr, &[]), Err(FloatDefaultError::Overflow));
+    }
+
+    #[test]
+    fn eval_float_single_literal_beyond_range_is_overflow_not_infinity() {
+        // A lone literal beyond the largest finite `f64` parses to infinity;
+        // reject it as an overflow rather than storing the infinity, just as
+        // the folded product above is rejected. `1e320` is out of range.
+        let literal = format!("1{}.0", "0".repeat(320));
+        assert_eq!(eval_float(&literal, &[]), Err(FloatDefaultError::Overflow));
     }
 
     #[test]

@@ -309,6 +309,18 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    /// A float literal in a `set` RHS exceeded the largest finite `f64`,
+    /// parsing to ±infinity. Names the target variable, parallel to the float
+    /// *default* overflow [`FloatOverflow`](Self::FloatOverflow); the wording
+    /// only differs by naming the `set` context rather than a default. Distinct
+    /// from [`SetLiteralOverflow`](Self::SetLiteralOverflow): floats overflow to
+    /// infinity rather than wrapping past `i64`.
+    SetFloatLiteralOverflow {
+        variable: String,
+        literal: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
     /// A literal in a variables-block default expression exceeded the
     /// integer range. Carries both the variable being defined and the
     /// offending literal text — parallel to
@@ -948,6 +960,20 @@ impl fmt::Display for ParseError {
                     file_prefix(file),
                     line,
                     literal
+                )
+            }
+            ParseError::SetFloatLiteralOverflow {
+                variable,
+                file,
+                line,
+                ..
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Float overflow in 'set' expression for '{}'.",
+                    file_prefix(file),
+                    line,
+                    variable
                 )
             }
             ParseError::DefaultLiteralOverflow {
@@ -1601,6 +1627,14 @@ impl Parser {
                                     }
                                     SetParseError::LiteralOverflow { literal } => {
                                         ParseError::SetLiteralOverflow {
+                                            literal,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    SetParseError::FloatLiteralOverflow { variable, literal } => {
+                                        ParseError::SetFloatLiteralOverflow {
+                                            variable,
                                             literal,
                                             file: self.file_path.clone(),
                                             line: context.current_line,

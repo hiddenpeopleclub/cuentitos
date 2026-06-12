@@ -32,6 +32,11 @@ pub enum ParseExpressionError {
     /// [`crate::arithmetic::ArithmeticError::LiteralOverflow`], so the
     /// caller can format a diagnostic that names the literal.
     Overflow { literal: String },
+    /// A float literal's magnitude exceeded the largest finite `f64`,
+    /// parsing to ±infinity. Distinct from [`Overflow`](Self::Overflow) so
+    /// the caller can surface a float-specific overflow message instead of
+    /// the integer wording. Carries the offending literal text.
+    FloatOverflow { literal: String },
 }
 
 /// Look up a declared variable by name.
@@ -53,6 +58,9 @@ pub fn parse_expression(
     let tokens = tokenize(input).map_err(|err| match err {
         TokenizeError::Malformed => ParseExpressionError::Malformed,
         TokenizeError::LiteralOverflow(literal) => ParseExpressionError::Overflow { literal },
+        TokenizeError::FloatLiteralOverflow(literal) => {
+            ParseExpressionError::FloatOverflow { literal }
+        }
     })?;
     if tokens.is_empty() {
         return Err(ParseExpressionError::Malformed);
@@ -185,6 +193,11 @@ enum TokenizeError {
     /// An integer literal exceeded `u64`. Carries the offending text so
     /// the caller can surface it as a literal-overflow diagnostic.
     LiteralOverflow(String),
+    /// A `<digits>.<digits>` float literal whose magnitude exceeded the
+    /// largest finite `f64`, parsing to ±infinity. Carries the offending
+    /// text so the caller can surface a float-overflow diagnostic rather
+    /// than silently storing the infinity.
+    FloatLiteralOverflow(String),
 }
 
 fn tokenize(input: &str) -> Result<Vec<ArithmeticToken>, TokenizeError> {
@@ -257,8 +270,14 @@ fn tokenize(input: &str) -> Result<Vec<ArithmeticToken>, TokenizeError> {
                     // A `<digits>.<digits>` lexeme always parses; only an
                     // out-of-`f64`-range magnitude yields ±infinity, which
                     // `parse` reports as `Ok`, not `Err`. Treat any genuine
-                    // parse failure as malformed.
+                    // parse failure as malformed, and a non-finite result as
+                    // a float overflow — storing the infinity would silently
+                    // accept a literal that the folded path (`finite_float`)
+                    // rejects.
                     let value: f64 = buf.parse().map_err(|_| TokenizeError::Malformed)?;
+                    if !value.is_finite() {
+                        return Err(TokenizeError::FloatLiteralOverflow(buf.clone()));
+                    }
                     tokens.push(ArithmeticToken::Float(value));
                 } else {
                     // `u64::from_str` only fails here for magnitudes greater
@@ -622,6 +641,20 @@ mod tests {
         assert_eq!(
             evaluate(&expression, &|_| unreachable!()).unwrap_err(),
             EvaluationError::DivisionByZero
+        );
+    }
+
+    #[test]
+    fn float_literal_beyond_f64_range_is_an_overflow_not_infinity() {
+        // A lone `<digits>.<digits>` literal whose magnitude exceeds the
+        // largest finite `f64` parses to infinity; reject it at tokenize time
+        // rather than letting `Value::Float(inf)` reach a variable. `1e320`
+        // (plain decimal, no exponent notation) is comfortably out of range.
+        let resolver = no_vars();
+        let literal = format!("1{}.0", "0".repeat(320));
+        assert_eq!(
+            parse_expression(&literal, &resolver).unwrap_err(),
+            ParseExpressionError::FloatOverflow { literal }
         );
     }
 }

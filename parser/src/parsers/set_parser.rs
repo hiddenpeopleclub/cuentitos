@@ -64,6 +64,11 @@ pub enum SetParseError {
     /// [`crate::parsers::requirement_parser::RequirementParseError::LiteralOverflow`]
     /// so the two sibling parsers produce parallel diagnostics.
     LiteralOverflow { literal: String },
+    /// A float literal in the RHS exceeded the largest finite `f64`, parsing
+    /// to ±infinity. Carries the target variable and the offending literal so
+    /// the diagnostic names the `set` context, parallel to the float *default*
+    /// overflow (`Float overflow in default expression for 'x'.`).
+    FloatLiteralOverflow { variable: String, literal: String },
 }
 
 /// Try to parse `content` as a `set` statement.
@@ -122,6 +127,12 @@ pub(crate) fn parse_set(content: &str, database: &Database) -> Result<ParsedSet,
         }
         Err(ParseExpressionError::Overflow { literal }) => {
             return Err(SetParseError::LiteralOverflow { literal });
+        }
+        Err(ParseExpressionError::FloatOverflow { literal }) => {
+            return Err(SetParseError::FloatLiteralOverflow {
+                variable: lhs.to_string(),
+                literal,
+            });
         }
         Err(ParseExpressionError::Malformed) => {
             return Err(SetParseError::MalformedExpression {
@@ -491,6 +502,22 @@ mod tests {
                 variable: "ratio".to_string(),
                 found_token: "count".to_string(),
                 found: ValueKind::Integer,
+            }
+        );
+    }
+
+    #[test]
+    fn float_literal_beyond_f64_range_is_a_float_overflow() {
+        // A lone float literal whose magnitude exceeds the largest finite
+        // `f64` parses to infinity; the `set` rejects it as an overflow that
+        // names the target variable, rather than storing the infinity.
+        let db = db_with_float("result");
+        let literal = format!("1{}.0", "0".repeat(320));
+        assert_eq!(
+            parse_set(&format!("set result = {literal}"), &db).unwrap_err(),
+            SetParseError::FloatLiteralOverflow {
+                variable: "result".to_string(),
+                literal,
             }
         );
     }
