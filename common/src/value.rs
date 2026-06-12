@@ -3,16 +3,21 @@
 //! [`Value`] holds a runtime payload; [`ValueKind`] is the type tag used at
 //! parse time to drive type inference and reject mismatches before the
 //! runtime ever sees the program. Both enums are designed to grow:
-//! `Float(f64)` and `String(String)` slot in additively without reshaping
-//! any consumer that already type-tests with `match`.
+//! `String(String)` slots in additively without reshaping any consumer that
+//! already type-tests with `match`.
+//!
+//! Note [`Value`] is only `PartialEq`, not `Eq`: the `Float(f64)` payload has
+//! no total equality (`NaN != NaN`), so the derive was narrowed. Nothing uses
+//! a `Value` as a hash key, so this costs nothing.
 
 /// A runtime value carried by an expression literal, variable cell, or
 /// evaluation result.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Integer(i64),
     Boolean(bool),
-    // Future variants: Float(f64), String(String).
+    Float(f64),
+    // Future variants: String(String).
 }
 
 impl Value {
@@ -22,6 +27,7 @@ impl Value {
         match self {
             Value::Integer(_) => ValueKind::Integer,
             Value::Boolean(_) => ValueKind::Boolean,
+            Value::Float(_) => ValueKind::Float,
         }
     }
 
@@ -32,7 +38,19 @@ impl Value {
     pub fn as_integer(&self) -> Option<i64> {
         match self {
             Value::Integer(n) => Some(*n),
-            Value::Boolean(_) => None,
+            Value::Boolean(_) | Value::Float(_) => None,
+        }
+    }
+
+    /// Extract the float payload if this value is a `Float`, else `None`.
+    /// Parallel to [`as_integer`](Self::as_integer): used where the parser has
+    /// already proven a value is float-typed (e.g. projecting the mixed-kind
+    /// `declared` map down to its float entries in the default folder).
+    #[must_use]
+    pub fn as_float(&self) -> Option<f64> {
+        match self {
+            Value::Float(f) => Some(*f),
+            Value::Integer(_) | Value::Boolean(_) => None,
         }
     }
 }
@@ -42,7 +60,31 @@ impl std::fmt::Display for Value {
         match self {
             Value::Integer(n) => write!(f, "{n}"),
             Value::Boolean(b) => write!(f, "{b}"),
+            Value::Float(x) => write!(f, "{}", format_float(*x)),
         }
+    }
+}
+
+/// Render a float in cuentitos' canonical textual form.
+///
+/// The contract (locked by the `variables-float` compatibility tests):
+/// - shortest decimal that round-trips back to the same `f64` (Rust's default
+///   `f64` `Display` already guarantees this);
+/// - never scientific / exponent notation (Rust's `Display` never emits one);
+/// - always at least one fractional digit, so an integral value like `2.0`
+///   renders as `2.0` rather than `2` and stays visibly distinct from the
+///   integer kind;
+/// - the sign of zero is preserved, so IEEE `-0.0` renders as `-0.0`.
+#[must_use]
+pub fn format_float(value: f64) -> String {
+    // `{}` gives the shortest round-tripping, non-scientific form and keeps
+    // the sign bit of zero (`-0.0` -> "-0"). It only omits the decimal point
+    // for integral magnitudes, so append `.0` when no point is present.
+    let rendered = format!("{value}");
+    if rendered.contains('.') {
+        rendered
+    } else {
+        format!("{rendered}.0")
     }
 }
 
@@ -52,7 +94,8 @@ impl std::fmt::Display for Value {
 pub enum ValueKind {
     Integer,
     Boolean,
-    // Future variants: Float, String.
+    Float,
+    // Future variants: String.
 }
 
 impl ValueKind {
@@ -60,7 +103,7 @@ impl ValueKind {
     #[must_use]
     pub fn is_numeric(self) -> bool {
         match self {
-            ValueKind::Integer => true,
+            ValueKind::Integer | ValueKind::Float => true,
             ValueKind::Boolean => false,
         }
     }
@@ -69,12 +112,13 @@ impl ValueKind {
     #[must_use]
     pub fn is_ordered(self) -> bool {
         match self {
-            ValueKind::Integer => true,
+            ValueKind::Integer | ValueKind::Float => true,
             ValueKind::Boolean => false,
         }
     }
 
-    /// The source-syntax keyword that declares this kind (`int`, `bool`).
+    /// The source-syntax keyword that declares this kind (`int`, `bool`,
+    /// `float`).
     ///
     /// Distinct from [`Display`](std::fmt::Display), which renders the full
     /// English word (`integer`, `boolean`) used in `set`/`req` diagnostics.
@@ -85,6 +129,7 @@ impl ValueKind {
         match self {
             ValueKind::Integer => "int",
             ValueKind::Boolean => "bool",
+            ValueKind::Float => "float",
         }
     }
 }
@@ -94,6 +139,7 @@ impl std::fmt::Display for ValueKind {
         match self {
             ValueKind::Integer => write!(f, "integer"),
             ValueKind::Boolean => write!(f, "boolean"),
+            ValueKind::Float => write!(f, "float"),
         }
     }
 }
@@ -155,6 +201,60 @@ mod tests {
     fn value_kind_keyword_matches_source_syntax() {
         assert_eq!(ValueKind::Integer.keyword(), "int");
         assert_eq!(ValueKind::Boolean.keyword(), "bool");
+        assert_eq!(ValueKind::Float.keyword(), "float");
+    }
+
+    #[test]
+    fn float_value_kind_round_trip() {
+        assert_eq!(Value::Float(1.5).kind(), ValueKind::Float);
+        assert_eq!(Value::Float(2.0).as_float(), Some(2.0));
+        assert_eq!(Value::Float(2.0).as_integer(), None);
+        assert_eq!(Value::Integer(2).as_float(), None);
+    }
+
+    #[test]
+    fn float_kind_is_numeric_and_ordered() {
+        assert!(ValueKind::Float.is_numeric());
+        assert!(ValueKind::Float.is_ordered());
+        assert_eq!(format!("{}", ValueKind::Float), "float");
+    }
+
+    #[test]
+    fn format_float_always_has_a_fractional_digit() {
+        assert_eq!(format_float(2.0), "2.0");
+        assert_eq!(format_float(30.0), "30.0");
+        assert_eq!(format_float(10.5), "10.5");
+        assert_eq!(format_float(0.0), "0.0");
+    }
+
+    #[test]
+    fn format_float_preserves_negative_zero() {
+        assert_eq!(format_float(-0.0), "-0.0");
+        // Bind the operands so the product (a runtime-computed `-0.0`) isn't
+        // const-folded away by the `neg_multiply` lint — the point is to
+        // exercise that a multiplied negative zero still renders signed.
+        let zero = 0.0_f64;
+        let negative_one = -1.0_f64;
+        assert_eq!(format_float(zero * negative_one), "-0.0");
+    }
+
+    #[test]
+    fn format_float_uses_shortest_round_tripping_decimal() {
+        assert_eq!(format_float(0.1 + 0.2), "0.30000000000000004");
+        assert_eq!(format_float(1.0 / 3.0), "0.3333333333333333");
+        assert_eq!(format_float(1.0 / 8.0), "0.125");
+    }
+
+    #[test]
+    fn format_float_never_uses_scientific_notation() {
+        assert_eq!(format_float(0.000001), "0.000001");
+        assert_eq!(format_float(1_000_000_000_000_000.0), "1000000000000000.0");
+    }
+
+    #[test]
+    fn float_value_displays_via_format_float() {
+        assert_eq!(format!("{}", Value::Float(2.0)), "2.0");
+        assert_eq!(format!("{}", Value::Float(-0.0)), "-0.0");
     }
 
     #[test]

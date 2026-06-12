@@ -66,7 +66,10 @@ impl BinaryOperator {
 
 /// Parsed expression with all identifiers resolved to declared
 /// [`VariableId`]s. Polymorphic over [`Value`] kinds.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Not `Eq`: a `Literal` may hold a `Value::Float`, whose `f64` payload has no
+/// total equality. `PartialEq` is retained for tests and equality checks.
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     Literal(Value),
     Variable(VariableId),

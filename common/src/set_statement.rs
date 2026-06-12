@@ -26,7 +26,10 @@ impl AssignmentOperator {
 /// `variable_id` is an *lvalue* — the assignment target — so it stays a bare
 /// [`VariableId`] rather than an [`Expression`]. The expression on the right
 /// is the *rvalue*, which is what gets evaluated.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Not `Eq`: `expression` may carry a `Value::Float` literal, whose `f64`
+/// payload has no total equality.
+#[derive(Debug, Clone, PartialEq)]
 pub struct SetStatement {
     pub variable_id: VariableId,
     pub operator: AssignmentOperator,

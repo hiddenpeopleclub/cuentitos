@@ -12,7 +12,10 @@ use crate::parsers::type_inference::{infer_type, TypeInferenceError};
 use crate::parsers::variables_parser::is_valid_identifier;
 
 /// Result of parsing a `set` line.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Not `Eq`: `expression` may carry a `Value::Float` literal (`f64` has no
+/// total equality).
+#[derive(Debug, Clone, PartialEq)]
 pub struct ParsedSet {
     pub variable_id: VariableId,
     pub operator: AssignmentOperator,

@@ -285,7 +285,9 @@ mod tests {
             .collect();
         match evaluate(&expression, &|id| &values[&id])?.into_owned() {
             Value::Integer(n) => Ok(n),
-            Value::Boolean(_) => unreachable!("arithmetic folds only produce integers"),
+            Value::Boolean(_) | Value::Float(_) => {
+                unreachable!("arithmetic folds only produce integers")
+            }
         }
     }
 

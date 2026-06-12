@@ -22,7 +22,10 @@ use crate::boolean_expression::{
 use crate::parsers::type_inference::{infer_type, TypeInferenceError};
 
 /// Result of parsing a `req` line.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Not `Eq`: the boolean expression may carry `Value::Float` literals (`f64`
+/// has no total equality).
+#[derive(Debug, Clone, PartialEq)]
 pub struct ParsedRequirement {
     pub expression: BooleanExpression,
 }
