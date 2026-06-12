@@ -38,6 +38,7 @@ use cuentitos_common::{BinaryOperator, Expression, Value, VariableId};
 pub enum ArithmeticTokenKind {
     Int,
     Bool,
+    Float,
     Ident,
     Plus,
     Minus,
@@ -51,10 +52,14 @@ pub enum ArithmeticTokenKind {
 /// pre-tokenize into a `Vec` (see `SliceArithmeticSource`); the trait
 /// itself works in terms of [`ArithmeticTokenKind`] plus
 /// [`ArithmeticSource::take_int`]/[`ArithmeticSource::take_ident`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Not `Eq`: the `Float(f64)` payload has no total equality, so this enum is
+/// `PartialEq` only — matching the `Eq`-drop on [`cuentitos_common::Value`].
+#[derive(Debug, Clone, PartialEq)]
 pub enum ArithmeticToken {
     Int(u64),
     Bool(bool),
+    Float(f64),
     Ident(String),
     Plus,
     Minus,
@@ -69,6 +74,7 @@ impl ArithmeticToken {
         match self {
             ArithmeticToken::Int(_) => ArithmeticTokenKind::Int,
             ArithmeticToken::Bool(_) => ArithmeticTokenKind::Bool,
+            ArithmeticToken::Float(_) => ArithmeticTokenKind::Float,
             ArithmeticToken::Ident(_) => ArithmeticTokenKind::Ident,
             ArithmeticToken::Plus => ArithmeticTokenKind::Plus,
             ArithmeticToken::Minus => ArithmeticTokenKind::Minus,
@@ -135,6 +141,15 @@ pub trait ArithmeticSource {
     /// callers in this module `.expect()` on that since the surrounding
     /// `match` already verified the kind.
     fn take_bool(&mut self) -> Option<bool>;
+    /// Consume the current `Float` token and return its value.
+    /// Returns `None` if the cursor is not pointing at a `Float` (i.e.
+    /// the caller forgot to guard with [`peek_kind`](Self::peek_kind));
+    /// callers in this module `.expect()` on that since the surrounding
+    /// `match` already verified the kind. Sources whose token alphabet has
+    /// no float literals (e.g. the `req` boolean parser, pending float
+    /// support) always return `None`; their [`peek_kind`](Self::peek_kind)
+    /// never yields `Float`, so the parser never calls this on them.
+    fn take_float(&mut self) -> Option<f64>;
     /// Consume the current `Ident` token and return its text.
     /// Returns `None` if the cursor is not pointing at an `Ident` (i.e.
     /// the caller forgot to guard with [`peek_kind`](Self::peek_kind));
@@ -214,6 +229,14 @@ fn parse_unary<S: ArithmeticSource>(stream: &mut S) -> Result<Expression, Arithm
                 let n = stream.take_int().expect("peek_kind guarded this");
                 return negate_u64_literal(n).map(|v| Expression::Literal(Value::Integer(v)));
             }
+            // Fold `-` directly into a following float literal too, so
+            // `-7.5` is a single negative literal rather than `0.0 - 7.5`
+            // (which would need a float-typed zero the parser can't know to
+            // emit here). The sign of zero is preserved: `-0.0` stays `-0.0`.
+            if let Some(ArithmeticTokenKind::Float) = stream.peek_kind() {
+                let value = stream.take_float().expect("peek_kind guarded this");
+                return Ok(Expression::Literal(Value::Float(-value)));
+            }
             // Non-literal unary minus is the stack-growing case: the
             // following `parse_unary` call adds a frame for every `-`
             // in the chain. Bound it through the source so an adversarial
@@ -258,6 +281,10 @@ fn parse_primary<S: ArithmeticSource>(stream: &mut S) -> Result<Expression, Arit
         Some(ArithmeticTokenKind::Bool) => {
             let value = stream.take_bool().expect("peek_kind guarded this");
             Ok(Expression::Literal(Value::Boolean(value)))
+        }
+        Some(ArithmeticTokenKind::Float) => {
+            let value = stream.take_float().expect("peek_kind guarded this");
+            Ok(Expression::Literal(Value::Float(value)))
         }
         Some(ArithmeticTokenKind::Ident) => {
             let name = stream.take_ident().expect("peek_kind guarded this");

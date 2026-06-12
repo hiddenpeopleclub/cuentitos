@@ -24,6 +24,11 @@ pub enum RuntimeError {
     DivisionByZero { file: Option<PathBuf>, line: usize },
     /// An arithmetic expression evaluated at runtime overflowed an `i64`.
     IntegerOverflow { file: Option<PathBuf>, line: usize },
+    /// A float arithmetic expression evaluated at runtime overflowed the
+    /// `f64` range to ±infinity. Parallel to
+    /// [`IntegerOverflow`](Self::IntegerOverflow) but with a float-specific
+    /// message.
+    FloatOverflow { file: Option<PathBuf>, line: usize },
     /// A binary operator's operands had mismatched value kinds at
     /// runtime. Unreachable while `Value` has only the `Integer`
     /// variant — parser-time type inference catches every reachable
@@ -78,6 +83,14 @@ impl fmt::Display for RuntimeError {
                     .and_then(|n| n.to_str())
                     .unwrap_or("<script>");
                 write!(f, "{}:{}: RUNTIME ERROR: Integer overflow.", prefix, line)
+            }
+            RuntimeError::FloatOverflow { file, line } => {
+                let prefix = file
+                    .as_ref()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("<script>");
+                write!(f, "{}:{}: RUNTIME ERROR: Float overflow.", prefix, line)
             }
             RuntimeError::EvaluationTypeMismatch {
                 expected,

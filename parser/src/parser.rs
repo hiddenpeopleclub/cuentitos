@@ -172,6 +172,17 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    /// A `set` on a float variable had a non-float RHS. Parallel in shape to
+    /// [`FloatDefaultTypeMismatch`](Self::FloatDefaultTypeMismatch): names the
+    /// offending sub-expression (`found_token`) and its kind rather than just
+    /// reporting two kinds, so the wording echoes what the author typed.
+    FloatSetTypeMismatch {
+        variable: String,
+        found_token: String,
+        found: cuentitos_common::ValueKind,
+        file: Option<PathBuf>,
+        line: usize,
+    },
     /// A compound `set` operator (`+= -= *= /=`) targeted a non-numeric
     /// variable.
     NonNumericAssignment {
@@ -294,6 +305,18 @@ pub enum ParseError {
     /// [`RequirementLiteralOverflow`](Self::RequirementLiteralOverflow)
     /// so the two sibling parsers produce parallel diagnostics.
     SetLiteralOverflow {
+        literal: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// A float literal in a `set` RHS exceeded the largest finite `f64`,
+    /// parsing to ±infinity. Names the target variable, parallel to the float
+    /// *default* overflow [`FloatOverflow`](Self::FloatOverflow); the wording
+    /// only differs by naming the `set` context rather than a default. Distinct
+    /// from [`SetLiteralOverflow`](Self::SetLiteralOverflow): floats overflow to
+    /// infinity rather than wrapping past `i64`.
+    SetFloatLiteralOverflow {
+        variable: String,
         literal: String,
         file: Option<PathBuf>,
         line: usize,
@@ -715,6 +738,23 @@ impl fmt::Display for ParseError {
                     found
                 )
             }
+            ParseError::FloatSetTypeMismatch {
+                variable,
+                found_token,
+                found,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Type mismatch: 'set' expression for float {} must be a float expression, but {} is {}.",
+                    file_prefix(file),
+                    line,
+                    variable,
+                    found_token,
+                    found.keyword()
+                )
+            }
             ParseError::NonNumericAssignment {
                 variable,
                 kind,
@@ -920,6 +960,20 @@ impl fmt::Display for ParseError {
                     file_prefix(file),
                     line,
                     literal
+                )
+            }
+            ParseError::SetFloatLiteralOverflow {
+                variable,
+                file,
+                line,
+                ..
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Float overflow in 'set' expression for '{}'.",
+                    file_prefix(file),
+                    line,
+                    variable
                 )
             }
             ParseError::DefaultLiteralOverflow {
@@ -1552,6 +1606,17 @@ impl Parser {
                                         file: self.file_path.clone(),
                                         line: context.current_line,
                                     },
+                                    SetParseError::FloatTypeMismatch {
+                                        variable,
+                                        found_token,
+                                        found,
+                                    } => ParseError::FloatSetTypeMismatch {
+                                        variable,
+                                        found_token,
+                                        found,
+                                        file: self.file_path.clone(),
+                                        line: context.current_line,
+                                    },
                                     SetParseError::NonNumericAssignment { variable, kind } => {
                                         ParseError::NonNumericAssignment {
                                             variable,
@@ -1562,6 +1627,14 @@ impl Parser {
                                     }
                                     SetParseError::LiteralOverflow { literal } => {
                                         ParseError::SetLiteralOverflow {
+                                            literal,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    SetParseError::FloatLiteralOverflow { variable, literal } => {
+                                        ParseError::SetFloatLiteralOverflow {
+                                            variable,
                                             literal,
                                             file: self.file_path.clone(),
                                             line: context.current_line,

@@ -25,10 +25,12 @@ pub enum BinaryOperator {
 }
 
 impl BinaryOperator {
-    /// Apply this operator to two values. Today every operator requires both
-    /// operands to be `Integer`; mixed or non-numeric operands return
-    /// [`EvaluationError::TypeMismatch`]. Adding `Float` later means adding
-    /// a `(Float, Float)` arm and a numeric-promotion rule.
+    /// Apply this operator to two values. Both operands must share the same
+    /// numeric kind: `(Integer, Integer)` folds with checked `i64` arithmetic,
+    /// `(Float, Float)` folds with IEEE `f64` arithmetic. Mixed or non-numeric
+    /// operands return [`EvaluationError::TypeMismatch`] — parse-time inference
+    /// rejects those before the runtime ever folds them, so the arm only keeps
+    /// the surface total.
     pub fn apply(self, left: &Value, right: &Value) -> Result<Value, EvaluationError> {
         match (self, left, right) {
             (BinaryOperator::Add, Value::Integer(l), Value::Integer(r)) => l
@@ -52,15 +54,44 @@ impl BinaryOperator {
                         .ok_or(EvaluationError::Overflow)
                 }
             }
-            // Any non-`(Integer, Integer)` pairing — e.g. a `Boolean` operand —
-            // is a type error. Parse-time inference is expected to reject these
-            // before the runtime ever folds them; the arm keeps the surface
-            // total as `Value` grows new variants.
+            // Float arithmetic is IEEE: division does not truncate, and the
+            // sign of zero is preserved (`0.0 * -1.0` -> `-0.0`). A result
+            // that overflows to ±infinity is rejected as `FloatOverflow`
+            // rather than stored, mirroring how float *defaults* reject
+            // overflow at parse time; division by zero is rejected up front
+            // rather than producing an IEEE infinity.
+            (BinaryOperator::Add, Value::Float(l), Value::Float(r)) => finite_float(l + r),
+            (BinaryOperator::Subtract, Value::Float(l), Value::Float(r)) => finite_float(l - r),
+            (BinaryOperator::Multiply, Value::Float(l), Value::Float(r)) => finite_float(l * r),
+            (BinaryOperator::Divide, Value::Float(l), Value::Float(r)) => {
+                if *r == 0.0 {
+                    Err(EvaluationError::DivisionByZero)
+                } else {
+                    finite_float(l / r)
+                }
+            }
+            // Any remaining pairing — a `Boolean` operand or a mixed
+            // `(Integer, Float)` — is a type error. Parse-time inference is
+            // expected to reject these before the runtime ever folds them; the
+            // arm keeps the surface total as `Value` grows new variants.
             (_, left, right) => Err(EvaluationError::TypeMismatch {
                 expected: left.kind(),
                 found: right.kind(),
             }),
         }
+    }
+}
+
+/// Wrap a folded float result as a [`Value::Float`], rejecting a non-finite
+/// outcome (overflow to ±infinity) as [`EvaluationError::FloatOverflow`]. NaN
+/// cannot arise on the call paths here — operands are always finite and
+/// division by zero is caught before the division runs — but it is also
+/// non-finite and would be rejected the same way.
+fn finite_float(value: f64) -> Result<Value, EvaluationError> {
+    if value.is_finite() {
+        Ok(Value::Float(value))
+    } else {
+        Err(EvaluationError::FloatOverflow)
     }
 }
 
@@ -84,7 +115,12 @@ pub enum Expression {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EvaluationError {
     DivisionByZero,
+    /// Integer arithmetic overflowed the `i64` range.
     Overflow,
+    /// Float arithmetic overflowed the `f64` range to ±infinity. Distinct from
+    /// [`Overflow`](Self::Overflow) so the runtime can surface a float-specific
+    /// `RUNTIME ERROR: Float overflow.` message, parallel to the integer one.
+    FloatOverflow,
     /// A binary operator was applied to operands of incompatible kinds. Today
     /// unreachable through normal parsing because parse-time inference rejects
     /// type-mismatched expressions; carried so the error surface is ready for
@@ -127,5 +163,99 @@ pub fn evaluate<'v>(
             let right_value = evaluate(right, lookup)?;
             operator.apply(&left_value, &right_value).map(Cow::Owned)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn float(value: f64) -> Value {
+        Value::Float(value)
+    }
+
+    #[test]
+    fn float_arithmetic_folds_with_ieee_semantics() {
+        assert_eq!(
+            BinaryOperator::Add.apply(&float(5.0), &float(3.0)).unwrap(),
+            float(8.0)
+        );
+        assert_eq!(
+            BinaryOperator::Subtract
+                .apply(&float(5.0), &float(3.0))
+                .unwrap(),
+            float(2.0)
+        );
+        assert_eq!(
+            BinaryOperator::Multiply
+                .apply(&float(5.0), &float(3.0))
+                .unwrap(),
+            float(15.0)
+        );
+    }
+
+    #[test]
+    fn float_division_does_not_truncate() {
+        // Unlike integer division, `7.0 / 2.0` keeps the fractional part.
+        assert_eq!(
+            BinaryOperator::Divide
+                .apply(&float(7.0), &float(2.0))
+                .unwrap(),
+            float(3.5)
+        );
+        assert_eq!(
+            BinaryOperator::Divide
+                .apply(&float(1.0), &float(4.0))
+                .unwrap(),
+            float(0.25)
+        );
+    }
+
+    #[test]
+    fn float_division_by_zero_is_an_error_not_infinity() {
+        assert_eq!(
+            BinaryOperator::Divide
+                .apply(&float(10.0), &float(0.0))
+                .unwrap_err(),
+            EvaluationError::DivisionByZero
+        );
+    }
+
+    #[test]
+    fn float_overflow_to_infinity_is_rejected() {
+        assert_eq!(
+            BinaryOperator::Multiply
+                .apply(&float(1e200), &float(1e200))
+                .unwrap_err(),
+            EvaluationError::FloatOverflow
+        );
+    }
+
+    #[test]
+    fn float_multiplication_preserves_negative_zero() {
+        // IEEE distinguishes `+0.0` from `-0.0`; `0.0 * -1.0` is `-0.0`.
+        let result = BinaryOperator::Multiply
+            .apply(&float(0.0), &float(-1.0))
+            .unwrap();
+        let Value::Float(value) = result else {
+            panic!("expected float, got {result:?}");
+        };
+        assert_eq!(value, 0.0);
+        assert!(value.is_sign_negative(), "expected -0.0, got {value}");
+    }
+
+    #[test]
+    fn mixed_int_and_float_operands_are_a_type_error() {
+        // Parse-time inference rejects these, but the runtime arm must stay
+        // total: a mixed pairing surfaces as a type mismatch, not a panic.
+        assert_eq!(
+            BinaryOperator::Add
+                .apply(&Value::Integer(1), &float(1.0))
+                .unwrap_err(),
+            EvaluationError::TypeMismatch {
+                expected: ValueKind::Integer,
+                found: ValueKind::Float,
+            }
+        );
     }
 }
