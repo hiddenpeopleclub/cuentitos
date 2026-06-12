@@ -45,6 +45,16 @@ pub trait VariableResolver {
     fn kind_of(&self, _id: VariableId) -> Option<ValueKind> {
         None
     }
+
+    /// The declared variant names of a resolved enum variable, or `None` for a
+    /// non-enum (or for resolvers that don't carry type information). Used to
+    /// recognize a bare variant identifier on the RHS of an enum comparison
+    /// (`req mood = happy`) and fold it into an enum literal instead of trying
+    /// to resolve it as a variable. The default returns `None`; the real
+    /// [`crate::parsers::requirement_parser`] resolver overrides it.
+    fn enum_variants(&self, _id: VariableId) -> Option<Vec<String>> {
+        None
+    }
 }
 
 impl<F: Fn(&str) -> Option<VariableId>> VariableResolver for F {
@@ -682,6 +692,16 @@ impl<'a> BooleanParser<'a> {
         };
         if let Some(operator) = comparison_operator {
             self.position += 1;
+            // Enum comparison: `req <enum_var> <op> <variant>`. When the LHS is
+            // an enum variable and the RHS is a bare identifier naming one of
+            // its declared variants, fold the RHS into an enum literal instead
+            // of routing it through the arithmetic body (where it would fail to
+            // resolve as a variable). Resolution is scoped to the LHS enum.
+            if let Some(right) = self.try_enum_variant_operand(&left) {
+                return Ok(BooleanExpression::Comparison(RequirementStatement::new(
+                    left, operator, right,
+                )));
+            }
             let right = self.parse_arith()?;
             return Ok(BooleanExpression::Comparison(RequirementStatement::new(
                 left, operator, right,
@@ -743,6 +763,34 @@ impl<'a> BooleanParser<'a> {
             Expression::Variable(id) => self.resolver.kind_of(*id) == Some(ValueKind::Boolean),
             _ => false,
         }
+    }
+
+    /// If `left` is an enum variable and the next token is a bare identifier
+    /// naming one of that enum's declared variants, consume it and return the
+    /// corresponding enum literal. Otherwise leave the position untouched and
+    /// return `None` so the caller falls back to the arithmetic body. The
+    /// variant is resolved against the LHS enum's list, never globally.
+    fn try_enum_variant_operand(&mut self, left: &Expression) -> Option<Expression> {
+        let Expression::Variable(id) = left else {
+            return None;
+        };
+        let id = *id;
+        if self.resolver.kind_of(id) != Some(ValueKind::Enum) {
+            return None;
+        }
+        let Some(Token::Ident(name)) = self.peek() else {
+            return None;
+        };
+        let name = name.clone();
+        let variants = self.resolver.enum_variants(id)?;
+        if !variants.contains(&name) {
+            return None;
+        }
+        self.position += 1;
+        Some(Expression::Literal(Value::Enum {
+            variants,
+            value: name,
+        }))
     }
 }
 

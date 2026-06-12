@@ -25,6 +25,15 @@ pub enum Value {
     EnumUnset {
         variants: Vec<String>,
     },
+    /// An enum variable that has been assigned one of its declared variants.
+    /// Carries the same allowed-variant list as [`Value::EnumUnset`] (so the
+    /// assigned form stays symmetric and a later `set` or `req` can validate
+    /// against it) plus the currently selected `value`. `Display` renders the
+    /// bare variant name, unquoted.
+    Enum {
+        variants: Vec<String>,
+        value: String,
+    },
 }
 
 impl Value {
@@ -36,7 +45,19 @@ impl Value {
             Value::Boolean(_) => ValueKind::Boolean,
             Value::Float(_) => ValueKind::Float,
             Value::String(_) => ValueKind::String,
-            Value::EnumUnset { .. } => ValueKind::Enum,
+            Value::EnumUnset { .. } | Value::Enum { .. } => ValueKind::Enum,
+        }
+    }
+
+    /// The allowed variant names for an enum value (assigned or not), or
+    /// `None` for any non-enum value. Lets `set`/`req` parsing validate a
+    /// bare variant against the target enum's declared list without matching
+    /// on the two enum payload shapes at every call site.
+    #[must_use]
+    pub fn enum_variants(&self) -> Option<&[String]> {
+        match self {
+            Value::EnumUnset { variants } | Value::Enum { variants, .. } => Some(variants),
+            Value::Integer(_) | Value::Boolean(_) | Value::Float(_) | Value::String(_) => None,
         }
     }
 
@@ -47,9 +68,11 @@ impl Value {
     pub fn as_integer(&self) -> Option<i64> {
         match self {
             Value::Integer(n) => Some(*n),
-            Value::Boolean(_) | Value::Float(_) | Value::String(_) | Value::EnumUnset { .. } => {
-                None
-            }
+            Value::Boolean(_)
+            | Value::Float(_)
+            | Value::String(_)
+            | Value::EnumUnset { .. }
+            | Value::Enum { .. } => None,
         }
     }
 
@@ -61,9 +84,11 @@ impl Value {
     pub fn as_float(&self) -> Option<f64> {
         match self {
             Value::Float(f) => Some(*f),
-            Value::Integer(_) | Value::Boolean(_) | Value::String(_) | Value::EnumUnset { .. } => {
-                None
-            }
+            Value::Integer(_)
+            | Value::Boolean(_)
+            | Value::String(_)
+            | Value::EnumUnset { .. }
+            | Value::Enum { .. } => None,
         }
     }
 
@@ -76,9 +101,11 @@ impl Value {
     pub fn as_string(&self) -> Option<&str> {
         match self {
             Value::String(s) => Some(s),
-            Value::Integer(_) | Value::Boolean(_) | Value::Float(_) | Value::EnumUnset { .. } => {
-                None
-            }
+            Value::Integer(_)
+            | Value::Boolean(_)
+            | Value::Float(_)
+            | Value::EnumUnset { .. }
+            | Value::Enum { .. } => None,
         }
     }
 }
@@ -96,6 +123,9 @@ impl std::fmt::Display for Value {
             // and prints `<unset>` directly. Other `Display` sites (e.g.
             // interpolation) should never reach an unset enum at runtime.
             Value::EnumUnset { .. } => write!(f, "<unset>"),
+            // An assigned enum renders as the bare selected variant name,
+            // unquoted (so `?` prints `mood: sad`).
+            Value::Enum { value, .. } => write!(f, "{value}"),
         }
     }
 }

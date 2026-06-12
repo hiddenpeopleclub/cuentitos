@@ -468,6 +468,9 @@ fn print_debug_variables(runtime: &cuentitos_runtime::Runtime, script_path: &Pat
             // must report `<unset>` without raising. The set suite exercises
             // the error path via `req`.
             cuentitos_common::Value::EnumUnset { .. } => "<unset>".to_string(),
+            // An assigned enum reports its selected variant name, bare and
+            // unquoted (unlike strings, which `?` renders quoted).
+            cuentitos_common::Value::Enum { value, .. } => value.clone(),
         };
         println!("{}: {}", variable.name, formatted);
     }

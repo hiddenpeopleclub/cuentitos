@@ -359,7 +359,11 @@ mod tests {
             .collect();
         match evaluate(&expression, &|id| &values[&id])?.into_owned() {
             Value::Integer(n) => Ok(n),
-            Value::Boolean(_) | Value::Float(_) | Value::String(_) | Value::EnumUnset { .. } => {
+            Value::Boolean(_)
+            | Value::Float(_)
+            | Value::String(_)
+            | Value::EnumUnset { .. }
+            | Value::Enum { .. } => {
                 unreachable!("arithmetic folds only produce integers")
             }
         }

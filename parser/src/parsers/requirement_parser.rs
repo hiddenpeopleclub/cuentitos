@@ -275,6 +275,14 @@ impl VariableResolver for DatabaseResolver<'_> {
             .get(id)
             .map(|variable| variable.kind())
     }
+
+    fn enum_variants(&self, id: VariableId) -> Option<Vec<String>> {
+        self.database
+            .variables
+            .get(id)
+            .and_then(|variable| variable.default.enum_variants())
+            .map(<[String]>::to_vec)
+    }
 }
 
 /// Cheap predicate: does `content` (already trimmed of indentation)
@@ -774,6 +782,75 @@ mod tests {
             parse_requirement("req name = \"Aria", &db).unwrap_err(),
             RequirementParseError::MalformedExpression {
                 expression: "name = \"Aria".to_string(),
+            }
+        );
+    }
+
+    // -- enum `req` ------------------------------------------------------
+
+    fn db_with_enum(name: &str, variants: &[&str]) -> Database {
+        let mut db = Database::new();
+        db.add_variable(cuentitos_common::Variable::new(
+            name,
+            cuentitos_common::Value::EnumUnset {
+                variants: variants.iter().map(|v| v.to_string()).collect(),
+            },
+        ));
+        db
+    }
+
+    #[test]
+    fn parses_variant_literal_rhs_for_equal_and_not_equal() {
+        let db = db_with_enum("mood", &["happy", "sad"]);
+        for (input, expected_operator, expected_variant) in [
+            ("req mood = happy", ComparisonOperator::Equal, "happy"),
+            ("req mood != sad", ComparisonOperator::NotEqual, "sad"),
+        ] {
+            let parsed = parse_requirement(input, &db).unwrap();
+            let stmt = assert_comparison(&parsed.expression, expected_operator);
+            assert_eq!(stmt.left, Expression::Variable(0));
+            assert_eq!(
+                stmt.right,
+                Expression::Literal(cuentitos_common::Value::Enum {
+                    variants: vec!["happy".to_string(), "sad".to_string()],
+                    value: expected_variant.to_string(),
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn variant_resolves_against_the_lhs_enum() {
+        // Two enums share `happy`; `req weather = happy` resolves against
+        // weather's own variant list, carrying weather's variants.
+        let mut db = db_with_enum("mood", &["happy", "sad"]);
+        db.add_variable(cuentitos_common::Variable::new(
+            "weather",
+            cuentitos_common::Value::EnumUnset {
+                variants: vec!["sunny".to_string(), "happy".to_string()],
+            },
+        ));
+        let parsed = parse_requirement("req weather = happy", &db).unwrap();
+        let stmt = assert_comparison(&parsed.expression, ComparisonOperator::Equal);
+        assert_eq!(stmt.left, Expression::Variable(1));
+        assert_eq!(
+            stmt.right,
+            Expression::Literal(cuentitos_common::Value::Enum {
+                variants: vec!["sunny".to_string(), "happy".to_string()],
+                value: "happy".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn unknown_variant_on_rhs_of_enum_req_is_undefined() {
+        // A bare identifier that is not a variant (and not a variable) falls
+        // through to the arithmetic body, which reports it as undefined.
+        let db = db_with_enum("mood", &["happy", "sad"]);
+        assert_eq!(
+            parse_requirement("req mood = ecstatic", &db).unwrap_err(),
+            RequirementParseError::UndefinedVariable {
+                name: "ecstatic".to_string(),
             }
         );
     }

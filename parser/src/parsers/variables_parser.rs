@@ -1326,7 +1326,7 @@ pub fn evaluate_expression(
             Value::Boolean(_) => unreachable!("integer-default fold never yields a boolean"),
             Value::Float(_) => unreachable!("integer-default fold never yields a float"),
             Value::String(_) => unreachable!("integer-default fold never yields a string"),
-            Value::EnumUnset { .. } => {
+            Value::EnumUnset { .. } | Value::Enum { .. } => {
                 unreachable!("integer-default fold never yields an enum")
             }
         },
