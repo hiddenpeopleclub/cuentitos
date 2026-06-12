@@ -29,6 +29,7 @@ use cuentitos_common::{
 use crate::arithmetic::{
     parse_arithmetic_expression, ArithmeticError, ArithmeticSource, ArithmeticTokenKind,
 };
+use crate::string_literal::{scan_quoted_body, StringLiteralError};
 
 /// Resolves identifiers (variable names) to declared [`VariableId`]s.
 pub trait VariableResolver {
@@ -72,6 +73,9 @@ pub fn parse_boolean_expression(
         }
         Err(TokenizeError::DoubleEquals) => {
             return Err(BooleanParseError::DoubleEquals);
+        }
+        Err(TokenizeError::MalformedStringLiteral) => {
+            return Err(BooleanParseError::Malformed);
         }
     };
 
@@ -203,6 +207,7 @@ enum Token {
     Int(u64),
     Bool(bool),
     Float(f64),
+    Str(String),
     Ident(String),
     LogicalAnd,
     LogicalOr,
@@ -225,6 +230,11 @@ enum Token {
 enum TokenizeError {
     UnknownSymbol(String),
     LiteralOverflow(String),
+    /// A double-quoted string literal was unterminated or carried an invalid
+    /// backslash escape. There's no dedicated `req` diagnostic for either case
+    /// (unlike `set`), so both fold into the generic malformed-expression
+    /// message rather than inventing untested wording.
+    MalformedStringLiteral,
     /// `==` was used in equality position. Cuentitos uses `=` for both
     /// assignment (in `set`) and equality (in `req`); `==` is the most
     /// common typo from C/Python users. Surface a targeted diagnostic
@@ -362,6 +372,27 @@ fn tokenize(input: &str) -> Result<Vec<Token>, TokenizeError> {
                         .parse()
                         .map_err(|_| TokenizeError::LiteralOverflow(literal.clone()))?;
                     tokens.push(Token::Int(parsed));
+                }
+            }
+            '"' => {
+                // Lex one double-quoted literal as a single operand token.
+                // Consume the opening quote, then hand the rest to the shared
+                // scanner so the `\"`/`\n`/`\\` escapes match string defaults
+                // and `set` RHS literals byte-for-byte. Trailing tokens after
+                // the closing quote (`"Aria" and ...`) stay in the stream.
+                chars.next();
+                match scan_quoted_body(&mut chars) {
+                    Ok(value) => tokens.push(Token::Str(value)),
+                    Err(StringLiteralError::Unterminated)
+                    | Err(StringLiteralError::InvalidEscape { .. }) => {
+                        return Err(TokenizeError::MalformedStringLiteral);
+                    }
+                    // `scan_quoted_body` stops at the closing quote and never
+                    // inspects what follows, so it cannot report trailing
+                    // characters — that variant is unreachable here.
+                    Err(StringLiteralError::TrailingCharacters) => {
+                        return Err(TokenizeError::MalformedStringLiteral);
+                    }
                 }
             }
             c if c.is_ascii_alphabetic() || c == '_' => {
@@ -721,6 +752,7 @@ impl<'a> ArithmeticSource for BooleanParser<'a> {
             Token::Int(_) => Some(ArithmeticTokenKind::Int),
             Token::Bool(_) => Some(ArithmeticTokenKind::Bool),
             Token::Float(_) => Some(ArithmeticTokenKind::Float),
+            Token::Str(_) => Some(ArithmeticTokenKind::Str),
             Token::Ident(_) => Some(ArithmeticTokenKind::Ident),
             Token::Plus => Some(ArithmeticTokenKind::Plus),
             Token::Minus => Some(ArithmeticTokenKind::Minus),
@@ -763,6 +795,15 @@ impl<'a> ArithmeticSource for BooleanParser<'a> {
             return None;
         };
         let value = *value;
+        self.position += 1;
+        Some(value)
+    }
+
+    fn take_string(&mut self) -> Option<String> {
+        let Token::Str(value) = self.tokens.get(self.position)? else {
+            return None;
+        };
+        let value = value.clone();
         self.position += 1;
         Some(value)
     }

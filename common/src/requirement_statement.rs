@@ -87,6 +87,23 @@ impl ComparisonOperator {
                     unreachable!("ordering comparison on booleans is rejected at parse time")
                 }
             },
+            (Value::String(l), Value::String(r)) => match self {
+                // Exact, case- and whitespace-sensitive comparison straight
+                // from `String`'s `PartialEq` — escape sequences were decoded
+                // at parse time, so this compares the resolved character
+                // content.
+                ComparisonOperator::Equal => Ok(l == r),
+                ComparisonOperator::NotEqual => Ok(l != r),
+                // Strings have no ordering; the four ordering operators are
+                // rejected at parse time, so this is structurally unreachable
+                // through the normal pipeline.
+                ComparisonOperator::Less
+                | ComparisonOperator::LessOrEqual
+                | ComparisonOperator::Greater
+                | ComparisonOperator::GreaterOrEqual => {
+                    unreachable!("ordering comparison on strings is rejected at parse time")
+                }
+            },
             // Operands of differing kinds (e.g. an `Integer` against a
             // `Boolean`) are a type error. Parse-time inference is expected to
             // make this unreachable; the arm keeps the match total as `Value`
@@ -209,6 +226,26 @@ mod tests {
         let two = Value::Integer(2);
         assert_eq!(ComparisonOperator::Equal.apply(&one, &one), Ok(true));
         assert_eq!(ComparisonOperator::Less.apply(&one, &two), Ok(true));
+    }
+
+    #[test]
+    fn string_equality_compares_by_value() {
+        let aria = Value::String("Aria".to_string());
+        let brenn = Value::String("Brenn".to_string());
+        assert_eq!(ComparisonOperator::Equal.apply(&aria, &aria), Ok(true));
+        assert_eq!(ComparisonOperator::Equal.apply(&aria, &brenn), Ok(false));
+        assert_eq!(ComparisonOperator::NotEqual.apply(&aria, &brenn), Ok(true));
+        assert_eq!(ComparisonOperator::NotEqual.apply(&aria, &aria), Ok(false));
+    }
+
+    #[test]
+    fn string_equality_is_case_and_whitespace_sensitive() {
+        let aria = Value::String("Aria".to_string());
+        let lower = Value::String("aria".to_string());
+        let trailing = Value::String("Aria ".to_string());
+        assert_eq!(ComparisonOperator::Equal.apply(&aria, &lower), Ok(false));
+        assert_eq!(ComparisonOperator::Equal.apply(&aria, &trailing), Ok(false));
+        assert_eq!(ComparisonOperator::NotEqual.apply(&aria, &lower), Ok(true));
     }
 
     #[test]

@@ -145,6 +145,20 @@ impl<'a> ArithmeticSource for SliceArithmeticSource<'a> {
         Some(value)
     }
 
+    // This source's tokenizer never emits a `Str` token — `set` lexes its
+    // string RHS literals on a dedicated path before reaching the shared
+    // arithmetic body — so `peek_kind` never yields `Str` and this is never
+    // called in practice. Implemented to satisfy the trait; the body mirrors
+    // the other `take_*` methods so it stays correct if that ever changes.
+    fn take_string(&mut self) -> Option<String> {
+        let ArithmeticToken::Str(value) = self.tokens.get(self.position)? else {
+            return None;
+        };
+        let value = value.clone();
+        self.position += 1;
+        Some(value)
+    }
+
     fn take_ident(&mut self) -> Option<String> {
         let ArithmeticToken::Ident(name) = self.tokens.get(self.position)? else {
             return None;

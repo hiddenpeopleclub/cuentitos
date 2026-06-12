@@ -678,4 +678,103 @@ mod tests {
             }
         );
     }
+
+    // -- string `req` ----------------------------------------------------
+
+    fn db_with_strings(vars: &[(&str, &str)]) -> Database {
+        let mut db = Database::new();
+        for (name, default) in vars {
+            db.add_variable(Variable::new(*name, Value::String((*default).to_string())));
+        }
+        db
+    }
+
+    #[test]
+    fn parses_string_literal_rhs_for_equal_and_not_equal() {
+        let db = db_with_strings(&[("name", "Aria")]);
+        for (input, expected_operator, expected_literal) in [
+            ("req name = \"Aria\"", ComparisonOperator::Equal, "Aria"),
+            (
+                "req name != \"Brenn\"",
+                ComparisonOperator::NotEqual,
+                "Brenn",
+            ),
+        ] {
+            let parsed = parse_requirement(input, &db).unwrap();
+            let stmt = assert_comparison(&parsed.expression, expected_operator);
+            assert_eq!(stmt.left, Expression::Variable(0));
+            assert_eq!(
+                stmt.right,
+                Expression::Literal(Value::String(expected_literal.into()))
+            );
+        }
+    }
+
+    #[test]
+    fn string_literal_rhs_decodes_escapes() {
+        let db = db_with_strings(&[("greeting", "hi\nthere")]);
+        let parsed = parse_requirement("req greeting = \"hi\\nthere\"", &db).unwrap();
+        let stmt = assert_comparison(&parsed.expression, ComparisonOperator::Equal);
+        assert_eq!(
+            stmt.right,
+            Expression::Literal(Value::String("hi\nthere".into()))
+        );
+    }
+
+    #[test]
+    fn parses_string_variable_on_both_sides() {
+        let db = db_with_strings(&[("a", "Aria"), ("b", "Aria")]);
+        let parsed = parse_requirement("req a = b", &db).unwrap();
+        let stmt = assert_comparison(&parsed.expression, ComparisonOperator::Equal);
+        assert_eq!(stmt.left, Expression::Variable(0));
+        assert_eq!(stmt.right, Expression::Variable(1));
+    }
+
+    #[test]
+    fn comparing_string_to_int_literal_is_type_mismatch() {
+        let db = db_with_strings(&[("name", "Aria")]);
+        assert_eq!(
+            parse_requirement("req name = 1", &db).unwrap_err(),
+            RequirementParseError::ComparisonTypeMismatch {
+                left_kind: ValueKind::String,
+                left_token: "name".to_string(),
+                right_kind: ValueKind::Integer,
+                right_token: "1".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn ordering_operator_on_strings_is_rejected() {
+        let db = db_with_strings(&[("name", "Aria")]);
+        assert_eq!(
+            parse_requirement("req name > \"Aaa\"", &db).unwrap_err(),
+            RequirementParseError::NonOrderedComparison {
+                operator: ComparisonOperator::Greater,
+                kind: ValueKind::String,
+            }
+        );
+    }
+
+    #[test]
+    fn bare_string_variable_has_no_truthiness_shortcut() {
+        let db = db_with_strings(&[("name", "Aria")]);
+        assert_eq!(
+            parse_requirement("req name", &db).unwrap_err(),
+            RequirementParseError::MalformedExpression {
+                expression: "name".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn unterminated_string_literal_is_malformed() {
+        let db = db_with_strings(&[("name", "Aria")]);
+        assert_eq!(
+            parse_requirement("req name = \"Aria", &db).unwrap_err(),
+            RequirementParseError::MalformedExpression {
+                expression: "name = \"Aria".to_string(),
+            }
+        );
+    }
 }
