@@ -5,6 +5,7 @@ pub mod boolean_expression;
 pub mod expression;
 pub mod parser;
 pub mod parsers;
+pub mod string_literal;
 
 pub use boolean_expression::LogicalKeyword;
 pub use parser::*;

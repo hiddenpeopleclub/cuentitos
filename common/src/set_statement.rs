@@ -18,6 +18,20 @@ impl AssignmentOperator {
     pub fn is_compound(self) -> bool {
         !matches!(self, AssignmentOperator::Assign)
     }
+
+    /// The source-syntax symbol for this operator (`=`, `+=`, `-=`, `*=`,
+    /// `/=`). Used to echo the exact operator the author typed in diagnostics
+    /// such as the compound-assignment-unsupported message.
+    #[must_use]
+    pub fn symbol(self) -> &'static str {
+        match self {
+            AssignmentOperator::Assign => "=",
+            AssignmentOperator::AddAssign => "+=",
+            AssignmentOperator::SubtractAssign => "-=",
+            AssignmentOperator::MultiplyAssign => "*=",
+            AssignmentOperator::DivideAssign => "/=",
+        }
+    }
 }
 
 /// Per-`set` statement metadata. Stored in `Database.sets`; referenced from a

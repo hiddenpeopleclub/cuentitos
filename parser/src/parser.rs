@@ -191,6 +191,26 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    /// A `set` on a string variable had a non-string RHS. Parallel in shape to
+    /// [`FloatSetTypeMismatch`](Self::FloatSetTypeMismatch): names the offending
+    /// sub-expression (`found_token`) and its kind rather than reporting two
+    /// kinds, so the wording echoes what the author typed.
+    StringSetTypeMismatch {
+        variable: String,
+        found_token: String,
+        found: cuentitos_common::ValueKind,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// A compound `set` operator (`+= -= *= /=`) targeted a kind that has a
+    /// dedicated "not supported" message (currently string), where the generic
+    /// numeric-variable wording would mislead (`+=` reads as concatenation).
+    CompoundAssignmentUnsupported {
+        operator: cuentitos_common::AssignmentOperator,
+        kind: cuentitos_common::ValueKind,
+        file: Option<PathBuf>,
+        line: usize,
+    },
     /// `req` had a syntactically incomplete expression.
     MalformedRequirementExpression {
         expression: String,
@@ -804,6 +824,38 @@ impl fmt::Display for ParseError {
                     line,
                     variable,
                     kind
+                )
+            }
+            ParseError::StringSetTypeMismatch {
+                variable,
+                found_token,
+                found,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Type mismatch: 'set' expression for string {} must be a string expression, but {} is {}.",
+                    file_prefix(file),
+                    line,
+                    variable,
+                    found_token,
+                    found.keyword()
+                )
+            }
+            ParseError::CompoundAssignmentUnsupported {
+                operator,
+                kind,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Compound assignment ('{}') is not supported for {} variables.",
+                    file_prefix(file),
+                    line,
+                    operator.symbol(),
+                    kind.keyword()
                 )
             }
             ParseError::MalformedRequirementExpression {
@@ -1676,6 +1728,39 @@ impl Parser {
                                             line: context.current_line,
                                         }
                                     }
+                                    SetParseError::StringTypeMismatch {
+                                        variable,
+                                        found_token,
+                                        found,
+                                    } => ParseError::StringSetTypeMismatch {
+                                        variable,
+                                        found_token,
+                                        found,
+                                        file: self.file_path.clone(),
+                                        line: context.current_line,
+                                    },
+                                    SetParseError::UnterminatedStringLiteral => {
+                                        ParseError::UnterminatedStringLiteral {
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    SetParseError::InvalidStringEscape { sequence } => {
+                                        ParseError::InvalidEscapeSequence {
+                                            sequence,
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    SetParseError::CompoundAssignmentUnsupported {
+                                        operator,
+                                        kind,
+                                    } => ParseError::CompoundAssignmentUnsupported {
+                                        operator,
+                                        kind,
+                                        file: self.file_path.clone(),
+                                        line: context.current_line,
+                                    },
                                 };
                                 self.collect_error_and_skip(parse_error, &mut context);
                                 continue;
