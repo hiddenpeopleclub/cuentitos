@@ -60,6 +60,20 @@ impl ComparisonOperator {
                 ComparisonOperator::Greater => l > r,
                 ComparisonOperator::GreaterOrEqual => l >= r,
             }),
+            (Value::Float(l), Value::Float(r)) => Ok(match self {
+                // IEEE-754 comparison semantics, straight from `f64`'s
+                // `PartialOrd`/`PartialEq`: `-0.0 == 0.0` is true, ordering
+                // against `-0.0` ignores the sign, and equality is the exact
+                // bit-faithful comparison of the stored values (so
+                // `0.1 + 0.2 != 0.3`). NaN never reaches here — it can't be
+                // produced by the float arithmetic the parser admits.
+                ComparisonOperator::Equal => l == r,
+                ComparisonOperator::NotEqual => l != r,
+                ComparisonOperator::Less => l < r,
+                ComparisonOperator::LessOrEqual => l <= r,
+                ComparisonOperator::Greater => l > r,
+                ComparisonOperator::GreaterOrEqual => l >= r,
+            }),
             (Value::Boolean(l), Value::Boolean(r)) => match self {
                 ComparisonOperator::Equal => Ok(l == r),
                 ComparisonOperator::NotEqual => Ok(l != r),
@@ -125,6 +139,68 @@ mod tests {
         assert_eq!(ComparisonOperator::Equal.apply(&t, &f), Ok(false));
         assert_eq!(ComparisonOperator::NotEqual.apply(&t, &f), Ok(true));
         assert_eq!(ComparisonOperator::NotEqual.apply(&t, &t), Ok(false));
+    }
+
+    #[test]
+    fn float_comparisons_follow_ieee_semantics() {
+        let one_five = Value::Float(1.5);
+        let two_five = Value::Float(2.5);
+        assert_eq!(
+            ComparisonOperator::Equal.apply(&one_five, &one_five),
+            Ok(true)
+        );
+        assert_eq!(
+            ComparisonOperator::NotEqual.apply(&one_five, &two_five),
+            Ok(true)
+        );
+        assert_eq!(
+            ComparisonOperator::Less.apply(&one_five, &two_five),
+            Ok(true)
+        );
+        assert_eq!(
+            ComparisonOperator::LessOrEqual.apply(&one_five, &one_five),
+            Ok(true)
+        );
+        assert_eq!(
+            ComparisonOperator::Greater.apply(&two_five, &one_five),
+            Ok(true)
+        );
+        assert_eq!(
+            ComparisonOperator::GreaterOrEqual.apply(&one_five, &one_five),
+            Ok(true)
+        );
+    }
+
+    #[test]
+    fn negative_zero_compares_equal_to_positive_zero() {
+        // IEEE-754: `-0.0 == 0.0` is true and `-0.0 < 0.0` is false, even
+        // though the two have distinct bit patterns.
+        let neg_zero = Value::Float(-0.0);
+        let pos_zero = Value::Float(0.0);
+        assert_eq!(
+            ComparisonOperator::Equal.apply(&neg_zero, &pos_zero),
+            Ok(true)
+        );
+        assert_eq!(
+            ComparisonOperator::Less.apply(&neg_zero, &pos_zero),
+            Ok(false)
+        );
+    }
+
+    #[test]
+    fn inexact_sum_is_not_equal_to_nearest_literal() {
+        // `0.1 + 0.2` stores `0.30000000000000004`, fractionally larger than
+        // the nearest `f64` to `0.3`, so equality fails and `>` passes.
+        let sum = Value::Float(0.1 + 0.2);
+        let three_tenths = Value::Float(0.3);
+        assert_eq!(
+            ComparisonOperator::Equal.apply(&sum, &three_tenths),
+            Ok(false)
+        );
+        assert_eq!(
+            ComparisonOperator::Greater.apply(&sum, &three_tenths),
+            Ok(true)
+        );
     }
 
     #[test]
