@@ -28,8 +28,8 @@ s
 ## Result
 ```result
 START
-mood: happy
-weather: happy
+mood: <unset>
+weather: <unset>
 This is the story.
 END
 ```

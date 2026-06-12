@@ -104,6 +104,29 @@ impl ComparisonOperator {
                     unreachable!("ordering comparison on strings is rejected at parse time")
                 }
             },
+            // Two enum values compare by their selected variant name. Only
+            // equality is meaningful (enums have no ordering); the four
+            // ordering operators are rejected at parse time, so they're
+            // structurally unreachable here. Either side may be an assigned
+            // `Enum` or an `EnumUnset` sentinel; comparing against an unset
+            // variant simply never matches a real variant name.
+            (
+                Value::Enum {
+                    value: left_value, ..
+                },
+                Value::Enum {
+                    value: right_value, ..
+                },
+            ) => match self {
+                ComparisonOperator::Equal => Ok(left_value == right_value),
+                ComparisonOperator::NotEqual => Ok(left_value != right_value),
+                ComparisonOperator::Less
+                | ComparisonOperator::LessOrEqual
+                | ComparisonOperator::Greater
+                | ComparisonOperator::GreaterOrEqual => {
+                    unreachable!("ordering comparison on enums is rejected at parse time")
+                }
+            },
             // Operands of differing kinds (e.g. an `Integer` against a
             // `Boolean`) are a type error. Parse-time inference is expected to
             // make this unreachable; the arm keeps the match total as `Value`

@@ -105,6 +105,21 @@ pub enum SetParseError {
     /// A `set` RHS for a bool variable contained a logical operator
     /// (`and`/`or`/`not`). Logical operators belong in `req`, not `set`.
     LogicalOperatorInSetExpression,
+    /// A `set` on an enum variable had an RHS that was not a variant literal —
+    /// a literal or a variable of a different kind. Carries the offending
+    /// sub-expression's source text (`found_token`) and its kind so the
+    /// diagnostic can name it, parallel to the float/string/bool type-mismatch
+    /// variants. A literal leaf is named quoted (`'1'`, `'"happy"'`); a
+    /// variable leaf is named by its bare identifier (`count`).
+    EnumTypeMismatch {
+        variable: String,
+        found_token: String,
+        found: ValueKind,
+    },
+    /// A `set` on an enum variable had a bare identifier on the RHS that is not
+    /// one of the target enum's declared variants (and not a variable of any
+    /// kind either). Carries the offending value and the target enum's name.
+    EnumInvalidVariant { value: String, enum_name: String },
 }
 
 /// Try to parse `content` as a `set` statement.
@@ -190,6 +205,26 @@ pub(crate) fn parse_set(content: &str, database: &Database) -> Result<ParsedSet,
             });
         }
         let expression = parse_string_rhs(rhs, lhs, database)?;
+        return Ok(ParsedSet {
+            variable_id,
+            operator,
+            expression,
+        });
+    }
+
+    // An enum `set` has the narrowest RHS grammar of all: a single bare
+    // variant identifier drawn from the *target* enum's declared value list.
+    // There is no enum-to-enum copy, no arithmetic, and no coercion from any
+    // other kind. Branch out before the shared arithmetic path so the
+    // enum-specific diagnostics stay verbatim.
+    if lhs_kind == ValueKind::Enum {
+        if operator.is_compound() {
+            return Err(SetParseError::CompoundAssignmentUnsupported {
+                operator,
+                kind: lhs_kind,
+            });
+        }
+        let expression = parse_enum_rhs(rhs, lhs, variable_id, database)?;
         return Ok(ParsedSet {
             variable_id,
             operator,
@@ -494,6 +529,101 @@ fn first_non_string_leaf(
         Expression::Binary { left, right, .. } => {
             first_non_string_leaf(left, database).or_else(|| first_non_string_leaf(right, database))
         }
+    }
+}
+
+/// Parse the RHS of a `set` whose target is an enum variable.
+///
+/// The grammar is the narrowest of any kind: a single bare variant identifier
+/// drawn from the *target* enum's declared value list. Resolution is scoped to
+/// the target enum (so two enums may share a variant name and each `set`
+/// resolves against its own list), and there is no enum-to-enum copy. Anything
+/// else is either a cross-type mismatch (a string/numeric literal or a
+/// variable of another kind, named in the diagnostic) or an unknown bare
+/// identifier (`Invalid value: '<x>' is not a variant of enum <var>.`).
+/// `caller` has already trimmed `rhs`.
+fn parse_enum_rhs(
+    rhs: &str,
+    lhs: &str,
+    variable_id: VariableId,
+    database: &Database,
+) -> Result<Expression, SetParseError> {
+    // The target enum's declared variants. The LHS is known to be enum-typed,
+    // so its default is `Value::EnumUnset`/`Value::Enum` and carries the list.
+    let variants: Vec<String> = database.variables[variable_id]
+        .default
+        .enum_variants()
+        .expect("enum-typed lhs always carries a variant list")
+        .to_vec();
+
+    // A double-quoted string literal is a string expression, never a variant
+    // identifier — even when its text matches a declared variant. Name it in
+    // its quoted source form (`'"happy"'`).
+    if rhs.starts_with('"') {
+        return Err(SetParseError::EnumTypeMismatch {
+            variable: lhs.to_string(),
+            found_token: format!("'{rhs}'"),
+            found: ValueKind::String,
+        });
+    }
+
+    // A bare identifier: resolve against the target enum's variants first
+    // (per-target scoping), then fall back to a cross-type variable reference.
+    if is_valid_identifier(rhs) {
+        if variants.iter().any(|variant| variant == rhs) {
+            return Ok(Expression::Literal(Value::Enum {
+                variants,
+                value: rhs.to_string(),
+            }));
+        }
+        return match database.variable_id(rhs) {
+            Some(id) => Err(SetParseError::EnumTypeMismatch {
+                variable: lhs.to_string(),
+                found_token: rhs.to_string(),
+                found: database.variables[id].kind(),
+            }),
+            None => Err(SetParseError::EnumInvalidVariant {
+                value: rhs.to_string(),
+                enum_name: lhs.to_string(),
+            }),
+        };
+    }
+
+    // Not a string literal and not a bare identifier (e.g. `1`, `count + 1`).
+    // Fall back to the shared arithmetic body so a numeric RHS surfaces a
+    // type-mismatch naming the offending leaf; a genuine parse failure is
+    // malformed.
+    let resolver = DatabaseResolver { database };
+    match parse_expression(rhs, &resolver) {
+        Ok(expression) => match first_leaf(&expression, database) {
+            Some((found_token, found)) => Err(SetParseError::EnumTypeMismatch {
+                variable: lhs.to_string(),
+                found_token,
+                found,
+            }),
+            None => Err(SetParseError::MalformedExpression {
+                expression: rhs.to_string(),
+            }),
+        },
+        Err(_) => Err(SetParseError::MalformedExpression {
+            expression: rhs.to_string(),
+        }),
+    }
+}
+
+/// Describe the leftmost leaf of `expression` for an enum `set` type-mismatch
+/// diagnostic: a literal leaf is named quoted (`Value::Integer(1)` → `'1'`),
+/// and a variable leaf by its bare identifier (`count`). No leaf is ever an
+/// enum literal here (enum literals are only built for a valid variant), so
+/// every leaf yields a non-enum kind to report.
+fn first_leaf(expression: &Expression, database: &Database) -> Option<(String, ValueKind)> {
+    match expression {
+        Expression::Literal(value) => Some((format!("'{value}'"), value.kind())),
+        Expression::Variable(id) => {
+            let variable = &database.variables[*id];
+            Some((variable.name.clone(), variable.kind()))
+        }
+        Expression::Binary { left, .. } => first_leaf(left, database),
     }
 }
 
@@ -929,6 +1059,125 @@ mod tests {
             SetParseError::CompoundAssignmentUnsupported {
                 operator: AssignmentOperator::AddAssign,
                 kind: ValueKind::String,
+            }
+        );
+    }
+
+    // -- enum `set` ------------------------------------------------------
+
+    fn db_with_enum(name: &str, variants: &[&str]) -> Database {
+        let mut db = Database::new();
+        db.add_variable(Variable::new(
+            name,
+            Value::EnumUnset {
+                variants: variants.iter().map(|v| v.to_string()).collect(),
+            },
+        ));
+        db
+    }
+
+    #[test]
+    fn variant_literal_rhs_parses_to_enum_literal() {
+        let db = db_with_enum("mood", &["happy", "sad", "angry"]);
+        let parsed = parse_set("set mood = sad", &db).unwrap();
+        assert_eq!(parsed.variable_id, 0);
+        assert_eq!(parsed.operator, AssignmentOperator::Assign);
+        assert_eq!(
+            parsed.expression,
+            Expression::Literal(Value::Enum {
+                variants: vec!["happy".to_string(), "sad".to_string(), "angry".to_string()],
+                value: "sad".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn unknown_bare_identifier_rhs_is_invalid_variant() {
+        let db = db_with_enum("mood", &["happy", "sad"]);
+        assert_eq!(
+            parse_set("set mood = ecstatic", &db).unwrap_err(),
+            SetParseError::EnumInvalidVariant {
+                value: "ecstatic".to_string(),
+                enum_name: "mood".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn int_literal_rhs_of_enum_set_is_a_type_mismatch() {
+        // A bare int literal names itself, quoted, in the diagnostic.
+        let db = db_with_enum("mood", &["happy", "sad"]);
+        assert_eq!(
+            parse_set("set mood = 1", &db).unwrap_err(),
+            SetParseError::EnumTypeMismatch {
+                variable: "mood".to_string(),
+                found_token: "'1'".to_string(),
+                found: ValueKind::Integer,
+            }
+        );
+    }
+
+    #[test]
+    fn int_variable_rhs_of_enum_set_is_a_type_mismatch() {
+        // A cross-type variable names itself, unquoted, in the diagnostic.
+        let mut db = db_with_enum("mood", &["happy", "sad"]);
+        db.add_variable(Variable::new_integer("count", 3));
+        assert_eq!(
+            parse_set("set mood = count", &db).unwrap_err(),
+            SetParseError::EnumTypeMismatch {
+                variable: "mood".to_string(),
+                found_token: "count".to_string(),
+                found: ValueKind::Integer,
+            }
+        );
+    }
+
+    #[test]
+    fn string_literal_rhs_of_enum_set_is_a_type_mismatch() {
+        // A double-quoted literal is named in its quoted source form, even
+        // when its text matches a declared variant.
+        let db = db_with_enum("mood", &["happy", "sad"]);
+        assert_eq!(
+            parse_set("set mood = \"happy\"", &db).unwrap_err(),
+            SetParseError::EnumTypeMismatch {
+                variable: "mood".to_string(),
+                found_token: "'\"happy\"'".to_string(),
+                found: ValueKind::String,
+            }
+        );
+    }
+
+    #[test]
+    fn variant_resolves_against_target_enum_not_globally() {
+        // Two enums share the `happy` variant; each `set` resolves against its
+        // own target enum's list. `set weather = happy` assigns weather's own
+        // `happy`, carrying weather's variant list.
+        let mut db = db_with_enum("mood", &["happy", "sad"]);
+        db.add_variable(Variable::new(
+            "weather",
+            Value::EnumUnset {
+                variants: vec!["sunny".to_string(), "happy".to_string()],
+            },
+        ));
+        let parsed = parse_set("set weather = happy", &db).unwrap();
+        assert_eq!(parsed.variable_id, 1);
+        assert_eq!(
+            parsed.expression,
+            Expression::Literal(Value::Enum {
+                variants: vec!["sunny".to_string(), "happy".to_string()],
+                value: "happy".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn compound_assignment_on_enum_is_rejected() {
+        let db = db_with_enum("mood", &["happy", "sad"]);
+        assert_eq!(
+            parse_set("set mood += happy", &db).unwrap_err(),
+            SetParseError::CompoundAssignmentUnsupported {
+                operator: AssignmentOperator::AddAssign,
+                kind: ValueKind::Enum,
             }
         );
     }

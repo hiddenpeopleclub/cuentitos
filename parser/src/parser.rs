@@ -457,6 +457,26 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    /// A `set` on an enum variable had a non-variant RHS (a literal or a
+    /// variable of another kind). Parallel in shape to
+    /// [`BoolSetTypeMismatch`](Self::BoolSetTypeMismatch): names the offending
+    /// sub-expression (`found_token`) and its kind.
+    EnumSetTypeMismatch {
+        variable: String,
+        found_token: String,
+        found: cuentitos_common::ValueKind,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// A `set` on an enum variable named a bare identifier that is not one of
+    /// the target enum's declared variants. Carries the offending value and
+    /// the target enum's variable name.
+    EnumSetInvalidVariant {
+        value: String,
+        enum_name: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
     /// An `enum` declaration had no `=` sign to introduce the value list.
     EnumMissingEquals {
         name: String,
@@ -1214,6 +1234,39 @@ impl fmt::Display for ParseError {
                     line
                 )
             }
+            ParseError::EnumSetTypeMismatch {
+                variable,
+                found_token,
+                found,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Type mismatch: 'set' expression for enum {} must be a variant of {}, but {} is {}.",
+                    file_prefix(file),
+                    line,
+                    variable,
+                    variable,
+                    found_token,
+                    found.keyword()
+                )
+            }
+            ParseError::EnumSetInvalidVariant {
+                value,
+                enum_name,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Invalid value: '{}' is not a variant of enum {}.",
+                    file_prefix(file),
+                    line,
+                    value,
+                    enum_name
+                )
+            }
             ParseError::EnumMissingEquals { name, file, line } => {
                 write!(
                     f,
@@ -1918,6 +1971,25 @@ impl Parser {
                                     },
                                     SetParseError::LogicalOperatorInSetExpression => {
                                         ParseError::LogicalOperatorInSetExpression {
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
+                                    SetParseError::EnumTypeMismatch {
+                                        variable,
+                                        found_token,
+                                        found,
+                                    } => ParseError::EnumSetTypeMismatch {
+                                        variable,
+                                        found_token,
+                                        found,
+                                        file: self.file_path.clone(),
+                                        line: context.current_line,
+                                    },
+                                    SetParseError::EnumInvalidVariant { value, enum_name } => {
+                                        ParseError::EnumSetInvalidVariant {
+                                            value,
+                                            enum_name,
                                             file: self.file_path.clone(),
                                             line: context.current_line,
                                         }
