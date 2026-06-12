@@ -195,10 +195,14 @@ impl LogicalKeyword {
 // Tokenizer
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Not `Eq`: the `Float(f64)` payload has no total equality, so this enum is
+/// `PartialEq` only — matching the `Eq`-drop on [`cuentitos_common::Value`]
+/// and on [`crate::arithmetic::ArithmeticToken`].
+#[derive(Debug, Clone, PartialEq)]
 enum Token {
     Int(u64),
     Bool(bool),
+    Float(f64),
     Ident(String),
     LogicalAnd,
     LogicalOr,
@@ -312,14 +316,53 @@ fn tokenize(input: &str) -> Result<Vec<Token>, TokenizeError> {
                         break;
                     }
                 }
-                // u64::from_str only fails here for magnitudes greater than
-                // u64::MAX — every literal in range already parses. Surface
-                // that as LiteralOverflow so the user sees the same message
-                // as i64-range overflows caught later in the parser.
-                let parsed: u64 = literal
-                    .parse()
-                    .map_err(|_| TokenizeError::LiteralOverflow(literal.clone()))?;
-                tokens.push(Token::Int(parsed));
+                // A `.` immediately followed by at least one digit makes this
+                // a float literal (`<digits>.<digits>`). A bare trailing dot
+                // (`5.`) or a leading dot (`.5`) is not consumed here, so it
+                // falls through as a stray symbol — matching the float literal
+                // grammar shared with `set` (see `crate::expression`) and the
+                // float-default grammar, which accept only `<digits>.<digits>`.
+                let mut is_float = false;
+                if chars.peek() == Some(&'.') {
+                    let mut lookahead = chars.clone();
+                    lookahead.next();
+                    if matches!(lookahead.peek(), Some(d) if d.is_ascii_digit()) {
+                        is_float = true;
+                        literal.push('.');
+                        chars.next();
+                        while let Some(&digit) = chars.peek() {
+                            if digit.is_ascii_digit() {
+                                literal.push(digit);
+                                chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                }
+                if is_float {
+                    // A `<digits>.<digits>` lexeme always parses; only an
+                    // out-of-`f64`-range magnitude yields ±infinity, which
+                    // `parse` reports as `Ok`, not `Err`. Treat a non-finite
+                    // result as an overflow so a literal the folded path
+                    // rejects isn't silently accepted here either.
+                    let value: f64 = literal
+                        .parse()
+                        .map_err(|_| TokenizeError::LiteralOverflow(literal.clone()))?;
+                    if !value.is_finite() {
+                        return Err(TokenizeError::LiteralOverflow(literal.clone()));
+                    }
+                    tokens.push(Token::Float(value));
+                } else {
+                    // u64::from_str only fails here for magnitudes greater than
+                    // u64::MAX — every literal in range already parses. Surface
+                    // that as LiteralOverflow so the user sees the same message
+                    // as i64-range overflows caught later in the parser.
+                    let parsed: u64 = literal
+                        .parse()
+                        .map_err(|_| TokenizeError::LiteralOverflow(literal.clone()))?;
+                    tokens.push(Token::Int(parsed));
+                }
             }
             c if c.is_ascii_alphabetic() || c == '_' => {
                 let mut name = String::new();
@@ -677,6 +720,7 @@ impl<'a> ArithmeticSource for BooleanParser<'a> {
         match self.tokens.get(self.position)? {
             Token::Int(_) => Some(ArithmeticTokenKind::Int),
             Token::Bool(_) => Some(ArithmeticTokenKind::Bool),
+            Token::Float(_) => Some(ArithmeticTokenKind::Float),
             Token::Ident(_) => Some(ArithmeticTokenKind::Ident),
             Token::Plus => Some(ArithmeticTokenKind::Plus),
             Token::Minus => Some(ArithmeticTokenKind::Minus),
@@ -714,12 +758,13 @@ impl<'a> ArithmeticSource for BooleanParser<'a> {
         Some(value)
     }
 
-    /// The boolean tokenizer has no float literal yet (`req`-on-float is a
-    /// separate task), so `peek_kind` never yields `Float` and the shared
-    /// arithmetic parser never calls this. Returning `None` keeps the trait
-    /// total without committing to a float token alphabet here.
     fn take_float(&mut self) -> Option<f64> {
-        None
+        let Token::Float(value) = self.tokens.get(self.position)? else {
+            return None;
+        };
+        let value = *value;
+        self.position += 1;
+        Some(value)
     }
 
     fn take_ident(&mut self) -> Option<String> {
@@ -1305,5 +1350,58 @@ mod tests {
         let resolver = BoolResolver::new(&[("a", 0), ("b", 1)]);
         let result = parse_boolean_expression("a and b", &resolver).unwrap();
         assert!(matches!(result, BooleanExpression::And(_, _)));
+    }
+
+    #[test]
+    fn parses_float_literal_on_rhs() {
+        // `<digits>.<digits>` lexes to a float literal, distinct from the
+        // bare-int path that keeps `0` an `Int`.
+        let result = parse("x > 1.5", &[("x", 0)]).unwrap();
+        match result {
+            BooleanExpression::Comparison(stmt) => {
+                assert_eq!(stmt.operator, ComparisonOperator::Greater);
+                assert_eq!(stmt.right, Expression::Literal(Value::Float(1.5)));
+            }
+            other => panic!("expected Comparison, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parses_negative_float_literal_on_rhs() {
+        // The unary minus folds into the float literal (`-5.5`), preserving
+        // the sign as part of the value rather than lowering to `0.0 - 5.5`.
+        let result = parse("x = -5.5", &[("x", 0)]).unwrap();
+        match result {
+            BooleanExpression::Comparison(stmt) => {
+                assert_eq!(stmt.right, Expression::Literal(Value::Float(-5.5)));
+            }
+            other => panic!("expected Comparison, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parses_float_arithmetic_on_rhs() {
+        // Float arithmetic operands route through the shared body and build a
+        // `Binary` expression evaluated at runtime.
+        let result = parse("x = 21.0 / 2.0", &[("x", 0)]).unwrap();
+        match result {
+            BooleanExpression::Comparison(stmt) => {
+                assert!(matches!(stmt.right, Expression::Binary { .. }));
+            }
+            other => panic!("expected Comparison, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn bare_trailing_dot_is_not_a_float() {
+        // `5.` (trailing dot, no fractional digits) is not a float literal;
+        // the dot falls through as a stray symbol.
+        let err = parse("x > 5.", &[("x", 0)]).unwrap_err();
+        assert_eq!(
+            err,
+            BooleanParseError::UnknownSymbol {
+                symbol: ".".to_string()
+            }
+        );
     }
 }
