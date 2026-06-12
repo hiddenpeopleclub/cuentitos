@@ -457,13 +457,17 @@ fn print_debug_variables(runtime: &cuentitos_runtime::Runtime, script_path: &Pat
     debug_assert_eq!(values.len(), runtime.database.variables.len());
     for (variable, value) in runtime.database.variables.iter().zip(values) {
         // Dispatch on the `Value` variant so each kind controls its own
-        // textual rendering. New variants (Float/String) just add a match
-        // arm here.
+        // textual rendering. New variants (Float/String/EnumUnset) just add a
+        // match arm here.
         let formatted = match value {
             cuentitos_common::Value::Integer(n) => format!("{n}"),
             cuentitos_common::Value::Boolean(b) => format!("{b}"),
             cuentitos_common::Value::Float(x) => cuentitos_common::value::format_float(*x),
             cuentitos_common::Value::String(s) => cuentitos_common::value::format_string_literal(s),
+            // An unset enum: `?` is exempt from the runtime read-error and
+            // must report `<unset>` without raising. The set suite exercises
+            // the error path via `req`.
+            cuentitos_common::Value::EnumUnset { .. } => "<unset>".to_string(),
         };
         println!("{}: {}", variable.name, formatted);
     }

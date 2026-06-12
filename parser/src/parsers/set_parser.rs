@@ -87,12 +87,24 @@ pub enum SetParseError {
     /// `\"`, `\n`, or `\\`. Carries the offending two-character sequence.
     InvalidStringEscape { sequence: String },
     /// A compound assignment (`+=` etc.) targeted a non-numeric variable whose
-    /// kind has a dedicated "not supported" message (currently string). Carries
+    /// kind has a dedicated "not supported" message (string, bool). Carries
     /// the operator and kind so the diagnostic echoes both.
     CompoundAssignmentUnsupported {
         operator: AssignmentOperator,
         kind: ValueKind,
     },
+    /// A `set` on a bool variable had a non-bool RHS. Carries the offending
+    /// sub-expression's source text (`found_token`) and its kind so the
+    /// diagnostic can name it, parallel to the float and string type-mismatch
+    /// variants.
+    BoolTypeMismatch {
+        variable: String,
+        found_token: String,
+        found: ValueKind,
+    },
+    /// A `set` RHS for a bool variable contained a logical operator
+    /// (`and`/`or`/`not`). Logical operators belong in `req`, not `set`.
+    LogicalOperatorInSetExpression,
 }
 
 /// Try to parse `content` as a `set` statement.
@@ -144,6 +156,26 @@ pub(crate) fn parse_set(content: &str, database: &Database) -> Result<ParsedSet,
     }
 
     let lhs_kind = database.variables[variable_id].kind();
+
+    // A bool `set` has its own narrow RHS grammar: `true`, `false`, or a
+    // reference to an earlier bool variable. Logical operators (`and`/`or`/
+    // `not`) and any arithmetic are rejected. Compound assignment makes no
+    // sense for bools. Branch out before the shared arithmetic path so the
+    // bool-specific diagnostics are verbatim.
+    if lhs_kind == ValueKind::Boolean {
+        if operator.is_compound() {
+            return Err(SetParseError::CompoundAssignmentUnsupported {
+                operator,
+                kind: lhs_kind,
+            });
+        }
+        let expression = parse_bool_rhs(rhs, lhs, database)?;
+        return Ok(ParsedSet {
+            variable_id,
+            operator,
+            expression,
+        });
+    }
 
     // A string `set` has its own narrow RHS grammar — a single double-quoted
     // literal or a bare string-variable reference — that the arithmetic body
@@ -270,6 +302,104 @@ fn first_non_float_leaf(
 
 /// Parse the RHS of a `set` whose target is a string variable.
 ///
+/// Parse the RHS of a bool `set` statement.
+///
+/// The grammar is intentionally narrow, mirroring the bool *default* rule:
+/// `true`, `false`, or a bare identifier referencing another bool variable.
+/// Logical operators (`and`/`or`/`not`) are rejected outright because they
+/// belong in `req`. Any non-bool value (int literal, int variable reference)
+/// is a type mismatch that names the offending token.
+fn parse_bool_rhs(rhs: &str, lhs: &str, database: &Database) -> Result<Expression, SetParseError> {
+    // Reject logical operators as whole whitespace-delimited tokens so
+    // identifiers like `or_flag` are unaffected.
+    if rhs
+        .split_whitespace()
+        .any(|token| matches!(token, "and" | "or" | "not"))
+    {
+        return Err(SetParseError::LogicalOperatorInSetExpression);
+    }
+
+    let trimmed = rhs.trim();
+
+    match trimmed {
+        "true" => return Ok(Expression::Literal(Value::Boolean(true))),
+        "false" => return Ok(Expression::Literal(Value::Boolean(false))),
+        _ => {}
+    }
+
+    // A bare identifier: must be a declared bool variable.
+    if is_valid_identifier(trimmed) {
+        return match database.variable_id(trimmed) {
+            None => Err(SetParseError::UndefinedVariable {
+                name: trimmed.to_string(),
+            }),
+            Some(id) => {
+                let kind = database.variables[id].kind();
+                if kind == ValueKind::Boolean {
+                    Ok(Expression::Variable(id))
+                } else {
+                    Err(SetParseError::BoolTypeMismatch {
+                        variable: lhs.to_string(),
+                        found_token: trimmed.to_string(),
+                        found: kind,
+                    })
+                }
+            }
+        };
+    }
+
+    // Not a bool literal and not a bare identifier. Try parsing as an
+    // arithmetic/general expression so we can name the offending non-bool leaf
+    // in the diagnostic. If the expression can't even be parsed, fall back to
+    // a generic type mismatch naming the whole RHS as an int (matching the
+    // default-folder heuristic: unknown shape implies numeric).
+    let resolver = DatabaseResolver { database };
+    match parse_expression(trimmed, &resolver) {
+        Ok(expression) => match first_non_bool_leaf(&expression, database) {
+            Some((found_token, found)) => Err(SetParseError::BoolTypeMismatch {
+                variable: lhs.to_string(),
+                found_token,
+                found,
+            }),
+            None => Err(SetParseError::MalformedExpression {
+                expression: trimmed.to_string(),
+            }),
+        },
+        Err(_) => Err(SetParseError::BoolTypeMismatch {
+            variable: lhs.to_string(),
+            found_token: format!("'{trimmed}'"),
+            found: ValueKind::Integer,
+        }),
+    }
+}
+
+/// Find the first leaf of `expression` whose kind is not `Boolean`, returning
+/// its source-facing text and kind. Parallel to [`first_non_float_leaf`] and
+/// [`first_non_string_leaf`]: a literal leaf is named quoted (`'1'`) and a
+/// variable leaf by its bare identifier (`count`).
+fn first_non_bool_leaf(
+    expression: &Expression,
+    database: &Database,
+) -> Option<(String, ValueKind)> {
+    match expression {
+        Expression::Literal(value) if value.kind() != ValueKind::Boolean => {
+            Some((format!("'{value}'"), value.kind()))
+        }
+        Expression::Literal(_) => None,
+        Expression::Variable(id) => {
+            let variable = &database.variables[*id];
+            if variable.kind() == ValueKind::Boolean {
+                None
+            } else {
+                Some((variable.name.clone(), variable.kind()))
+            }
+        }
+        Expression::Binary { left, right, .. } => {
+            first_non_bool_leaf(left, database).or_else(|| first_non_bool_leaf(right, database))
+        }
+    }
+}
+
 /// The grammar is intentionally narrow, mirroring the string *default* rule:
 /// a single double-quoted literal (with `\"`, `\n`, `\\` escapes) or a bare
 /// identifier referencing another string variable. Anything else is either a

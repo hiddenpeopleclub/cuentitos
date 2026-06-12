@@ -18,6 +18,13 @@ pub enum Value {
     Boolean(bool),
     Float(f64),
     String(String),
+    /// An enum variable that has not yet been assigned a value. Carries the
+    /// list of allowed variant names so the runtime can validate `set` targets
+    /// without a separate lookup. The `?` debug inspector prints `<unset>`;
+    /// reading this value at runtime (outside the inspector) is an error.
+    EnumUnset {
+        variants: Vec<String>,
+    },
 }
 
 impl Value {
@@ -29,6 +36,7 @@ impl Value {
             Value::Boolean(_) => ValueKind::Boolean,
             Value::Float(_) => ValueKind::Float,
             Value::String(_) => ValueKind::String,
+            Value::EnumUnset { .. } => ValueKind::Enum,
         }
     }
 
@@ -39,7 +47,9 @@ impl Value {
     pub fn as_integer(&self) -> Option<i64> {
         match self {
             Value::Integer(n) => Some(*n),
-            Value::Boolean(_) | Value::Float(_) | Value::String(_) => None,
+            Value::Boolean(_) | Value::Float(_) | Value::String(_) | Value::EnumUnset { .. } => {
+                None
+            }
         }
     }
 
@@ -51,7 +61,9 @@ impl Value {
     pub fn as_float(&self) -> Option<f64> {
         match self {
             Value::Float(f) => Some(*f),
-            Value::Integer(_) | Value::Boolean(_) | Value::String(_) => None,
+            Value::Integer(_) | Value::Boolean(_) | Value::String(_) | Value::EnumUnset { .. } => {
+                None
+            }
         }
     }
 
@@ -64,7 +76,9 @@ impl Value {
     pub fn as_string(&self) -> Option<&str> {
         match self {
             Value::String(s) => Some(s),
-            Value::Integer(_) | Value::Boolean(_) | Value::Float(_) => None,
+            Value::Integer(_) | Value::Boolean(_) | Value::Float(_) | Value::EnumUnset { .. } => {
+                None
+            }
         }
     }
 }
@@ -78,6 +92,10 @@ impl std::fmt::Display for Value {
             // The raw string content, unquoted. The double-quoted, escaped form
             // used by the `?` debug command lives in [`format_string_literal`].
             Value::String(s) => write!(f, "{s}"),
+            // The `?` debug inspector is exempt from the runtime read-error
+            // and prints `<unset>` directly. Other `Display` sites (e.g.
+            // interpolation) should never reach an unset enum at runtime.
+            Value::EnumUnset { .. } => write!(f, "<unset>"),
         }
     }
 }
@@ -141,6 +159,7 @@ pub enum ValueKind {
     Boolean,
     Float,
     String,
+    Enum,
 }
 
 impl ValueKind {
@@ -149,7 +168,7 @@ impl ValueKind {
     pub fn is_numeric(self) -> bool {
         match self {
             ValueKind::Integer | ValueKind::Float => true,
-            ValueKind::Boolean | ValueKind::String => false,
+            ValueKind::Boolean | ValueKind::String | ValueKind::Enum => false,
         }
     }
 
@@ -158,12 +177,12 @@ impl ValueKind {
     pub fn is_ordered(self) -> bool {
         match self {
             ValueKind::Integer | ValueKind::Float => true,
-            ValueKind::Boolean | ValueKind::String => false,
+            ValueKind::Boolean | ValueKind::String | ValueKind::Enum => false,
         }
     }
 
     /// The source-syntax keyword that declares this kind (`int`, `bool`,
-    /// `float`).
+    /// `float`, `string`, `enum`).
     ///
     /// Distinct from [`Display`](std::fmt::Display), which renders the full
     /// English word (`integer`, `boolean`) used in `set`/`req` diagnostics.
@@ -176,6 +195,7 @@ impl ValueKind {
             ValueKind::Boolean => "bool",
             ValueKind::Float => "float",
             ValueKind::String => "string",
+            ValueKind::Enum => "enum",
         }
     }
 }
@@ -187,6 +207,7 @@ impl std::fmt::Display for ValueKind {
             ValueKind::Boolean => write!(f, "boolean"),
             ValueKind::Float => write!(f, "float"),
             ValueKind::String => write!(f, "string"),
+            ValueKind::Enum => write!(f, "enum"),
         }
     }
 }

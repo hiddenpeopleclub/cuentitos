@@ -440,6 +440,61 @@ pub enum ParseError {
     MultipleErrors {
         errors: Vec<ParseError>,
     },
+    /// A `set` on a bool variable had a non-bool RHS. Parallel in shape to
+    /// [`FloatSetTypeMismatch`](Self::FloatSetTypeMismatch): names the
+    /// offending sub-expression (`found_token`) and its kind rather than just
+    /// reporting two kinds, so the wording echoes what the author typed.
+    BoolSetTypeMismatch {
+        variable: String,
+        found_token: String,
+        found: cuentitos_common::ValueKind,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// A `set` RHS for a bool variable contained a logical operator
+    /// (`and`/`or`/`not`). Logical operators belong in `req`, not in a `set`.
+    LogicalOperatorInSetExpression {
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// An `enum` declaration had no `=` sign to introduce the value list.
+    EnumMissingEquals {
+        name: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// An `enum` declaration had an empty value list (nothing after `=`).
+    EnumEmptyValueList {
+        name: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// An `enum` declaration had an empty value entry (consecutive commas or
+    /// a trailing comma produces an empty string after splitting on `,`).
+    EnumEmptyValue {
+        name: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// An enum value was not a valid identifier (e.g. started with a digit).
+    EnumInvalidValue {
+        value: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// An enum value matched a reserved keyword (`and`, `or`, `not`).
+    EnumReservedKeywordValue {
+        keyword: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// An enum declared the same value name more than once (within one enum).
+    EnumDuplicateValue {
+        value: String,
+        enum_name: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
 }
 
 /// Render the prefix used in `Display` error lines: the script's file name, or
@@ -1134,6 +1189,95 @@ impl fmt::Display for ParseError {
                 }
                 Ok(())
             }
+            ParseError::BoolSetTypeMismatch {
+                variable,
+                found_token,
+                found,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Type mismatch: 'set' expression for bool {} must be a bool expression, but {} is {}.",
+                    file_prefix(file),
+                    line,
+                    variable,
+                    found_token,
+                    found.keyword()
+                )
+            }
+            ParseError::LogicalOperatorInSetExpression { file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Logical operators (and/or/not) are not allowed in 'set' expressions; use 'req' for boolean expressions.",
+                    file_prefix(file),
+                    line
+                )
+            }
+            ParseError::EnumMissingEquals { name, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Enum '{}' must declare values with '= value1, value2, ...'.",
+                    file_prefix(file),
+                    line,
+                    name
+                )
+            }
+            ParseError::EnumEmptyValueList { name, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Enum '{}' must declare at least one value.",
+                    file_prefix(file),
+                    line,
+                    name
+                )
+            }
+            ParseError::EnumEmptyValue { name, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Empty enum value in enum '{}'.",
+                    file_prefix(file),
+                    line,
+                    name
+                )
+            }
+            ParseError::EnumInvalidValue { value, file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Invalid enum value: '{}'. Enum values must start with a letter or underscore.",
+                    file_prefix(file),
+                    line,
+                    value
+                )
+            }
+            ParseError::EnumReservedKeywordValue {
+                keyword,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Reserved keyword '{}' cannot be used as an enum value.",
+                    file_prefix(file),
+                    line,
+                    keyword
+                )
+            }
+            ParseError::EnumDuplicateValue {
+                value,
+                enum_name,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Duplicate enum value '{}' in enum '{}'.",
+                    file_prefix(file),
+                    line,
+                    value,
+                    enum_name
+                )
+            }
         }
     }
 }
@@ -1761,6 +1905,23 @@ impl Parser {
                                         file: self.file_path.clone(),
                                         line: context.current_line,
                                     },
+                                    SetParseError::BoolTypeMismatch {
+                                        variable,
+                                        found_token,
+                                        found,
+                                    } => ParseError::BoolSetTypeMismatch {
+                                        variable,
+                                        found_token,
+                                        found,
+                                        file: self.file_path.clone(),
+                                        line: context.current_line,
+                                    },
+                                    SetParseError::LogicalOperatorInSetExpression => {
+                                        ParseError::LogicalOperatorInSetExpression {
+                                            file: self.file_path.clone(),
+                                            line: context.current_line,
+                                        }
+                                    }
                                 };
                                 self.collect_error_and_skip(parse_error, &mut context);
                                 continue;
