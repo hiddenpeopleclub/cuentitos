@@ -17,7 +17,7 @@ pub enum Value {
     Integer(i64),
     Boolean(bool),
     Float(f64),
-    // Future variants: String(String).
+    String(String),
 }
 
 impl Value {
@@ -28,6 +28,7 @@ impl Value {
             Value::Integer(_) => ValueKind::Integer,
             Value::Boolean(_) => ValueKind::Boolean,
             Value::Float(_) => ValueKind::Float,
+            Value::String(_) => ValueKind::String,
         }
     }
 
@@ -38,7 +39,7 @@ impl Value {
     pub fn as_integer(&self) -> Option<i64> {
         match self {
             Value::Integer(n) => Some(*n),
-            Value::Boolean(_) | Value::Float(_) => None,
+            Value::Boolean(_) | Value::Float(_) | Value::String(_) => None,
         }
     }
 
@@ -50,7 +51,20 @@ impl Value {
     pub fn as_float(&self) -> Option<f64> {
         match self {
             Value::Float(f) => Some(*f),
-            Value::Integer(_) | Value::Boolean(_) => None,
+            Value::Integer(_) | Value::Boolean(_) | Value::String(_) => None,
+        }
+    }
+
+    /// Extract the string payload if this value is a `String`, else `None`.
+    /// Parallel to [`as_integer`](Self::as_integer) and
+    /// [`as_float`](Self::as_float): used where the parser has already proven a
+    /// value is string-typed (e.g. resolving a default reference to an earlier
+    /// string variable).
+    #[must_use]
+    pub fn as_string(&self) -> Option<&str> {
+        match self {
+            Value::String(s) => Some(s),
+            Value::Integer(_) | Value::Boolean(_) | Value::Float(_) => None,
         }
     }
 }
@@ -61,8 +75,39 @@ impl std::fmt::Display for Value {
             Value::Integer(n) => write!(f, "{n}"),
             Value::Boolean(b) => write!(f, "{b}"),
             Value::Float(x) => write!(f, "{}", format_float(*x)),
+            // The raw string content, unquoted. The double-quoted, escaped form
+            // used by the `?` debug command lives in [`format_string_literal`].
+            Value::String(s) => write!(f, "{s}"),
         }
     }
+}
+
+/// Render a string value in cuentitos' canonical double-quoted textual form,
+/// re-applying the three supported escapes.
+///
+/// The contract (locked by the `variables-string` compatibility tests):
+/// - the value is wrapped in double quotes;
+/// - a literal double quote renders as `\"`;
+/// - a backslash renders as `\\`;
+/// - a newline renders as the two-character escape `\n` so the output stays on
+///   one line.
+///
+/// This is the inverse of the string-literal parser's escape handling: a value
+/// produced from a literal round-trips back to the same source escapes.
+#[must_use]
+pub fn format_string_literal(value: &str) -> String {
+    let mut rendered = String::with_capacity(value.len() + 2);
+    rendered.push('"');
+    for character in value.chars() {
+        match character {
+            '"' => rendered.push_str("\\\""),
+            '\\' => rendered.push_str("\\\\"),
+            '\n' => rendered.push_str("\\n"),
+            other => rendered.push(other),
+        }
+    }
+    rendered.push('"');
+    rendered
 }
 
 /// Render a float in cuentitos' canonical textual form.
@@ -95,7 +140,7 @@ pub enum ValueKind {
     Integer,
     Boolean,
     Float,
-    // Future variants: String.
+    String,
 }
 
 impl ValueKind {
@@ -104,7 +149,7 @@ impl ValueKind {
     pub fn is_numeric(self) -> bool {
         match self {
             ValueKind::Integer | ValueKind::Float => true,
-            ValueKind::Boolean => false,
+            ValueKind::Boolean | ValueKind::String => false,
         }
     }
 
@@ -113,7 +158,7 @@ impl ValueKind {
     pub fn is_ordered(self) -> bool {
         match self {
             ValueKind::Integer | ValueKind::Float => true,
-            ValueKind::Boolean => false,
+            ValueKind::Boolean | ValueKind::String => false,
         }
     }
 
@@ -130,6 +175,7 @@ impl ValueKind {
             ValueKind::Integer => "int",
             ValueKind::Boolean => "bool",
             ValueKind::Float => "float",
+            ValueKind::String => "string",
         }
     }
 }
@@ -140,6 +186,7 @@ impl std::fmt::Display for ValueKind {
             ValueKind::Integer => write!(f, "integer"),
             ValueKind::Boolean => write!(f, "boolean"),
             ValueKind::Float => write!(f, "float"),
+            ValueKind::String => write!(f, "string"),
         }
     }
 }
@@ -260,5 +307,45 @@ mod tests {
     #[test]
     fn boolean_value_kind_displays_as_word() {
         assert_eq!(format!("{}", ValueKind::Boolean), "boolean");
+    }
+
+    #[test]
+    fn string_value_kind_round_trip() {
+        assert_eq!(Value::String("hi".to_string()).kind(), ValueKind::String);
+        assert_eq!(Value::String("hi".to_string()).as_string(), Some("hi"));
+        assert_eq!(Value::String("hi".to_string()).as_integer(), None);
+        assert_eq!(Value::String("hi".to_string()).as_float(), None);
+        assert_eq!(Value::Integer(2).as_string(), None);
+    }
+
+    #[test]
+    fn string_kind_is_neither_numeric_nor_ordered() {
+        assert!(!ValueKind::String.is_numeric());
+        assert!(!ValueKind::String.is_ordered());
+    }
+
+    #[test]
+    fn string_value_kind_keyword_and_word() {
+        assert_eq!(ValueKind::String.keyword(), "string");
+        assert_eq!(format!("{}", ValueKind::String), "string");
+    }
+
+    #[test]
+    fn string_value_displays_raw_content() {
+        assert_eq!(format!("{}", Value::String("Aria".to_string())), "Aria");
+    }
+
+    #[test]
+    fn format_string_literal_quotes_and_escapes() {
+        assert_eq!(format_string_literal("Aria"), "\"Aria\"");
+        assert_eq!(format_string_literal(""), "\"\"");
+        // A literal newline renders as the two-character escape, staying on one line.
+        assert_eq!(format_string_literal("a\nb"), "\"a\\nb\"");
+        // A literal double quote and backslash re-escape.
+        assert_eq!(
+            format_string_literal("She said \"hi\""),
+            "\"She said \\\"hi\\\"\""
+        );
+        assert_eq!(format_string_literal("a\\b"), "\"a\\\\b\"");
     }
 }

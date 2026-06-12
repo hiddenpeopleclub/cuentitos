@@ -381,6 +381,21 @@ pub enum ParseError {
         file: Option<PathBuf>,
         line: usize,
     },
+    /// A string default opened a double-quoted literal that was never closed on
+    /// the declaration line. Because the parser is line-based, a literal that
+    /// "spans" multiple source lines also surfaces here, pointing at the
+    /// opening line.
+    UnterminatedStringLiteral {
+        file: Option<PathBuf>,
+        line: usize,
+    },
+    /// A string literal contained a backslash escape other than the supported
+    /// `\"`, `\n`, and `\\`. Carries the two-character offending sequence.
+    InvalidEscapeSequence {
+        sequence: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
     /// A variable default used a logical operator (`and`/`or`/`not`). Boolean
     /// expressions belong in `req`, not in a default; defaults are limited to
     /// literals and references to earlier variables.
@@ -636,6 +651,27 @@ impl fmt::Display for ParseError {
                     variable,
                     found_token,
                     found.keyword()
+                )
+            }
+            ParseError::UnterminatedStringLiteral { file, line } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Unterminated string literal.",
+                    file_prefix(file),
+                    line
+                )
+            }
+            ParseError::InvalidEscapeSequence {
+                sequence,
+                file,
+                line,
+            } => {
+                write!(
+                    f,
+                    "{}:{}: ERROR: Invalid escape sequence '{}' in string literal.",
+                    file_prefix(file),
+                    line,
+                    sequence
                 )
             }
             ParseError::InvalidVariableName { name, file, line } => {

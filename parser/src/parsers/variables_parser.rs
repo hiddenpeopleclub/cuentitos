@@ -137,7 +137,7 @@ fn parse_one_declaration(
     let (kind, rest) = match declaration_kind(trimmed) {
         Some((kind, rest)) => (kind, rest),
         None => {
-            if trimmed == "int" || trimmed == "bool" || trimmed == "float" {
+            if trimmed == "int" || trimmed == "bool" || trimmed == "float" || trimmed == "string" {
                 return Err(ParseError::MissingVariableName {
                     file: file_path.clone(),
                     line: line_number,
@@ -219,6 +219,14 @@ fn parse_one_declaration(
             file_path,
             line_number,
         )?,
+        ValueKind::String => string_default_value(
+            name,
+            default_expr,
+            declared,
+            future_names,
+            file_path,
+            line_number,
+        )?,
     };
 
     declared_lines.insert(name.to_string(), line_number);
@@ -238,6 +246,8 @@ fn declaration_kind(trimmed: &str) -> Option<(ValueKind, &str)> {
         Some((ValueKind::Boolean, rest.trim_start()))
     } else if let Some(rest) = trimmed.strip_prefix("float ") {
         Some((ValueKind::Float, rest.trim_start()))
+    } else if let Some(rest) = trimmed.strip_prefix("string ") {
+        Some((ValueKind::String, rest.trim_start()))
     } else {
         None
     }
@@ -863,8 +873,179 @@ fn finite(value: f64) -> Result<f64, FloatDefaultError> {
     }
 }
 
+/// Fold a string variable's default into a [`Value::String`]. With no default
+/// the value is the empty string. Errors are mapped to the relevant
+/// `ParseError` diagnostics (unterminated literal, invalid escape, malformed
+/// expression, cross-type / forward / undefined references).
+fn string_default_value(
+    name: &str,
+    default_expr: Option<&str>,
+    declared: &HashMap<String, Value>,
+    future_names: &HashSet<String>,
+    file_path: &Option<PathBuf>,
+    line_number: usize,
+) -> Result<Value, ParseError> {
+    let expr = match default_expr {
+        Some(expr) => expr,
+        None => return Ok(Value::String(String::new())),
+    };
+
+    match evaluate_string_default(expr, name, declared, future_names) {
+        Ok(value) => Ok(Value::String(value)),
+        Err(StringDefaultError::UnterminatedLiteral) => {
+            Err(ParseError::UnterminatedStringLiteral {
+                file: file_path.clone(),
+                line: line_number,
+            })
+        }
+        Err(StringDefaultError::InvalidEscape { sequence }) => {
+            Err(ParseError::InvalidEscapeSequence {
+                sequence,
+                file: file_path.clone(),
+                line: line_number,
+            })
+        }
+        Err(StringDefaultError::Malformed) => Err(ParseError::MalformedDefaultExpression {
+            expr: expr.to_string(),
+            file: file_path.clone(),
+            line: line_number,
+        }),
+        Err(StringDefaultError::TypeMismatch { token, found }) => {
+            Err(ParseError::DefaultTypeMismatch {
+                variable: name.to_string(),
+                expected: ValueKind::String,
+                found_token: token,
+                found,
+                file: file_path.clone(),
+                line: line_number,
+            })
+        }
+        Err(StringDefaultError::ForwardReference {
+            name: referenced_name,
+        }) => Err(ParseError::ForwardVariableReference {
+            name: referenced_name,
+            file: file_path.clone(),
+            line: line_number,
+        }),
+        Err(StringDefaultError::UndefinedReference {
+            name: referenced_name,
+        }) => Err(ParseError::UndefinedVariableReference {
+            name: referenced_name,
+            file: file_path.clone(),
+            line: line_number,
+        }),
+    }
+}
+
+/// Errors that can surface while folding a string default. Kept private so
+/// [`string_default_value`] owns the mapping to `ParseError`, mirroring how
+/// [`BoolDefaultError`] / [`FloatDefaultError`] decouple their folders from the
+/// diagnostics.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum StringDefaultError {
+    /// A double-quoted literal opened but never closed on the declaration line.
+    UnterminatedLiteral,
+    /// A backslash escape other than `\"`, `\n`, or `\\` appeared inside a
+    /// literal. Carries the two-character offending sequence (e.g. `\q`).
+    InvalidEscape { sequence: String },
+    /// The default is neither a single string literal nor a bare reference —
+    /// e.g. attempted concatenation (`"a" + "b"`) or any other unparseable
+    /// expression. The caller echoes the original text.
+    Malformed,
+    /// The default references a non-string value where a string was required.
+    /// `token` is the offending text; `found` is the kind it actually has.
+    TypeMismatch { token: String, found: ValueKind },
+    /// The default references a variable declared later in the same block.
+    /// (A self-reference lands here too — the name is not yet in scope on its
+    /// own declaration line.)
+    ForwardReference { name: String },
+    /// The default references a name that is never declared.
+    UndefinedReference { name: String },
+}
+
+/// Resolve a string default against the variables declared earlier in the same
+/// block.
+///
+/// A string default is intentionally narrow: it is a single double-quoted
+/// literal (with `\"`, `\n`, `\\` escapes) or a bare identifier referencing an
+/// earlier string variable. Concatenation and every other compound expression
+/// are unsupported and surface as malformed.
+fn evaluate_string_default(
+    expression: &str,
+    variable_name: &str,
+    declared: &HashMap<String, Value>,
+    future_names: &HashSet<String>,
+) -> Result<String, StringDefaultError> {
+    let trimmed = expression.trim();
+
+    if trimmed.starts_with('"') {
+        return parse_string_literal(trimmed);
+    }
+
+    if is_valid_identifier(trimmed) {
+        if let Some(value) = declared.get(trimmed) {
+            return match value.as_string() {
+                Some(folded) => Ok(folded.to_string()),
+                None => Err(StringDefaultError::TypeMismatch {
+                    token: trimmed.to_string(),
+                    found: value.kind(),
+                }),
+            };
+        }
+        if trimmed == variable_name || future_names.contains(trimmed) {
+            return Err(StringDefaultError::ForwardReference {
+                name: trimmed.to_string(),
+            });
+        }
+        return Err(StringDefaultError::UndefinedReference {
+            name: trimmed.to_string(),
+        });
+    }
+
+    Err(StringDefaultError::Malformed)
+}
+
+/// Parse a double-quoted string literal that occupies the whole `input` (the
+/// caller has already trimmed it and verified the leading `"`). Recognizes the
+/// `\"`, `\n`, and `\\` escapes; any other backslash sequence is an invalid
+/// escape. A missing closing quote is unterminated, and any non-whitespace text
+/// after the closing quote makes the default malformed (e.g. concatenation).
+fn parse_string_literal(input: &str) -> Result<String, StringDefaultError> {
+    let mut chars = input.chars();
+    let opening = chars.next();
+    debug_assert_eq!(opening, Some('"'), "caller guarantees a leading quote");
+
+    let mut value = String::new();
+    loop {
+        match chars.next() {
+            None => return Err(StringDefaultError::UnterminatedLiteral),
+            Some('"') => break,
+            Some('\\') => match chars.next() {
+                Some('"') => value.push('"'),
+                Some('n') => value.push('\n'),
+                Some('\\') => value.push('\\'),
+                Some(other) => {
+                    return Err(StringDefaultError::InvalidEscape {
+                        sequence: format!("\\{other}"),
+                    });
+                }
+                None => return Err(StringDefaultError::UnterminatedLiteral),
+            },
+            Some(other) => value.push(other),
+        }
+    }
+
+    // Only whitespace may follow the closing quote; anything else (a trailing
+    // `+ "world"`, a stray token) means the default isn't a lone literal.
+    if chars.as_str().trim().is_empty() {
+        Ok(value)
+    } else {
+        Err(StringDefaultError::Malformed)
+    }
+}
+
 /// Scan lines `[start, end)` (exclusive end) for identifiers that follow a
-/// type keyword (`int `/`bool `/`float `), collecting them into a set
+/// type keyword (`int `/`bool `/`float `/`string `), collecting them into a set
 /// regardless of declared type. Duplicate identifiers are merged silently
 /// here; duplicate-declaration detection lives in the main pass.
 fn collect_future_names(lines: &[&str], start: usize, end: usize) -> HashSet<String> {
@@ -1002,6 +1183,7 @@ pub fn evaluate_expression(
             // `evaluate_float_default`.)
             Value::Boolean(_) => unreachable!("integer-default fold never yields a boolean"),
             Value::Float(_) => unreachable!("integer-default fold never yields a float"),
+            Value::String(_) => unreachable!("integer-default fold never yields a string"),
         },
         Err(EvaluationError::DivisionByZero) => Err(EvalError::DivisionByZero),
         Err(EvaluationError::Overflow) => Err(EvalError::Overflow),
@@ -2139,5 +2321,173 @@ mod tests {
             format!("{}", err),
             "<script>:2: ERROR: Float overflow in default expression for 'boom'."
         );
+    }
+
+    // -- string declarations ---------------------------------------------
+
+    #[test]
+    fn eval_string_literal_default() {
+        let declared = HashMap::new();
+        let future = HashSet::new();
+        assert_eq!(
+            evaluate_string_default("\"Aria\"", "name", &declared, &future),
+            Ok("Aria".to_string())
+        );
+    }
+
+    #[test]
+    fn eval_string_escapes_unescape_to_value() {
+        let declared = HashMap::new();
+        let future = HashSet::new();
+        assert_eq!(
+            evaluate_string_default("\"a\\nb\"", "s", &declared, &future),
+            Ok("a\nb".to_string())
+        );
+        assert_eq!(
+            evaluate_string_default("\"She said \\\"hi\\\"\"", "s", &declared, &future),
+            Ok("She said \"hi\"".to_string())
+        );
+        assert_eq!(
+            evaluate_string_default("\"a\\\\b\"", "s", &declared, &future),
+            Ok("a\\b".to_string())
+        );
+    }
+
+    #[test]
+    fn eval_string_empty_literal() {
+        let declared = HashMap::new();
+        let future = HashSet::new();
+        assert_eq!(
+            evaluate_string_default("\"\"", "s", &declared, &future),
+            Ok(String::new())
+        );
+    }
+
+    #[test]
+    fn eval_string_reference_to_earlier_string() {
+        let declared = declared_from(&[("hero", Value::String("Aria".to_string()))]);
+        let future = HashSet::new();
+        assert_eq!(
+            evaluate_string_default("hero", "echo", &declared, &future),
+            Ok("Aria".to_string())
+        );
+    }
+
+    #[test]
+    fn eval_string_unterminated_literal() {
+        let declared = HashMap::new();
+        let future = HashSet::new();
+        assert_eq!(
+            evaluate_string_default("\"Aria", "name", &declared, &future),
+            Err(StringDefaultError::UnterminatedLiteral)
+        );
+    }
+
+    #[test]
+    fn eval_string_invalid_escape() {
+        let declared = HashMap::new();
+        let future = HashSet::new();
+        assert_eq!(
+            evaluate_string_default("\"a\\qb\"", "name", &declared, &future),
+            Err(StringDefaultError::InvalidEscape {
+                sequence: "\\q".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn eval_string_concatenation_is_malformed() {
+        let declared = HashMap::new();
+        let future = HashSet::new();
+        assert_eq!(
+            evaluate_string_default("\"Hello, \" + \"world\"", "g", &declared, &future),
+            Err(StringDefaultError::Malformed)
+        );
+    }
+
+    #[test]
+    fn eval_string_reference_to_non_string_is_type_mismatch() {
+        let declared = declared_from(&[("count", Value::Integer(7))]);
+        let future = HashSet::new();
+        assert_eq!(
+            evaluate_string_default("count", "name", &declared, &future),
+            Err(StringDefaultError::TypeMismatch {
+                token: "count".to_string(),
+                found: ValueKind::Integer,
+            })
+        );
+    }
+
+    #[test]
+    fn eval_string_forward_reference() {
+        let declared = HashMap::new();
+        let future: HashSet<String> = ["b".to_string()].into_iter().collect();
+        assert_eq!(
+            evaluate_string_default("b", "a", &declared, &future),
+            Err(StringDefaultError::ForwardReference {
+                name: "b".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn eval_string_undefined_reference() {
+        let declared = HashMap::new();
+        let future = HashSet::new();
+        assert_eq!(
+            evaluate_string_default("unknown", "a", &declared, &future),
+            Err(StringDefaultError::UndefinedReference {
+                name: "unknown".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn parse_block_string_literal_default() {
+        let script = "--- variables\nstring name = \"Aria\"\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        assert!(outcome.errors.is_empty(), "errors: {:?}", outcome.errors);
+        assert_eq!(db.variables[0].name, "name");
+        assert_eq!(db.variables[0].kind(), ValueKind::String);
+        assert_eq!(db.variables[0].default, Value::String("Aria".to_string()));
+    }
+
+    #[test]
+    fn parse_block_string_no_default_is_empty() {
+        let script = "--- variables\nstring name\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        assert!(outcome.errors.is_empty());
+        assert_eq!(db.variables[0].default, Value::String(String::new()));
+    }
+
+    #[test]
+    fn parse_block_string_unterminated_literal_display() {
+        let script = "--- variables\nstring name = \"Aria\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        match expect_single_error(outcome) {
+            ParseError::UnterminatedStringLiteral { line, .. } => assert_eq!(line, 2),
+            other => panic!("expected UnterminatedStringLiteral, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_block_string_invalid_escape_display() {
+        let script = "--- variables\nstring name = \"a\\qb\"\n---";
+        let lines: Vec<&str> = script.lines().collect();
+        let mut db = Database::new();
+        let outcome = parse_variables_block(&lines, 0, &mut db, &None);
+        match expect_single_error(outcome) {
+            ParseError::InvalidEscapeSequence { sequence, line, .. } => {
+                assert_eq!(sequence, "\\q");
+                assert_eq!(line, 2);
+            }
+            other => panic!("expected InvalidEscapeSequence, got {:?}", other),
+        }
     }
 }
