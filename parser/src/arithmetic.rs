@@ -39,6 +39,7 @@ pub enum ArithmeticTokenKind {
     Int,
     Bool,
     Float,
+    Str,
     Ident,
     Plus,
     Minus,
@@ -60,6 +61,7 @@ pub enum ArithmeticToken {
     Int(u64),
     Bool(bool),
     Float(f64),
+    Str(String),
     Ident(String),
     Plus,
     Minus,
@@ -75,6 +77,7 @@ impl ArithmeticToken {
             ArithmeticToken::Int(_) => ArithmeticTokenKind::Int,
             ArithmeticToken::Bool(_) => ArithmeticTokenKind::Bool,
             ArithmeticToken::Float(_) => ArithmeticTokenKind::Float,
+            ArithmeticToken::Str(_) => ArithmeticTokenKind::Str,
             ArithmeticToken::Ident(_) => ArithmeticTokenKind::Ident,
             ArithmeticToken::Plus => ArithmeticTokenKind::Plus,
             ArithmeticToken::Minus => ArithmeticTokenKind::Minus,
@@ -150,6 +153,16 @@ pub trait ArithmeticSource {
     /// support) always return `None`; their [`peek_kind`](Self::peek_kind)
     /// never yields `Float`, so the parser never calls this on them.
     fn take_float(&mut self) -> Option<f64>;
+    /// Consume the current `Str` token and return its decoded value.
+    /// Returns `None` if the cursor is not pointing at a `Str` (i.e.
+    /// the caller forgot to guard with [`peek_kind`](Self::peek_kind));
+    /// callers in this module `.expect()` on that since the surrounding
+    /// `match` already verified the kind. Sources whose token alphabet has no
+    /// string literals (e.g. the `set` single-expression parser, which lexes
+    /// string RHS literals on its own dedicated path) always return `None`;
+    /// their [`peek_kind`](Self::peek_kind) never yields `Str`, so the parser
+    /// never calls this on them.
+    fn take_string(&mut self) -> Option<String>;
     /// Consume the current `Ident` token and return its text.
     /// Returns `None` if the cursor is not pointing at an `Ident` (i.e.
     /// the caller forgot to guard with [`peek_kind`](Self::peek_kind));
@@ -285,6 +298,10 @@ fn parse_primary<S: ArithmeticSource>(stream: &mut S) -> Result<Expression, Arit
         Some(ArithmeticTokenKind::Float) => {
             let value = stream.take_float().expect("peek_kind guarded this");
             Ok(Expression::Literal(Value::Float(value)))
+        }
+        Some(ArithmeticTokenKind::Str) => {
+            let value = stream.take_string().expect("peek_kind guarded this");
+            Ok(Expression::Literal(Value::String(value)))
         }
         Some(ArithmeticTokenKind::Ident) => {
             let name = stream.take_ident().expect("peek_kind guarded this");

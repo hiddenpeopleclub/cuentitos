@@ -38,6 +38,27 @@ pub fn parse_string_literal(input: &str) -> Result<String, StringLiteralError> {
     let opening = chars.next();
     debug_assert_eq!(opening, Some('"'), "caller guarantees a leading quote");
 
+    let value = scan_quoted_body(&mut chars)?;
+
+    if chars.as_str().trim().is_empty() {
+        Ok(value)
+    } else {
+        Err(StringLiteralError::TrailingCharacters)
+    }
+}
+
+/// Scan the body of a double-quoted literal whose opening `"` has **already
+/// been consumed** from `chars`, reading through the closing quote and leaving
+/// `chars` positioned just past it. Decodes the `\"`, `\n`, and `\\` escapes.
+///
+/// Unlike [`parse_string_literal`], this does not require the literal to fill
+/// the input — it stops at the closing quote and ignores whatever follows. The
+/// `req` boolean tokenizer uses it to lex one string literal embedded in a
+/// larger token stream (`req name = "Aria" and ...`); `parse_string_literal`
+/// reuses it for the whole-input form so both honor identical escape rules.
+pub fn scan_quoted_body<I: Iterator<Item = char>>(
+    chars: &mut I,
+) -> Result<String, StringLiteralError> {
     let mut value = String::new();
     loop {
         match chars.next() {
@@ -57,12 +78,7 @@ pub fn parse_string_literal(input: &str) -> Result<String, StringLiteralError> {
             Some(other) => value.push(other),
         }
     }
-
-    if chars.as_str().trim().is_empty() {
-        Ok(value)
-    } else {
-        Err(StringLiteralError::TrailingCharacters)
-    }
+    Ok(value)
 }
 
 #[cfg(test)]
