@@ -1346,6 +1346,11 @@ pub fn evaluate_expression(
         Err(EvaluationError::TypeMismatch { .. }) => {
             unreachable!("integer-default fold is integer-only")
         }
+        // Enum operands never reach the integer-default fold — defaults are
+        // folded from integer-shaped expressions only, never enum reads.
+        Err(EvaluationError::UnsetEnum { .. }) => {
+            unreachable!("integer-default fold never reads an enum")
+        }
     }
 }
 

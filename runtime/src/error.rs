@@ -45,6 +45,14 @@ pub enum RuntimeError {
         file: Option<PathBuf>,
         line: usize,
     },
+    /// A `req` comparison read an enum variable that has never been assigned.
+    /// Enums have no default, so reading one before its first `set` is a
+    /// runtime error. Carries the variable name for the diagnostic.
+    UnsetEnumRead {
+        name: String,
+        file: Option<PathBuf>,
+        line: usize,
+    },
 }
 
 impl fmt::Display for RuntimeError {
@@ -107,6 +115,18 @@ impl fmt::Display for RuntimeError {
                     f,
                     "{}:{}: RUNTIME ERROR: Type mismatch in expression: expected {}, found {}.",
                     prefix, line, expected, found
+                )
+            }
+            RuntimeError::UnsetEnumRead { name, file, line } => {
+                let prefix = file
+                    .as_ref()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("<script>");
+                write!(
+                    f,
+                    "{}:{}: RUNTIME ERROR: Cannot read unset enum variable '{}'.",
+                    prefix, line, name
                 )
             }
         }

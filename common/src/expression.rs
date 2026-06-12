@@ -129,6 +129,14 @@ pub enum EvaluationError {
         expected: ValueKind,
         found: ValueKind,
     },
+    /// A comparison read an enum variable that has never been assigned. Enums
+    /// have no default, so reading one before its first `set` is a runtime
+    /// error (unlike the numeric kinds, which always carry a value). Carries
+    /// the [`VariableId`] of the unset variable so the runtime can name it in
+    /// the surfaced diagnostic.
+    UnsetEnum {
+        variable: VariableId,
+    },
 }
 
 /// Build the lookup closure expected by [`evaluate`] (and

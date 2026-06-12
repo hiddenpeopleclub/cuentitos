@@ -104,29 +104,43 @@ impl ComparisonOperator {
                     unreachable!("ordering comparison on strings is rejected at parse time")
                 }
             },
-            // Two enum values compare by their selected variant name. Only
-            // equality is meaningful (enums have no ordering); the four
-            // ordering operators are rejected at parse time, so they're
-            // structurally unreachable here. Either side may be an assigned
-            // `Enum` or an `EnumUnset` sentinel; comparing against an unset
-            // variant simply never matches a real variant name.
+            // Two enums compare by their selected variant name. Either side may
+            // be assigned (`Enum`) or the `EnumUnset` sentinel; an unset enum
+            // equals nothing — not a real variant, and not another unset enum —
+            // so any unset operand makes `=` false and `!=` true. Only equality
+            // is meaningful (enums have no ordering); the four ordering
+            // operators are rejected at parse time, so they're structurally
+            // unreachable here.
+            //
+            // On the live `req` path an unset operand never actually reaches
+            // this arm: reading an unset enum is caught upstream in
+            // [`crate::BooleanExpression::evaluate`] and surfaced as the named
+            // [`EvaluationError::UnsetEnum`]. The sentinel handling here keeps
+            // `apply` a total, sensible comparison primitive for any direct
+            // caller that bypasses that policy layer.
             (
-                Value::Enum {
-                    value: left_value, ..
-                },
-                Value::Enum {
-                    value: right_value, ..
-                },
-            ) => match self {
-                ComparisonOperator::Equal => Ok(left_value == right_value),
-                ComparisonOperator::NotEqual => Ok(left_value != right_value),
-                ComparisonOperator::Less
-                | ComparisonOperator::LessOrEqual
-                | ComparisonOperator::Greater
-                | ComparisonOperator::GreaterOrEqual => {
-                    unreachable!("ordering comparison on enums is rejected at parse time")
+                left_enum @ (Value::Enum { .. } | Value::EnumUnset { .. }),
+                right_enum @ (Value::Enum { .. } | Value::EnumUnset { .. }),
+            ) => {
+                let selected_variant = |value: &Value| match value {
+                    Value::Enum { value, .. } => Some(value.clone()),
+                    _ => None,
+                };
+                let equal = matches!(
+                    (selected_variant(left_enum), selected_variant(right_enum)),
+                    (Some(left_value), Some(right_value)) if left_value == right_value
+                );
+                match self {
+                    ComparisonOperator::Equal => Ok(equal),
+                    ComparisonOperator::NotEqual => Ok(!equal),
+                    ComparisonOperator::Less
+                    | ComparisonOperator::LessOrEqual
+                    | ComparisonOperator::Greater
+                    | ComparisonOperator::GreaterOrEqual => {
+                        unreachable!("ordering comparison on enums is rejected at parse time")
+                    }
                 }
-            },
+            }
             // Operands of differing kinds (e.g. an `Integer` against a
             // `Boolean`) are a type error. Parse-time inference is expected to
             // make this unreachable; the arm keeps the match total as `Value`
@@ -280,6 +294,63 @@ mod tests {
             Err(EvaluationError::TypeMismatch {
                 expected: ValueKind::Integer,
                 found: ValueKind::Boolean,
+            })
+        );
+    }
+
+    fn enum_value(value: &str) -> Value {
+        Value::Enum {
+            variants: vec!["happy".to_string(), "sad".to_string()],
+            value: value.to_string(),
+        }
+    }
+
+    fn enum_unset() -> Value {
+        Value::EnumUnset {
+            variants: vec!["happy".to_string(), "sad".to_string()],
+        }
+    }
+
+    #[test]
+    fn assigned_enums_compare_by_selected_variant() {
+        let happy = enum_value("happy");
+        let sad = enum_value("sad");
+        assert_eq!(ComparisonOperator::Equal.apply(&happy, &happy), Ok(true));
+        assert_eq!(ComparisonOperator::Equal.apply(&happy, &sad), Ok(false));
+        assert_eq!(ComparisonOperator::NotEqual.apply(&happy, &sad), Ok(true));
+        assert_eq!(
+            ComparisonOperator::NotEqual.apply(&happy, &happy),
+            Ok(false)
+        );
+    }
+
+    #[test]
+    fn unset_enum_is_a_sentinel_that_equals_nothing() {
+        // An unset operand on either side (or both) never equals: `=` is false
+        // and `!=` is true. This is `apply`'s total fallback — the live `req`
+        // path errors on an unset read before reaching here.
+        let happy = enum_value("happy");
+        let unset = enum_unset();
+        assert_eq!(ComparisonOperator::Equal.apply(&unset, &happy), Ok(false));
+        assert_eq!(ComparisonOperator::Equal.apply(&happy, &unset), Ok(false));
+        assert_eq!(ComparisonOperator::Equal.apply(&unset, &unset), Ok(false));
+        assert_eq!(ComparisonOperator::NotEqual.apply(&unset, &happy), Ok(true));
+        assert_eq!(ComparisonOperator::NotEqual.apply(&happy, &unset), Ok(true));
+        assert_eq!(ComparisonOperator::NotEqual.apply(&unset, &unset), Ok(true));
+    }
+
+    #[test]
+    fn unset_enum_against_a_non_enum_is_still_a_type_mismatch() {
+        // The enum arm is scoped to enum-vs-enum, so an unset enum paired with
+        // a non-enum still falls through to the type-mismatch catch-all rather
+        // than being silently swallowed by the sentinel handling.
+        let unset = enum_unset();
+        let int = Value::Integer(1);
+        assert_eq!(
+            ComparisonOperator::Equal.apply(&unset, &int),
+            Err(EvaluationError::TypeMismatch {
+                expected: ValueKind::Enum,
+                found: ValueKind::Integer,
             })
         );
     }

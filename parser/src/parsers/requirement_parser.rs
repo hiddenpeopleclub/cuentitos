@@ -224,6 +224,22 @@ fn validate_comparison(
             right_token: render_operand(&statement.right, database),
         });
     }
+    // `ValueKind::Enum` is a single tag shared by every enum, so the kind
+    // check above passes even when the two operands belong to *different*
+    // enums (e.g. `req mood = weather`). Two enums are only comparable when
+    // they share the same declared variant list; otherwise it is a type
+    // mismatch, reported with the same diagnostic as a cross-kind comparison.
+    if left_kind == ValueKind::Enum
+        && enum_variants_of(&statement.left, database)
+            != enum_variants_of(&statement.right, database)
+    {
+        return Err(RequirementParseError::ComparisonTypeMismatch {
+            left_kind,
+            left_token: render_operand(&statement.left, database),
+            right_kind,
+            right_token: render_operand(&statement.right, database),
+        });
+    }
     if statement.operator.requires_ordering() && !left_kind.is_ordered() {
         return Err(RequirementParseError::NonOrderedComparison {
             operator: statement.operator,
@@ -243,6 +259,21 @@ fn render_operand(expression: &Expression, database: &Database) -> String {
         Expression::Variable(id) => database.variables[*id].name.clone(),
         Expression::Literal(value) => value.to_string(),
         Expression::Binary { .. } => "expression".to_string(),
+    }
+}
+
+/// The declared variant list of an enum-typed operand: a variable's enum
+/// variants, or a folded enum literal's carried variants. `None` for any
+/// non-enum operand. Two enum operands compare only when these match, which
+/// is how different enums sharing a value name are kept apart.
+fn enum_variants_of(expression: &Expression, database: &Database) -> Option<Vec<String>> {
+    match expression {
+        Expression::Variable(id) => database.variables[*id]
+            .default
+            .enum_variants()
+            .map(<[String]>::to_vec),
+        Expression::Literal(value) => value.enum_variants().map(<[String]>::to_vec),
+        Expression::Binary { .. } => None,
     }
 }
 
@@ -853,5 +884,73 @@ mod tests {
                 name: "ecstatic".to_string(),
             }
         );
+    }
+
+    #[test]
+    fn compares_two_variables_of_the_same_enum() {
+        // `req mood = other` where both variables share the same enum: the RHS
+        // is not a variant of mood, so it resolves as a variable reference and
+        // the comparison is between two enum variables.
+        let mut db = db_with_enum("mood", &["happy", "sad"]);
+        db.add_variable(cuentitos_common::Variable::new(
+            "other",
+            cuentitos_common::Value::EnumUnset {
+                variants: vec!["happy".to_string(), "sad".to_string()],
+            },
+        ));
+        for (input, expected_operator) in [
+            ("req mood = other", ComparisonOperator::Equal),
+            ("req mood != other", ComparisonOperator::NotEqual),
+        ] {
+            let parsed = parse_requirement(input, &db).unwrap();
+            let stmt = assert_comparison(&parsed.expression, expected_operator);
+            assert_eq!(stmt.left, Expression::Variable(0));
+            assert_eq!(stmt.right, Expression::Variable(1));
+        }
+    }
+
+    #[test]
+    fn comparing_two_different_enums_is_a_type_mismatch() {
+        // `mood` and `weather` are distinct enums (different variant lists), so
+        // `req mood = weather` is rejected at parse time even though both
+        // operands share the single `ValueKind::Enum` tag.
+        let mut db = db_with_enum("mood", &["happy", "sad"]);
+        db.add_variable(cuentitos_common::Variable::new(
+            "weather",
+            cuentitos_common::Value::EnumUnset {
+                variants: vec!["sunny".to_string(), "rainy".to_string()],
+            },
+        ));
+        assert_eq!(
+            parse_requirement("req mood = weather", &db).unwrap_err(),
+            RequirementParseError::ComparisonTypeMismatch {
+                left_kind: ValueKind::Enum,
+                left_token: "mood".to_string(),
+                right_kind: ValueKind::Enum,
+                right_token: "weather".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn ordering_operator_on_enum_is_rejected() {
+        // Enums have no ordering; the four ordering operators are parse-time
+        // errors on an enum comparison.
+        let db = db_with_enum("mood", &["happy", "sad"]);
+        for (input, operator) in [
+            ("req mood < happy", ComparisonOperator::Less),
+            ("req mood <= happy", ComparisonOperator::LessOrEqual),
+            ("req mood > happy", ComparisonOperator::Greater),
+            ("req mood >= happy", ComparisonOperator::GreaterOrEqual),
+        ] {
+            assert_eq!(
+                parse_requirement(input, &db).unwrap_err(),
+                RequirementParseError::NonOrderedComparison {
+                    operator,
+                    kind: ValueKind::Enum,
+                },
+                "input: {input}"
+            );
+        }
     }
 }
