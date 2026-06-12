@@ -137,7 +137,12 @@ fn parse_one_declaration(
     let (kind, rest) = match declaration_kind(trimmed) {
         Some((kind, rest)) => (kind, rest),
         None => {
-            if trimmed == "int" || trimmed == "bool" || trimmed == "float" || trimmed == "string" {
+            if trimmed == "int"
+                || trimmed == "bool"
+                || trimmed == "float"
+                || trimmed == "string"
+                || trimmed == "enum"
+            {
                 return Err(ParseError::MissingVariableName {
                     file: file_path.clone(),
                     line: line_number,
@@ -150,6 +155,21 @@ fn parse_one_declaration(
             });
         }
     };
+
+    // Enum declarations have a completely different RHS grammar (a
+    // comma-separated value list, not an arithmetic default). Dispatch before
+    // the shared name/duplicate/default-fold logic so the enum path owns all
+    // of its own diagnostics.
+    if kind == ValueKind::Enum {
+        return parse_enum_declaration(
+            rest,
+            line_number,
+            file_path,
+            declared_lines,
+            declared,
+            database,
+        );
+    }
 
     let (name, default_expr) = if let Some(eq_idx) = rest.find('=') {
         let name = rest[..eq_idx].trim();
@@ -227,6 +247,8 @@ fn parse_one_declaration(
             file_path,
             line_number,
         )?,
+        // Enum is handled above via the early-return path.
+        ValueKind::Enum => unreachable!("enum handled before this match"),
     };
 
     declared_lines.insert(name.to_string(), line_number);
@@ -235,10 +257,145 @@ fn parse_one_declaration(
     Ok(())
 }
 
+/// Parse an `enum <name> = <value1>, <value2>, ...` declaration (the `rest`
+/// argument is everything after the `enum ` keyword, e.g. `mood = happy, sad`).
+///
+/// Validates the name (identifier, non-reserved, non-duplicate), then parses
+/// and validates the comma-separated value list, and finally registers the
+/// variable in the database with an `EnumUnset` initial value.
+fn parse_enum_declaration(
+    rest: &str,
+    line_number: usize,
+    file_path: &Option<PathBuf>,
+    declared_lines: &mut HashMap<String, usize>,
+    declared: &mut HashMap<String, Value>,
+    database: &mut Database,
+) -> Result<(), ParseError> {
+    // Split on the first `=` to separate name from value list.
+    let (name_raw, value_list_raw) = match rest.find('=') {
+        Some(eq_idx) => (rest[..eq_idx].trim(), Some(rest[eq_idx + 1..].trim())),
+        None => (rest.trim(), None),
+    };
+
+    let name = name_raw;
+
+    if name.is_empty() {
+        return Err(ParseError::MissingVariableName {
+            file: file_path.clone(),
+            line: line_number,
+        });
+    }
+
+    // Validate name: for `enum mood happy, sad` (no `=`) the "name" would be
+    // `mood happy, sad` — not a valid identifier, but the missing-equals error
+    // is more informative. We detect the missing `=` and report it specifically.
+    if value_list_raw.is_none() {
+        // There was no `=`. The first word is the name; whatever follows is noise.
+        let name_word = name.split_whitespace().next().unwrap_or(name);
+        return Err(ParseError::EnumMissingEquals {
+            name: name_word.to_string(),
+            file: file_path.clone(),
+            line: line_number,
+        });
+    }
+
+    // The name itself should be a valid identifier at this point.
+    if !is_valid_identifier(name) {
+        return Err(ParseError::InvalidVariableName {
+            name: name.to_string(),
+            file: file_path.clone(),
+            line: line_number,
+        });
+    }
+
+    if is_reserved_keyword(name) {
+        return Err(ParseError::ReservedKeyword {
+            name: name.to_string(),
+            file: file_path.clone(),
+            line: line_number,
+        });
+    }
+
+    if let Some(&previous_line) = declared_lines.get(name) {
+        return Err(ParseError::DuplicateVariable {
+            name: name.to_string(),
+            previous_line,
+            file: file_path.clone(),
+            line: line_number,
+        });
+    }
+
+    let raw_list = value_list_raw.unwrap();
+
+    // An empty value list is an error.
+    if raw_list.is_empty() {
+        return Err(ParseError::EnumEmptyValueList {
+            name: name.to_string(),
+            file: file_path.clone(),
+            line: line_number,
+        });
+    }
+
+    // Parse the comma-separated value list. Each entry must be a non-empty,
+    // valid identifier that is not a reserved keyword. Duplicates within this
+    // enum are also rejected (but two different enums sharing a value name is
+    // fine — the duplicate check is per-enum, not global).
+    let mut variants: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    for raw_value in raw_list.split(',') {
+        let value = raw_value.trim();
+        if value.is_empty() {
+            return Err(ParseError::EnumEmptyValue {
+                name: name.to_string(),
+                file: file_path.clone(),
+                line: line_number,
+            });
+        }
+        if !is_valid_identifier(value) {
+            return Err(ParseError::EnumInvalidValue {
+                value: value.to_string(),
+                file: file_path.clone(),
+                line: line_number,
+            });
+        }
+        if is_reserved_keyword(value) {
+            return Err(ParseError::EnumReservedKeywordValue {
+                keyword: value.to_string(),
+                file: file_path.clone(),
+                line: line_number,
+            });
+        }
+        if !seen.insert(value.to_string()) {
+            return Err(ParseError::EnumDuplicateValue {
+                value: value.to_string(),
+                enum_name: name.to_string(),
+                file: file_path.clone(),
+                line: line_number,
+            });
+        }
+        variants.push(value.to_string());
+    }
+
+    let initial_value = Value::EnumUnset {
+        variants: variants.clone(),
+    };
+
+    declared_lines.insert(name.to_string(), line_number);
+    // Store a sentinel in `declared` so later declarations can see this name.
+    // We use the `EnumUnset` value directly; the type checks for other kinds
+    // (integer, bool, float, string) already reject cross-kind references, so
+    // storing `EnumUnset` here means any attempt to use an enum name in another
+    // variable's default will hit the type-mismatch path naturally.
+    declared.insert(name.to_string(), initial_value.clone());
+    database.add_variable(Variable::new(name, initial_value));
+    Ok(())
+}
+
 /// Recognize a declaration's leading type keyword. Returns the declared
 /// [`ValueKind`] and the remainder of the line (the name and optional
-/// default), with leading whitespace after the keyword stripped. `None`
-/// means the line is not a recognized `<keyword> ...` declaration.
+/// default / value-list), with leading whitespace after the keyword stripped.
+/// `None` means the line is not a recognized `<keyword> ...` declaration.
 fn declaration_kind(trimmed: &str) -> Option<(ValueKind, &str)> {
     if let Some(rest) = trimmed.strip_prefix("int ") {
         Some((ValueKind::Integer, rest.trim_start()))
@@ -248,6 +405,8 @@ fn declaration_kind(trimmed: &str) -> Option<(ValueKind, &str)> {
         Some((ValueKind::Float, rest.trim_start()))
     } else if let Some(rest) = trimmed.strip_prefix("string ") {
         Some((ValueKind::String, rest.trim_start()))
+    } else if let Some(rest) = trimmed.strip_prefix("enum ") {
+        Some((ValueKind::Enum, rest.trim_start()))
     } else {
         None
     }
@@ -1025,9 +1184,9 @@ fn parse_string_literal(input: &str) -> Result<String, StringDefaultError> {
 }
 
 /// Scan lines `[start, end)` (exclusive end) for identifiers that follow a
-/// type keyword (`int `/`bool `/`float `/`string `), collecting them into a set
-/// regardless of declared type. Duplicate identifiers are merged silently
-/// here; duplicate-declaration detection lives in the main pass.
+/// type keyword (`int `/`bool `/`float `/`string `/`enum `), collecting them
+/// into a set regardless of declared type. Duplicate identifiers are merged
+/// silently here; duplicate-declaration detection lives in the main pass.
 fn collect_future_names(lines: &[&str], start: usize, end: usize) -> HashSet<String> {
     let mut names = HashSet::new();
     for line in &lines[start..end] {
@@ -1036,6 +1195,9 @@ fn collect_future_names(lines: &[&str], start: usize, end: usize) -> HashSet<Str
             Some((_, rest)) => rest,
             None => continue,
         };
+        // For all types, the variable name is before any `=`. For `enum` this
+        // is correct too: `enum mood = happy, sad` → rest = `mood = happy, sad`
+        // → name = `mood`.
         let name = if let Some(eq_idx) = rest.find('=') {
             rest[..eq_idx].trim()
         } else {
@@ -1158,12 +1320,15 @@ pub fn evaluate_expression(
             Value::Integer(n) => Ok(n),
             // The resolver only exposes integer-typed variables and the shared
             // parser only produces integer arithmetic, so the fold never
-            // yields a boolean or float. (Boolean and float defaults bypass
-            // this folder entirely — see `evaluate_bool_default` /
-            // `evaluate_float_default`.)
+            // yields a boolean, float, string, or enum. (Boolean and float
+            // defaults bypass this folder entirely — see `evaluate_bool_default`
+            // / `evaluate_float_default`.)
             Value::Boolean(_) => unreachable!("integer-default fold never yields a boolean"),
             Value::Float(_) => unreachable!("integer-default fold never yields a float"),
             Value::String(_) => unreachable!("integer-default fold never yields a string"),
+            Value::EnumUnset { .. } => {
+                unreachable!("integer-default fold never yields an enum")
+            }
         },
         Err(EvaluationError::DivisionByZero) => Err(EvalError::DivisionByZero),
         Err(EvaluationError::Overflow) => Err(EvalError::Overflow),
