@@ -655,6 +655,11 @@ impl Runtime {
                     line,
                 }
             }
+            EvaluationError::UnsetEnum { variable } => RuntimeError::UnsetEnumRead {
+                name: self.database.variables[variable].name.clone(),
+                file: self.file_path.clone(),
+                line,
+            },
         }
     }
 
@@ -998,6 +1003,50 @@ mod test {
             runtime.take_last_error(),
             Some(RuntimeError::DivisionByZero { .. })
         ));
+    }
+
+    #[test]
+    fn req_reading_unset_enum_is_a_runtime_error() {
+        // `mood` is never assigned, so the gating `req` reads an unset enum —
+        // a runtime error rather than a silent non-match.
+        let script = "--- variables\nenum mood = happy, sad\n---\nFirst.\n  req mood = happy\n";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+        runtime.skip();
+        assert_eq!(
+            runtime.take_last_error(),
+            Some(RuntimeError::UnsetEnumRead {
+                name: "mood".to_string(),
+                file: None,
+                line: 5,
+            })
+        );
+    }
+
+    #[test]
+    fn req_assigned_enum_does_not_error() {
+        // Once `mood` is set, the same gating `req` evaluates cleanly.
+        let script =
+            "--- variables\nenum mood = happy, sad\n---\nset mood = happy\nFirst.\n  req mood = happy\n";
+        let (database, _warnings) = cuentitos_parser::parse(script).unwrap();
+        let mut runtime = Runtime::new(database);
+        runtime.run();
+        runtime.skip();
+        assert_eq!(runtime.take_last_error(), None);
+    }
+
+    #[test]
+    fn unset_enum_read_error_displays_variable_name() {
+        let error = RuntimeError::UnsetEnumRead {
+            name: "mood".to_string(),
+            file: Some(std::path::PathBuf::from("foo.cuentitos")),
+            line: 7,
+        };
+        assert_eq!(
+            error.to_string(),
+            "foo.cuentitos:7: RUNTIME ERROR: Cannot read unset enum variable 'mood'."
+        );
     }
 
     #[test]

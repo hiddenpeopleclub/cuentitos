@@ -107,9 +107,10 @@ impl ComparisonOperator {
             // Two enum values compare by their selected variant name. Only
             // equality is meaningful (enums have no ordering); the four
             // ordering operators are rejected at parse time, so they're
-            // structurally unreachable here. Either side may be an assigned
-            // `Enum` or an `EnumUnset` sentinel; comparing against an unset
-            // variant simply never matches a real variant name.
+            // structurally unreachable here. An `EnumUnset` operand never
+            // reaches this arm: reading an unset enum is caught upstream in
+            // [`crate::BooleanExpression::evaluate`] and surfaced as
+            // [`EvaluationError::UnsetEnum`], so both sides are assigned.
             (
                 Value::Enum {
                     value: left_value, ..
