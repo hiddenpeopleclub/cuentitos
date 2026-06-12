@@ -1006,42 +1006,22 @@ fn evaluate_string_default(
 }
 
 /// Parse a double-quoted string literal that occupies the whole `input` (the
-/// caller has already trimmed it and verified the leading `"`). Recognizes the
-/// `\"`, `\n`, and `\\` escapes; any other backslash sequence is an invalid
-/// escape. A missing closing quote is unterminated, and any non-whitespace text
-/// after the closing quote makes the default malformed (e.g. concatenation).
+/// caller has already trimmed it and verified the leading `"`).
+///
+/// Delegates to the shared [`crate::string_literal`] scanner so string
+/// *defaults* and string `set` RHS literals honor identical escape and
+/// termination rules, then re-maps the shared error into the default-specific
+/// [`StringDefaultError`]: trailing characters after the closing quote make
+/// the default malformed (e.g. an attempted concatenation).
 fn parse_string_literal(input: &str) -> Result<String, StringDefaultError> {
-    let mut chars = input.chars();
-    let opening = chars.next();
-    debug_assert_eq!(opening, Some('"'), "caller guarantees a leading quote");
-
-    let mut value = String::new();
-    loop {
-        match chars.next() {
-            None => return Err(StringDefaultError::UnterminatedLiteral),
-            Some('"') => break,
-            Some('\\') => match chars.next() {
-                Some('"') => value.push('"'),
-                Some('n') => value.push('\n'),
-                Some('\\') => value.push('\\'),
-                Some(other) => {
-                    return Err(StringDefaultError::InvalidEscape {
-                        sequence: format!("\\{other}"),
-                    });
-                }
-                None => return Err(StringDefaultError::UnterminatedLiteral),
-            },
-            Some(other) => value.push(other),
+    use crate::string_literal::StringLiteralError;
+    crate::string_literal::parse_string_literal(input).map_err(|error| match error {
+        StringLiteralError::Unterminated => StringDefaultError::UnterminatedLiteral,
+        StringLiteralError::InvalidEscape { sequence } => {
+            StringDefaultError::InvalidEscape { sequence }
         }
-    }
-
-    // Only whitespace may follow the closing quote; anything else (a trailing
-    // `+ "world"`, a stray token) means the default isn't a lone literal.
-    if chars.as_str().trim().is_empty() {
-        Ok(value)
-    } else {
-        Err(StringDefaultError::Malformed)
-    }
+        StringLiteralError::TrailingCharacters => StringDefaultError::Malformed,
+    })
 }
 
 /// Scan lines `[start, end)` (exclusive end) for identifiers that follow a

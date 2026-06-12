@@ -5,11 +5,12 @@
 //! inference happen at parse time; the expression is evaluated later by the
 //! runtime.
 
-use cuentitos_common::{AssignmentOperator, Database, Expression, ValueKind, VariableId};
+use cuentitos_common::{AssignmentOperator, Database, Expression, Value, ValueKind, VariableId};
 
 use crate::expression::{parse_expression, ParseExpressionError, VariableResolver};
 use crate::parsers::type_inference::{infer_type, TypeInferenceError};
 use crate::parsers::variables_parser::is_valid_identifier;
+use crate::string_literal::StringLiteralError;
 
 /// Result of parsing a `set` line.
 ///
@@ -69,6 +70,29 @@ pub enum SetParseError {
     /// the diagnostic names the `set` context, parallel to the float *default*
     /// overflow (`Float overflow in default expression for 'x'.`).
     FloatLiteralOverflow { variable: String, literal: String },
+    /// A `set` on a string variable had a non-string RHS. Carries the
+    /// offending sub-expression's source text (`found_token`) and its kind so
+    /// the diagnostic can name it, parallel to the float `set` type-mismatch.
+    /// A literal leaf is named quoted (`'1'`); a variable leaf is named by its
+    /// bare identifier (`count`).
+    StringTypeMismatch {
+        variable: String,
+        found_token: String,
+        found: ValueKind,
+    },
+    /// A `set` RHS string literal opened a double quote but never closed it.
+    /// Mirrors the string *default* unterminated-literal rule.
+    UnterminatedStringLiteral,
+    /// A `set` RHS string literal contained a backslash sequence other than
+    /// `\"`, `\n`, or `\\`. Carries the offending two-character sequence.
+    InvalidStringEscape { sequence: String },
+    /// A compound assignment (`+=` etc.) targeted a non-numeric variable whose
+    /// kind has a dedicated "not supported" message (currently string). Carries
+    /// the operator and kind so the diagnostic echoes both.
+    CompoundAssignmentUnsupported {
+        operator: AssignmentOperator,
+        kind: ValueKind,
+    },
 }
 
 /// Try to parse `content` as a `set` statement.
@@ -119,6 +143,28 @@ pub(crate) fn parse_set(content: &str, database: &Database) -> Result<ParsedSet,
         return Err(SetParseError::MissingRhs);
     }
 
+    let lhs_kind = database.variables[variable_id].kind();
+
+    // A string `set` has its own narrow RHS grammar — a single double-quoted
+    // literal or a bare string-variable reference — that the arithmetic body
+    // doesn't model (string literals aren't arithmetic tokens, and `+` between
+    // strings is malformed, not concatenation). Branch out before the shared
+    // arithmetic path so the string-specific diagnostics stay verbatim.
+    if lhs_kind == ValueKind::String {
+        if operator.is_compound() {
+            return Err(SetParseError::CompoundAssignmentUnsupported {
+                operator,
+                kind: lhs_kind,
+            });
+        }
+        let expression = parse_string_rhs(rhs, lhs, database)?;
+        return Ok(ParsedSet {
+            variable_id,
+            operator,
+            expression,
+        });
+    }
+
     let resolver = DatabaseResolver { database };
     let expression = match parse_expression(rhs, &resolver) {
         Ok(expression) => expression,
@@ -141,7 +187,6 @@ pub(crate) fn parse_set(content: &str, database: &Database) -> Result<ParsedSet,
         }
     };
 
-    let lhs_kind = database.variables[variable_id].kind();
     let rhs_kind = match infer_type(&expression, database) {
         Ok(kind) => kind,
         Err(TypeInferenceError::Mismatch { left, right, .. }) => {
@@ -219,6 +264,105 @@ fn first_non_float_leaf(
         }
         Expression::Binary { left, right, .. } => {
             first_non_float_leaf(left, database).or_else(|| first_non_float_leaf(right, database))
+        }
+    }
+}
+
+/// Parse the RHS of a `set` whose target is a string variable.
+///
+/// The grammar is intentionally narrow, mirroring the string *default* rule:
+/// a single double-quoted literal (with `\"`, `\n`, `\\` escapes) or a bare
+/// identifier referencing another string variable. Anything else is either a
+/// cross-type mismatch (a numeric/bool leaf, named in the diagnostic) or an
+/// unparseable RHS (malformed). `caller` has already trimmed `rhs`.
+fn parse_string_rhs(
+    rhs: &str,
+    lhs: &str,
+    database: &Database,
+) -> Result<Expression, SetParseError> {
+    if rhs.starts_with('"') {
+        return match crate::string_literal::parse_string_literal(rhs) {
+            Ok(value) => Ok(Expression::Literal(Value::String(value))),
+            Err(StringLiteralError::Unterminated) => Err(SetParseError::UnterminatedStringLiteral),
+            Err(StringLiteralError::InvalidEscape { sequence }) => {
+                Err(SetParseError::InvalidStringEscape { sequence })
+            }
+            // A trailing token after the literal (`"a" "b"`, `"a" + "b"`) is
+            // not concatenation — it's an unparseable RHS.
+            Err(StringLiteralError::TrailingCharacters) => {
+                Err(SetParseError::MalformedExpression {
+                    expression: rhs.to_string(),
+                })
+            }
+        };
+    }
+
+    if is_valid_identifier(rhs) {
+        return match database.variable_id(rhs) {
+            None => Err(SetParseError::UndefinedVariable {
+                name: rhs.to_string(),
+            }),
+            Some(id) => {
+                let kind = database.variables[id].kind();
+                if kind == ValueKind::String {
+                    Ok(Expression::Variable(id))
+                } else {
+                    Err(SetParseError::StringTypeMismatch {
+                        variable: lhs.to_string(),
+                        found_token: rhs.to_string(),
+                        found: kind,
+                    })
+                }
+            }
+        };
+    }
+
+    // Not a string literal and not a bare identifier. Fall back to the shared
+    // arithmetic body so a numeric/bool RHS (`1`, `count + 1`) surfaces a
+    // type-mismatch that names the offending leaf; a genuine parse failure
+    // (`"a" "b"` already handled above, `5 +`) is malformed.
+    let resolver = DatabaseResolver { database };
+    match parse_expression(rhs, &resolver) {
+        Ok(expression) => match first_non_string_leaf(&expression, database) {
+            Some((found_token, found)) => Err(SetParseError::StringTypeMismatch {
+                variable: lhs.to_string(),
+                found_token,
+                found,
+            }),
+            None => Err(SetParseError::MalformedExpression {
+                expression: rhs.to_string(),
+            }),
+        },
+        Err(_) => Err(SetParseError::MalformedExpression {
+            expression: rhs.to_string(),
+        }),
+    }
+}
+
+/// Find the first leaf of `expression` whose kind is not `String`, returning
+/// its source-facing text and kind. Parallel to [`first_non_float_leaf`], but
+/// for the string `set` type-mismatch: a literal leaf is named quoted
+/// (`Value::Integer(1)` → `'1'`) and a variable leaf by its bare identifier
+/// (`count`), matching the two string-`set` cross-type compatibility tests.
+fn first_non_string_leaf(
+    expression: &Expression,
+    database: &Database,
+) -> Option<(String, ValueKind)> {
+    match expression {
+        Expression::Literal(value) if value.kind() != ValueKind::String => {
+            Some((format!("'{value}'"), value.kind()))
+        }
+        Expression::Literal(_) => None,
+        Expression::Variable(id) => {
+            let variable = &database.variables[*id];
+            if variable.kind() == ValueKind::String {
+                None
+            } else {
+                Some((variable.name.clone(), variable.kind()))
+            }
+        }
+        Expression::Binary { left, right, .. } => {
+            first_non_string_leaf(left, database).or_else(|| first_non_string_leaf(right, database))
         }
     }
 }
@@ -518,6 +662,143 @@ mod tests {
             SetParseError::FloatLiteralOverflow {
                 variable: "result".to_string(),
                 literal,
+            }
+        );
+    }
+
+    fn db_with_string(name: &str) -> Database {
+        let mut db = Database::new();
+        db.add_variable(Variable::new(name, Value::String(String::new())));
+        db
+    }
+
+    #[test]
+    fn string_literal_rhs_parses() {
+        let db = db_with_string("name");
+        let parsed = parse_set("set name = \"Brenn\"", &db).unwrap();
+        assert_eq!(parsed.operator, AssignmentOperator::Assign);
+        assert_eq!(
+            parsed.expression,
+            Expression::Literal(Value::String("Brenn".to_string()))
+        );
+    }
+
+    #[test]
+    fn string_literal_rhs_unescapes() {
+        let db = db_with_string("line");
+        let parsed = parse_set("set line = \"x\\ny\\\\z\\\"w\"", &db).unwrap();
+        assert_eq!(
+            parsed.expression,
+            Expression::Literal(Value::String("x\ny\\z\"w".to_string()))
+        );
+    }
+
+    #[test]
+    fn empty_string_literal_rhs_parses() {
+        let db = db_with_string("name");
+        let parsed = parse_set("set name = \"\"", &db).unwrap();
+        assert_eq!(
+            parsed.expression,
+            Expression::Literal(Value::String(String::new()))
+        );
+    }
+
+    #[test]
+    fn string_variable_rhs_parses_as_reference() {
+        let mut db = db_with_string("target");
+        db.add_variable(Variable::new("source", Value::String("Aria".to_string())));
+        let parsed = parse_set("set target = source", &db).unwrap();
+        assert_eq!(parsed.variable_id, 0);
+        assert_eq!(parsed.expression, Expression::Variable(1));
+    }
+
+    #[test]
+    fn unterminated_string_literal_rhs_is_rejected() {
+        let db = db_with_string("name");
+        assert_eq!(
+            parse_set("set name = \"Brenn", &db).unwrap_err(),
+            SetParseError::UnterminatedStringLiteral
+        );
+    }
+
+    #[test]
+    fn invalid_escape_in_string_literal_rhs_is_rejected() {
+        let db = db_with_string("name");
+        assert_eq!(
+            parse_set("set name = \"a\\qb\"", &db).unwrap_err(),
+            SetParseError::InvalidStringEscape {
+                sequence: "\\q".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn trailing_token_after_string_literal_is_malformed() {
+        // Concatenation and stray second literals are not special-cased; the
+        // RHS simply fails to parse as a lone literal.
+        let db = db_with_string("name");
+        assert_eq!(
+            parse_set("set name = \"a\" \"b\"", &db).unwrap_err(),
+            SetParseError::MalformedExpression {
+                expression: "\"a\" \"b\"".to_string()
+            }
+        );
+        assert_eq!(
+            parse_set("set name = \"Hello, \" + \"world\"", &db).unwrap_err(),
+            SetParseError::MalformedExpression {
+                expression: "\"Hello, \" + \"world\"".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn int_literal_rhs_of_string_set_is_a_type_mismatch() {
+        // A bare int literal names itself, quoted, in the diagnostic.
+        let db = db_with_string("name");
+        assert_eq!(
+            parse_set("set name = 1", &db).unwrap_err(),
+            SetParseError::StringTypeMismatch {
+                variable: "name".to_string(),
+                found_token: "'1'".to_string(),
+                found: ValueKind::Integer,
+            }
+        );
+    }
+
+    #[test]
+    fn int_variable_rhs_of_string_set_is_a_type_mismatch() {
+        // A cross-type variable names itself, unquoted, in the diagnostic.
+        let mut db = db_with_string("name");
+        db.add_variable(Variable::new_integer("count", 3));
+        assert_eq!(
+            parse_set("set name = count", &db).unwrap_err(),
+            SetParseError::StringTypeMismatch {
+                variable: "name".to_string(),
+                found_token: "count".to_string(),
+                found: ValueKind::Integer,
+            }
+        );
+    }
+
+    #[test]
+    fn undeclared_variable_rhs_of_string_set_is_undefined() {
+        let db = db_with_string("name");
+        assert_eq!(
+            parse_set("set name = ghost", &db).unwrap_err(),
+            SetParseError::UndefinedVariable {
+                name: "ghost".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn compound_assignment_on_string_is_rejected() {
+        let db = db_with_string("name");
+        assert_eq!(
+            parse_set("set name += \"Brenn\"", &db).unwrap_err(),
+            SetParseError::CompoundAssignmentUnsupported {
+                operator: AssignmentOperator::AddAssign,
+                kind: ValueKind::String,
             }
         );
     }
