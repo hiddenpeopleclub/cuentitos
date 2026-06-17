@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 cuentitos-common = { path = "../common" }
 cuentitos-parser = { path = "../parser" }
+getrandom = "0.2"
