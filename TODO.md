@@ -8,16 +8,21 @@
   - [x] Go To Start (-> START / -> RESTART)
   - [x] Go To's in CLI (support using go to as an input method in CLI)
   - [x] Options (Docs & Implementation)
-  - [ ] Definition of Integer Variables
-  - [ ] Set Integer Variables (Script & Runtime)
-  - [ ] Require Integer Variables
-  - [ ] Definition of Float Variables
-  - [ ] Set Float Variables (Script & Runtime)
-  - [ ] Require Float Variables
-  - [ ] Definition of String Variables
-  - [ ] Definition of Enum Variables
-  - [ ] Set Enum Variables (Script & Runtime)
-  - [ ] Require Enum Variables
+  - [x] Definition of Integer Variables
+  - [x] Set Integer Variables (Script & Runtime)
+  - [x] Require Integer Variables
+  - [x] Definition of Bool Variables
+  - [x] Set Bool Variables (Script & Runtime)
+  - [x] Require Bool Variables
+  - [x] Definition of Float Variables
+  - [x] Set Float Variables (Script & Runtime)
+  - [x] Require Float Variables
+  - [x] Definition of String Variables
+  - [x] Set String Variables (Script & Runtime)
+  - [x] Require String Variables
+  - [x] Definition of Enum Variables
+  - [x] Set Enum Variables (Script & Runtime)
+  - [x] Require Enum Variables
   - [ ] Support for Seeds in Compatibility Tests
   - [ ] Probabilistic one-offs (Docs & Implementation)
   - [ ] Probabilistic Buckets (Docs & Implementation)
