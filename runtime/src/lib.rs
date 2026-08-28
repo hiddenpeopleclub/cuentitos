@@ -57,10 +57,14 @@ struct RuntimeState {
     /// Typed so that adding new `Value` variants (bool, float, string)
     /// is strictly additive — no storage migration needed.
     variable_values: Vec<Value>,
-    /// xorshift64 RNG state. Initialized from the OS on every reset (including
-    /// goto_start/goto_restart) so each playthrough gets independent randomness.
-    /// Override with `Runtime::set_seed` for deterministic replay.
+    /// xorshift64 RNG state. Initialized from the OS on `reset()` for independent
+    /// randomness per playthrough. Override with `Runtime::set_seed` for deterministic replay.
     rng_state: u64,
+    /// The seed value as originally passed to `set_seed`, or the OS-derived value chosen
+    /// at startup/reset. Stable for the lifetime of a playthrough — unlike `rng_state`,
+    /// which advances on every draw. Used by `current_seed()` so debug output always
+    /// shows the value needed to reproduce the run.
+    initial_seed: u64,
     /// True when the RNG was seeded explicitly via `set_seed`; false when
     /// initialized from OS randomness. Only explicitly-set seeds are shown in
     /// `?` debug output — OS-derived seeds vary per run and cannot be tested.
@@ -69,6 +73,7 @@ struct RuntimeState {
 
 impl RuntimeState {
     fn new() -> Self {
+        let seed = os_random_seed();
         Self {
             program_counter: 0,
             previous_program_counter: 0,
@@ -78,7 +83,8 @@ impl RuntimeState {
             current_options: Vec::new(),
             last_error: None,
             variable_values: Vec::new(),
-            rng_state: os_random_seed(),
+            rng_state: seed,
+            initial_seed: seed,
             seed_was_explicitly_set: false,
         }
     }
@@ -299,13 +305,15 @@ impl Runtime {
     /// an all-zero sequence when seeded with 0.
     pub fn set_seed(&mut self, seed: u64) {
         self.state.rng_state = seed;
+        self.state.initial_seed = seed;
         self.state.seed_was_explicitly_set = true;
     }
 
-    /// Returns the current RNG state, which equals the last seed set via
-    /// `set_seed` (or the OS-derived seed on startup/reset if none was set).
+    /// Returns the seed as originally passed to `set_seed`, stable for the lifetime
+    /// of a playthrough regardless of how many draws have been made. This is the value
+    /// needed to reproduce a run.
     pub fn current_seed(&self) -> u64 {
-        self.state.rng_state
+        self.state.initial_seed
     }
 
     /// Returns true when the seed was set explicitly via `set_seed`; false when
@@ -316,9 +324,12 @@ impl Runtime {
     }
 
     /// Advance the RNG one step and return a float in [0, 1).
+    ///
+    /// Uses the high 53 bits of the xorshift64 output — the exact precision f64 can
+    /// represent — so the result never rounds up to 1.0.
     pub fn next_float(&mut self) -> f64 {
         self.state.rng_state = xorshift64(self.state.rng_state);
-        self.state.rng_state as f64 / u64::MAX as f64
+        (self.state.rng_state >> 11) as f64 * (1.0 / (1u64 << 53) as f64)
     }
 
     /// Returns and clears the last runtime error, if any
@@ -2057,10 +2068,15 @@ mod test {
     }
 
     #[test]
-    fn current_seed_reflects_set_seed() {
+    fn current_seed_reflects_set_seed_and_is_stable_after_draws() {
         let database = cuentitos_common::Database::default();
         let mut runtime = Runtime::new(database);
         runtime.set_seed(1000);
+        assert_eq!(runtime.current_seed(), 1000);
+        // Advancing the RNG must not change what current_seed() reports.
+        for _ in 0..10 {
+            runtime.next_float();
+        }
         assert_eq!(runtime.current_seed(), 1000);
     }
 
