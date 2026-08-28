@@ -2033,7 +2033,11 @@ mod test {
         runtime.set_seed(1);
         for _ in 0..1000 {
             let value = runtime.next_float();
-            assert!(value >= 0.0 && value < 1.0, "next_float out of range: {}", value);
+            assert!(
+                value >= 0.0 && value < 1.0,
+                "next_float out of range: {}",
+                value
+            );
         }
     }
 
