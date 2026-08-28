@@ -87,6 +87,29 @@ fn main() {
                                 continue;
                             }
 
+                            // `seed <N>` sets the RNG seed without advancing the script.
+                            if let Some(rest) = trimmed.strip_prefix("seed ") {
+                                match rest.trim().parse::<u64>() {
+                                    Ok(0) => println!(
+                                        "{}:0: WARNING: Invalid seed value \"0\": seed must be a positive integer.",
+                                        script_path_for_debug
+                                            .file_name()
+                                            .and_then(|n| n.to_str())
+                                            .unwrap_or("<script>")
+                                    ),
+                                    Ok(n) => runtime.set_seed(n),
+                                    Err(_) => println!(
+                                        "{}:0: WARNING: Invalid seed value \"{}\": expected a positive integer.",
+                                        script_path_for_debug
+                                            .file_name()
+                                            .and_then(|n| n.to_str())
+                                            .unwrap_or("<script>"),
+                                        rest.trim()
+                                    ),
+                                }
+                                continue;
+                            }
+
                             // Auto-step before processing to reach options/content
                             // This allows tests to use "1,s" or "q" instead of "n,1,s" or "n,q"
                             // Only skip auto-step on first input if it's 'n' or 's'
@@ -438,13 +461,18 @@ fn build_section_path(
     runtime.database.strings[section.path].clone()
 }
 
-/// Handle the `?` CLI input: print each declared variable's current value in
-/// declaration order, or emit a line-0 warning if no variables are declared.
+/// Handle the `?` CLI input: print the current seed and each declared
+/// variable's current value in declaration order, or emit a line-0 warning if
+/// no variables are declared.
 fn print_debug_variables(runtime: &cuentitos_runtime::Runtime, script_path: &Path) {
     let file_name = script_path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("<script>");
+
+    if runtime.seed_was_explicitly_set() {
+        println!("seed: {}", runtime.current_seed());
+    }
 
     if runtime.database.variables.is_empty() {
         println!("{}:0: WARNING: No variables declared.", file_name);

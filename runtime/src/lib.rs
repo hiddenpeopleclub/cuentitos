@@ -1,6 +1,34 @@
 use cuentitos_common::*;
 use std::path::PathBuf;
 
+/// Draw 8 random bytes from the OS and return them as a non-zero u64.
+/// Falls back to a hard-coded non-zero value if `getrandom` fails (e.g. in
+/// environments with no OS randomness source).
+fn os_random_seed() -> u64 {
+    let mut bytes = [0u8; 8];
+    if getrandom::getrandom(&mut bytes).is_ok() {
+        let value = u64::from_le_bytes(bytes);
+        if value != 0 {
+            return value;
+        }
+    }
+    // Fallback: a non-zero constant — any non-zero value keeps xorshift64 valid.
+    0x9e3779b97f4a7c15
+}
+
+/// Advance the xorshift64 state one step and return the new state.
+///
+/// Algorithm: state ^= state << 13; state ^= state >> 7; state ^= state << 17
+/// Period: 2^64 - 1 (visits every non-zero u64 before repeating).
+/// The shift triple (13, 7, 17) is a well-known maximal-period xorshift64 choice.
+fn xorshift64(state: u64) -> u64 {
+    let mut s = state;
+    s ^= s << 13;
+    s ^= s >> 7;
+    s ^= s << 17;
+    s
+}
+
 pub mod error;
 pub use error::RuntimeError;
 
@@ -29,10 +57,23 @@ struct RuntimeState {
     /// Typed so that adding new `Value` variants (bool, float, string)
     /// is strictly additive — no storage migration needed.
     variable_values: Vec<Value>,
+    /// xorshift64 RNG state. Initialized from the OS on `reset()` for independent
+    /// randomness per playthrough. Override with `Runtime::set_seed` for deterministic replay.
+    rng_state: u64,
+    /// The seed value as originally passed to `set_seed`, or the OS-derived value chosen
+    /// at startup/reset. Stable for the lifetime of a playthrough — unlike `rng_state`,
+    /// which advances on every draw. Used by `current_seed()` so debug output always
+    /// shows the value needed to reproduce the run.
+    initial_seed: u64,
+    /// True when the RNG was seeded explicitly via `set_seed`; false when
+    /// initialized from OS randomness. Only explicitly-set seeds are shown in
+    /// `?` debug output — OS-derived seeds vary per run and cannot be tested.
+    seed_was_explicitly_set: bool,
 }
 
 impl RuntimeState {
     fn new() -> Self {
+        let seed = os_random_seed();
         Self {
             program_counter: 0,
             previous_program_counter: 0,
@@ -42,6 +83,9 @@ impl RuntimeState {
             current_options: Vec::new(),
             last_error: None,
             variable_values: Vec::new(),
+            rng_state: seed,
+            initial_seed: seed,
+            seed_was_explicitly_set: false,
         }
     }
 
@@ -254,6 +298,38 @@ impl Runtime {
                 }
             })
             .collect()
+    }
+
+    /// Set the RNG seed for deterministic randomness. Must be non-zero — use a
+    /// fixed non-zero value (e.g. 1) rather than 0; xorshift64 degenerates to
+    /// an all-zero sequence when seeded with 0.
+    pub fn set_seed(&mut self, seed: u64) {
+        self.state.rng_state = seed;
+        self.state.initial_seed = seed;
+        self.state.seed_was_explicitly_set = true;
+    }
+
+    /// Returns the seed as originally passed to `set_seed`, stable for the lifetime
+    /// of a playthrough regardless of how many draws have been made. This is the value
+    /// needed to reproduce a run.
+    pub fn current_seed(&self) -> u64 {
+        self.state.initial_seed
+    }
+
+    /// Returns true when the seed was set explicitly via `set_seed`; false when
+    /// the seed came from OS randomness (startup or reset). Only explicitly-set
+    /// seeds are stable across runs and therefore testable in compat tests.
+    pub fn seed_was_explicitly_set(&self) -> bool {
+        self.state.seed_was_explicitly_set
+    }
+
+    /// Advance the RNG one step and return a float in [0, 1).
+    ///
+    /// Uses the high 53 bits of the xorshift64 output — the exact precision f64 can
+    /// represent — so the result never rounds up to 1.0.
+    pub fn next_float(&mut self) -> f64 {
+        self.state.rng_state = xorshift64(self.state.rng_state);
+        (self.state.rng_state >> 11) as f64 * (1.0 / (1u64 << 53) as f64)
     }
 
     /// Returns and clears the last runtime error, if any
@@ -1948,5 +2024,77 @@ mod test {
             "Should not be waiting for options after skip"
         );
         assert!(runtime.has_ended(), "Should have reached END");
+    }
+
+    #[test]
+    fn next_float_returns_value_in_unit_interval() {
+        let database = cuentitos_common::Database::default();
+        let mut runtime = Runtime::new(database);
+        runtime.set_seed(1);
+        for _ in 0..1000 {
+            let value = runtime.next_float();
+            assert!(
+                value >= 0.0 && value < 1.0,
+                "next_float out of range: {}",
+                value
+            );
+        }
+    }
+
+    #[test]
+    fn same_seed_produces_identical_sequence() {
+        let database = cuentitos_common::Database::default();
+
+        let mut runtime_a = Runtime::new(database.clone());
+        runtime_a.set_seed(42);
+        let sequence_a: Vec<f64> = (0..100).map(|_| runtime_a.next_float()).collect();
+
+        let mut runtime_b = Runtime::new(database);
+        runtime_b.set_seed(42);
+        let sequence_b: Vec<f64> = (0..100).map(|_| runtime_b.next_float()).collect();
+
+        assert_eq!(sequence_a, sequence_b);
+    }
+
+    #[test]
+    fn different_seeds_produce_different_sequences() {
+        let database = cuentitos_common::Database::default();
+
+        let mut runtime_a = Runtime::new(database.clone());
+        runtime_a.set_seed(1);
+        let first_a = runtime_a.next_float();
+
+        let mut runtime_b = Runtime::new(database);
+        runtime_b.set_seed(2);
+        let first_b = runtime_b.next_float();
+
+        assert_ne!(first_a, first_b);
+    }
+
+    #[test]
+    fn current_seed_reflects_set_seed_and_is_stable_after_draws() {
+        let database = cuentitos_common::Database::default();
+        let mut runtime = Runtime::new(database);
+        runtime.set_seed(1000);
+        assert_eq!(runtime.current_seed(), 1000);
+        // Advancing the RNG must not change what current_seed() reports.
+        for _ in 0..10 {
+            runtime.next_float();
+        }
+        assert_eq!(runtime.current_seed(), 1000);
+    }
+
+    #[test]
+    fn reset_re_seeds_from_os_and_clears_explicit_flag() {
+        let database = cuentitos_common::Database::default();
+        let mut runtime = Runtime::new(database);
+        runtime.set_seed(1000);
+        assert_eq!(runtime.current_seed(), 1000);
+        assert!(runtime.seed_was_explicitly_set());
+        // After reset, seed is re-drawn from OS and the explicit flag is cleared.
+        // We can't assert the exact value, only that it's non-zero (OS seed is always non-zero).
+        runtime.reset();
+        assert_ne!(runtime.current_seed(), 0);
+        assert!(!runtime.seed_was_explicitly_set());
     }
 }
