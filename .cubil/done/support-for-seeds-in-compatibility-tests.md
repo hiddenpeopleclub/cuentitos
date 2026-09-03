@@ -7,7 +7,7 @@ created: 2026-06-17
 ## Summary
 The compatibility test runner needs to support seeded randomness so that probabilistic features can be tested deterministically.
 
-When a seed is provided, the runtime's RNG must produce consistent output across runs, allowing compat tests to assert exact outcomes for probabilistic blocks (one-offs, buckets, frequency manipulation).
+When a seed is provided, the runtime's RNG must produce consistent output across runs, allowing compat tests to assert exact outcomes for probabilistic blocks (conditional lines, buckets, frequency manipulation).
 
 This is a prerequisite for all probabilistic feature tasks.
 

@@ -29,10 +29,10 @@ Also includes:
   buckets with `req`/`set`, options-as-buckets.
 - `errors/` — percentage sum != 100, probability sum != 1.0, mixed
   notations in one bucket.
-- `edge-cases/` — two-branch bucket, bucket nested under a one-off.
+- `edge-cases/` — two-branch bucket, bucket nested under a conditional line.
 
 ## Reference
 
 - `palabritas.md` (version-0.2) — 'Probabilistic Buckets', 'Named Buckets',
   'Options Bucket' sections.
-- Depends on: `probabilistic-one-offs` (one-offs first).
+- Depends on: `line-conditionality` (line conditionality first).

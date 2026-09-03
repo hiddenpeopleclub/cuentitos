@@ -17,5 +17,5 @@ s
 
 ## Result
 ```result
-malformed-notation-non-numeric.cuentitos:2: ERROR: Invalid one-off notation: 'fifty%' is neither a percentage ('N%') nor a probability ('0.N').
+malformed-notation-non-numeric.cuentitos:2: ERROR: Invalid conditionality: 'fifty%' is neither a percentage ('N%') nor a probability ('0.N').
 ```

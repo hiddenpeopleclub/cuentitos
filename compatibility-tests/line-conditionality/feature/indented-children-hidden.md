@@ -1,9 +1,9 @@
-# One-Off With Indented Children: Hidden
+# Conditional Line With Indented Children: Hidden
 
 Same script as `indented-children-shown`, but with a seed whose roll lands
-at or above the threshold. The one-off and its whole subtree are skipped —
-the same way a failing `req` hides both the block it guards and everything
-nested under it.
+at or above the threshold. The conditional line and its whole subtree are
+skipped — the same way a failing `req` hides both the block it guards and
+everything nested under it.
 
 ## Script
 ```cuentitos

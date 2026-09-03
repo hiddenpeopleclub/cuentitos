@@ -1,7 +1,8 @@
-# One-Off Probability Notation: Hidden
+# Conditional Line Probability Notation: Hidden
 
-Same one-off as `probability-notation-shown`, `(0.5) Text`, but with a seed
-whose roll lands at or above the threshold. The line is skipped entirely.
+Same conditional line as `probability-notation-shown`, `(0.5) Text`, but
+with a seed whose roll lands at or above the threshold. The line is skipped
+entirely.
 
 ## Script
 ```cuentitos

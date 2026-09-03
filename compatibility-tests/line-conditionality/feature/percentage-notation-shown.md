@@ -1,7 +1,8 @@
-# One-Off Percentage Notation: Shown
+# Conditional Line Percentage Notation: Shown
 
-`(50%) Text` is a one-off: an independent coin flip for that single line,
-using the percentage notation (an integer 0-100). With this seed the roll
+`(50%) Text` is a conditional line: an independent coin flip for that
+single line, using the percentage notation (an integer 0-100). With this
+seed the roll
 lands under the threshold, so the line is shown, stripped of its `(50%)`
 prefix — the same way a passing `req` shows its line without echoing the
 condition.
