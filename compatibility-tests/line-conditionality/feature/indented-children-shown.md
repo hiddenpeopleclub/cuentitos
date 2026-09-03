@@ -1,7 +1,8 @@
-# One-Off With Indented Children: Shown
+# Conditional Line With Indented Children: Shown
 
-A one-off can have its own indented children, same as any other block. When
-the one-off is shown, its children are shown too, in order.
+A conditional line can have its own indented children, same as any other
+block. When the conditional line is shown, its children are shown too, in
+order.
 
 ## Script
 ```cuentitos

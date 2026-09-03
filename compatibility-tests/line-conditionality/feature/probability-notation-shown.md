@@ -1,9 +1,9 @@
-# One-Off Probability Notation: Shown
+# Conditional Line Probability Notation: Shown
 
-`(0.5) Text` is the same one-off, using the probability notation instead — a
-float in `[0, 1]` rather than an integer percentage. With this seed the roll
-lands under the threshold, so the line is shown, stripped of its `(0.5)`
-prefix.
+`(0.5) Text` is the same conditional line, expressed with the probability
+notation: a float in `[0, 1]` in place of an integer percentage. With this
+seed the roll lands under the threshold, so the line is shown, stripped of
+its `(0.5)` prefix.
 
 ## Script
 ```cuentitos

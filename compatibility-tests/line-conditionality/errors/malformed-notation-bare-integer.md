@@ -17,5 +17,5 @@ s
 
 ## Result
 ```result
-malformed-notation-bare-integer.cuentitos:2: ERROR: Invalid one-off notation: '50' is neither a percentage ('N%') nor a probability ('0.N').
+malformed-notation-bare-integer.cuentitos:2: ERROR: Invalid conditionality: '50' is neither a percentage ('N%') nor a probability ('0.N').
 ```
