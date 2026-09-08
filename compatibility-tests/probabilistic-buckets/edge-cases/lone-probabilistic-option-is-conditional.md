@@ -1,11 +1,12 @@
-# A Lone Probabilistic Option Forms No Bucket
+# A Lone Probabilistic Option Is a Conditional Line
 
-A bucket among options needs at least two probabilistic siblings. With one
+A bucket needs every option at the level to carry a probability. With one
 probabilistic option and one plain option there is no bucket: the plain
-option always appears, and the probabilistic one is rolled on its own. Both
-can appear in the same menu, which no bucket reading would allow.
+option appears every time, and the probabilistic one is rolled on its own,
+appearing in half of all runs.
 
-The roll is `0.1916`, under the option's `50%`, so it shows.
+The roll is `0.1916`, under the option's `50%`, so it shows. Both options
+reach the menu together, which a bucket would never allow.
 
 ## Script
 ```cuentitos

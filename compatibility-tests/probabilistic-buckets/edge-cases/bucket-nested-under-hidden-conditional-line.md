@@ -5,15 +5,15 @@ line's own roll hides it, its whole subtree is skipped, including the nested
 bucket and the bucket's own draw.
 
 The trailing `(80%)` line proves the bucket spent no draw. It is the only
-child of `You keep walking.`, so it has no probabilistic siblings and is a
-conditional line in its own right. With this seed the draws are `0.6389`,
-`0.1635`, `0.8273`: the first hides the parent, and the second falls under
-`0.8` so the coin is seen. Had the hidden bucket drawn, the coin would have
-read the third draw instead and stayed hidden.
+child of `You keep walking.`, and a bucket needs at least two branches, so
+it is a conditional line in its own right. With this seed the draws are
+`0.6389`, `0.1635`, `0.8273`: the first hides the parent, and the second
+falls under `0.8` so the coin is seen. Had the hidden bucket drawn, the coin
+would have read the third draw instead and stayed hidden.
 
-Both probabilistic lines here sit alone among plain siblings. Two
-probabilistic lines at the same level would form a bucket between them
-rather than rolling independently.
+The `(50%)` line at the top level shares that level with two plain lines, so
+no bucket forms there either. The nested bucket is the pair of `(50%)`
+children, which are the only children of their parent.
 
 ## Script
 ```cuentitos
