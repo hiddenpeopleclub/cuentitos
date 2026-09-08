@@ -35,7 +35,7 @@ Depends on the Compiler milestone: translation tables are folded into the
 compiled database, and translation files are regenerated at compile time.
 See [ADR 000017](../../docs/architecture/000017-i18n-translation-tables.md).
 
-- [ ] i18n-for-strings-compatibility-tests — I18n for Strings — compatibility tests
+- [✓] i18n-for-strings-compatibility-tests — I18n for Strings — compatibility tests
 - [ ] i18n-for-strings-implementation — I18n for Strings — implementation
 
 ## Milestone: Plugins
