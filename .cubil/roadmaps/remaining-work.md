@@ -18,10 +18,6 @@ Complete the remaining work, in the order of the work plan. Each feature or area
 - [ ] function-calling-compatibility-tests — Function Calling — compatibility tests
 - [ ] function-calling-implementation — Function Calling — implementation
 
-## Milestone: I18n for Strings
-- [ ] i18n-for-strings-compatibility-tests — I18n for Strings — compatibility tests
-- [ ] i18n-for-strings-implementation — I18n for Strings — implementation
-
 ## Milestone: Docs for how the engine reads lines
 - [ ] docs-for-how-the-engine-reads-lines — Docs for How the Engine Reads Lines
 
@@ -32,6 +28,15 @@ Complete the remaining work, in the order of the work plan. Each feature or area
 ## Milestone: Compiler
 - [ ] compiler-script-to-json — Compiler: script to JSON
 - [ ] compiler-script-to-binary — Compiler: script to binary
+
+## Milestone: I18n for Strings
+
+Depends on the Compiler milestone: translation tables are folded into the
+compiled database, and translation files are regenerated at compile time.
+See [ADR 000017](../../docs/architecture/000017-i18n-translation-tables.md).
+
+- [ ] i18n-for-strings-compatibility-tests — I18n for Strings — compatibility tests
+- [ ] i18n-for-strings-implementation — I18n for Strings — implementation
 
 ## Milestone: Plugins
 - [ ] plugins-support — Plugins: support

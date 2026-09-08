@@ -7,6 +7,22 @@
 ## Change Log
 
 - [pending] 2024-03-05
+- [deprecated] 2026-09-08 - superseded by
+  [000017](000017-i18n-translation-tables.md)
+
+## Status
+
+**Deprecated.** This ADR described a design that was never built. The
+implementation shipped in version 0.2 differed from it in several respects,
+and version 0.3 takes a different approach again. See
+[000017](000017-i18n-translation-tables.md) for the current design.
+
+Points below that are known to be wrong: translations were managed through
+one CSV per language keyed by line number rather than the inline syntax this
+document proposes in places; the fallback chain described under Runtime
+Changes was never implemented; the `[i18n]` TOML configuration block is
+replaced by a `--- locales` frontmatter block; and the compatibility test
+format sketched here was never adopted.
 
 ## Context
 
