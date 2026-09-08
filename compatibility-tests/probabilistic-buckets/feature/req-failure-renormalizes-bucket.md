@@ -1,14 +1,15 @@
-# A Failed Req Drops Its Branch and Renormalizes the Bucket
+# A Failed Req Drops Its Branch and Redistributes Its Share
 
-A branch whose `req` fails is out of the running before the draw happens. The
-remaining branches share the whole range between them, in proportion to their
-declared weights.
+A branch whose `req` fails is out of the running before the draw happens. Its
+share is handed to the surviving branches in equal parts, so every survivor
+gains the same number of percentage points regardless of how large its own
+share already was.
 
-Here `market_open` is false, so the `35%` group is gone and the surviving
-branches renormalize: bread takes `[0, 0.6154)` and trinkets takes
-`[0.6154, 1.0)`. The draw is `0.7199`, which lands in the trinket slice under
-renormalization and in the vacated fish slice under a naive reading, so the
-result tells the two apart.
+Here `market_open` is false, so the `35%` group is gone. Two branches survive,
+so each gains `17.5`: bread goes from `40%` to `57.5%` and trinkets from `25%`
+to `42.5%`. The draw is `0.5856`, which lands in the trinket slice under an
+equal split and in the bread slice under a proportional one, so the result
+tells the two apart.
 
 ## Script
 ```cuentitos
@@ -26,7 +27,7 @@ I approach another stall.
 
 ## Input
 ```input
-seed 9277395066787507847
+seed 13322711060460899682
 s
 ```
 
