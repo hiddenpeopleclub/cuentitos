@@ -30,13 +30,19 @@ Also includes:
 
 ## What to cover
 
-- `feature/` — bucket picks one branch across seeds, both notations, a named
-  bucket grouping its branches, a named bucket gated by `req`, a named
-  bucket's `set` running when its group is chosen and skipped when it is not,
+- `feature/` — bucket picks one branch across seeds, both notations, the
+  chosen branch rendering its own children, a redraw on each visit, a named
+  bucket grouping its branches, a named bucket gated by `req`, a failed `req`
+  dropping its branch and renormalizing the rest, a named bucket's `set`
+  running when its group is chosen and skipped when it is not,
   options-as-buckets.
 - `errors/` — percentage sum != 100, probability sum != 1.0, mixed
-  notations in one bucket.
-- `edge-cases/` — two-branch bucket, bucket nested under a conditional line.
+  notations in one bucket, a named bucket whose name is not snake case, a
+  named bucket with a branch that carries no probability, a named bucket with
+  no branches at all.
+- `edge-cases/` — two-branch bucket, bucket nested under a conditional line,
+  plain siblings alongside bucket branches, a lone probabilistic option that
+  forms no bucket.
 
 ## Reference
 
