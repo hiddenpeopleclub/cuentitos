@@ -77,9 +77,12 @@ rather than sharing the display name's `StringId`, which is what
 ### Translation Files
 
 Each non-default locale owns `locales/<code>.csv` with the columns
-`id`, `line`, `original`, `translation`. The `original` column gives the
-translator the source text in the same file they work in. The `line` column
-records where the text sat at the previous Regeneration.
+`id`, `line`, `original`, `translation` and `status`. The `original` column
+gives the translator the source text in the same file they work in. The `line`
+column records where the text sat at the previous Regeneration. The `status`
+column is empty for a current row, `review` for a row whose original text was
+edited underneath it, and `obsolete` for a row whose text left the script.
+Quoting follows RFC 4180.
 
 ### Regeneration
 
@@ -95,8 +98,17 @@ are matched against the script in two passes:
    carries over and is marked for review.
 
 Script entries left unmatched become rows with an empty translation. Rows left
-unmatched are Obsolete Rows, retained under a marker so their translations can
-be salvaged. Rows are written in script order.
+unmatched become Obsolete Rows, retained so their translations can be salvaged;
+an obsolete row whose text returns to the script is revived by pass 1, which
+clears its status. Live rows are written in script order, obsolete rows after
+them.
+
+Pass 1 runs to completion before pass 2 begins. A row is available to a line
+match only if no id match has already claimed it.
+
+A `review` mark survives Regeneration, because the translator clears it once
+they have looked at the row. Pass 1 preserves whatever a matched row carried,
+clearing only `obsolete`.
 
 ### Compilation and the runtime
 
@@ -104,12 +116,12 @@ Compile folds every Translation File into the Translation Table for its locale
 inside the compiled database, following version 0.2. The runtime reads only
 those baked tables.
 
-A row with an empty translation fails the build. Compile reports each one at
-its source location in the established diagnostic format and emits no
-database:
+A row with an empty translation fails the build. Compile reports it at its
+source location in the established diagnostic format, following the rest of the
+toolchain in stopping at the first diagnostic, and emits no database:
 
 ```
-story.cuentitos:12: ERROR: Missing `es` translation for 9b04: "Hello world."
+story.cuentitos:12: ERROR: Missing 'es' translation for 9b04a1f7: "Hello world."
 ```
 
 Declaring a locale is therefore a statement that the locale is complete. An
@@ -121,8 +133,12 @@ building.
 Two sections are added. `## Translations` supplies the pre-existing
 Translation Files, which the runner materializes under `locales/`.
 `## Expected Translations` asserts what Regeneration must produce, making
-carry-over and obsolete marking directly testable. A test exercising only the
-merge needs neither `## Input` nor `## Result`.
+carry-over and obsolete marking directly testable. Each takes one fenced block
+per locale, keyed by the fence language.
+
+Because `run` performs no Regeneration, the runner compiles a test carrying
+either section before running it, and compares the files compile leaves under
+`locales/`.
 
 ## Considerations
 
@@ -139,6 +155,12 @@ case, and Obsolete Rows preserve it in the rest.
 owns. It is confined to an explicit compile step for that reason, and `run`
 performs no Regeneration.
 
+**A status column over an out-of-band marker.** Marking a row by prefixing it
+with a comment line keeps the column set at four, and it stops the file being
+CSV, which is the one property that lets translators open it in the tools they
+already use. It also cannot express a mark on a row that is still live, which
+`review` needs. A fifth column carries both marks and stays parseable.
+
 **Duplicate collapse.** A line needing different translations in different
 contexts cannot be expressed. A disambiguator can be added later; doing so
 changes ids only for the lines that adopt it.
@@ -152,9 +174,9 @@ changes ids only for the lines that adopt it.
    translatable. Section identifiers are stored separately from display names
    so jumps stay untranslated.
 4. Translation Files are per-locale CSVs with `id, line, original,
-   translation`.
+   translation, status`.
 5. Compile regenerates Translation Files, matching by id and then by line, and
-   retains Obsolete Rows under a marker.
+   retains Obsolete Rows under a `status` of `obsolete`.
 6. Compile folds the Translation Files into Translation Tables inside the
    compiled database. The runtime reads only those.
 7. A Missing Translation fails the build and no database is emitted.

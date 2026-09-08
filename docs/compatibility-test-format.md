@@ -124,15 +124,17 @@ fenced block is one locale's translation file as it exists **before** the
 test runs; the runner writes it to `locales/<code>.csv` next to the script.
 The fence language is the locale code.
 
-Columns are `id`, `line`, `original` and `translation`, matching what the
-compiler reads and writes.
+Columns are `id`, `line`, `original`, `translation` and `status`, matching
+what the compiler reads and writes. `status` is empty for a current row,
+`review` for one whose original text was edited underneath it, and `obsolete`
+for one whose text left the script. Quoting follows RFC 4180.
 
 Example:
 ````
 ## Translations
 ```es
-id,line,original,translation
-3f21,1,"Hello.","Hola."
+id,line,original,translation,status
+3f21b0c8,6,Hello.,Hola.,
 ```
 ````
 
@@ -145,18 +147,21 @@ Optional. Asserts the translation file the compiler must produce **after**
 regeneration, in the same shape as `## Translations`. This is what makes
 merge behaviour testable: carrying a translation over when a line moves,
 carrying it over by line number when its text was edited, and retaining rows
-whose text is gone as marked obsolete entries.
+whose text is gone as obsolete entries.
 
-A test that only exercises regeneration needs no `## Input` and no
-`## Result`.
+The comparison is byte for byte, so a test that supplies an up-to-date
+`## Translations` block and repeats it here asserts that regeneration is
+idempotent.
+
+Both sections take one fenced block per locale, keyed by the fence language. A
+test covering two locales carries two blocks.
 
 Example:
 ````
 ## Expected Translations
 ```es
-id,line,original,translation
-7c1a,1,"Hello there.","Hola."
-# obsolete
-3f21,1,"Hello.","Hola."
+id,line,original,translation,status
+7c1a4f02,6,Hello there.,Hola.,review
+3f21b0c8,6,Hello.,Hola.,obsolete
 ```
 ````

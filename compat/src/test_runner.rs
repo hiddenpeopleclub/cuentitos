@@ -4,6 +4,7 @@ use std::process::Command;
 
 use crate::PathBuf;
 use crate::TestCase;
+use cuentitos_common::test_case::TranslationFile;
 
 #[derive(Debug, Clone)]
 pub enum TestResult {
@@ -32,6 +33,7 @@ impl TempFileGuard {
 impl Drop for TempFileGuard {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.path);
+        let _ = std::fs::remove_dir_all(self.dir.join("locales"));
         let _ = std::fs::remove_dir(&self.dir);
     }
 }
@@ -63,6 +65,16 @@ impl TestRunner {
         let mut file = File::create(&temp_path).unwrap();
         writeln!(file, "{}", test_case.script).unwrap();
 
+        let locales_dir = temp_path.parent().unwrap().join("locales");
+        if !test_case.translations.is_empty() {
+            std::fs::create_dir_all(&locales_dir).unwrap();
+            for translation in &test_case.translations {
+                let path = locales_dir.join(format!("{}.csv", translation.locale));
+                let mut file = File::create(&path).unwrap();
+                writeln!(file, "{}", translation.contents).unwrap();
+            }
+        }
+
         let input_commands = test_case.input.split("\n").collect::<Vec<&str>>().join(",");
 
         // Run the runtime with the script file and the input from the test case.
@@ -93,12 +105,15 @@ impl TestRunner {
                 let output_trimmed = output.trim_end_matches(&['\r', '\n'][..]);
                 let expected_trimmed = test_case.result.trim_end_matches(&['\r', '\n'][..]);
 
-                if expected_trimmed == output_trimmed {
-                    TestResult::Pass
-                } else {
+                if expected_trimmed != output_trimmed {
                     TestResult::Fail {
                         expected: Some(test_case.result),
                         actual: output,
+                    }
+                } else {
+                    match compare_translations(&locales_dir, &test_case.expected_translations) {
+                        Some(failure) => failure,
+                        None => TestResult::Pass,
                     }
                 }
             }
@@ -113,4 +128,38 @@ impl TestRunner {
 
         result
     }
+}
+
+/// Compares each expected translation file against what the run left under
+/// `locales/`. Returns the first mismatch, or `None` when every file matches.
+fn compare_translations(
+    locales_dir: &std::path::Path,
+    expected_translations: &[TranslationFile],
+) -> Option<TestResult> {
+    for expected in expected_translations {
+        let path = locales_dir.join(format!("{}.csv", expected.locale));
+        let actual = match std::fs::read_to_string(&path) {
+            Ok(contents) => contents,
+            Err(_) => {
+                return Some(TestResult::Fail {
+                    expected: Some(label(expected.locale.as_str(), &expected.contents)),
+                    actual: format!("locales/{}.csv was not written", expected.locale),
+                })
+            }
+        };
+
+        let trimmed = actual.trim_end_matches(&['\r', '\n'][..]);
+        if trimmed != expected.contents {
+            return Some(TestResult::Fail {
+                expected: Some(label(expected.locale.as_str(), &expected.contents)),
+                actual: label(expected.locale.as_str(), trimmed),
+            });
+        }
+    }
+
+    None
+}
+
+fn label(locale: &str, contents: &str) -> String {
+    format!("locales/{}.csv:\n{}", locale, contents)
 }

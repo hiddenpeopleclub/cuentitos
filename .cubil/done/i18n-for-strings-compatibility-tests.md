@@ -20,7 +20,7 @@ in-script translation blocks and author-written keys; both are ruled out.
 Locales are declared in a `--- locales` frontmatter block. The parser derives
 a Translation Id from each translatable block's Default Locale text, so
 authors write no keys. Each non-default locale owns
-`locales/<code>.csv` with columns `id, line, original, translation`.
+`locales/<code>.csv` with columns `id, line, original, translation, status`.
 
 Compile regenerates those files from the current script, matching existing
 rows by Translation Id and then by line number, retaining unmatched rows as
@@ -35,8 +35,8 @@ These tests need two new sections, specified in
 
 - `## Translations` — pre-existing Translation Files, one fenced block per
   locale, materialized by the runner under `locales/`.
-- `## Expected Translations` — what Regeneration must produce. A test
-  covering only the merge needs no `## Input` or `## Result`.
+- `## Expected Translations` — what Regeneration must produce, compared byte
+  for byte against what the run leaves under `locales/`.
 
 Extending `TestCase` and `TestRunner` to handle both is part of this task.
 
@@ -50,17 +50,21 @@ Extending `TestCase` and `TestRunner` to handle both is part of this task.
 - Option text translates.
 
 `regeneration/`
-- A new line adds a row with an empty translation, in script order.
-- An unchanged line keeps its translation when other lines are inserted above
-  it, proving id matching survives line shifts.
-- An edited line carries its translation over by line match, marked for
-  review.
-- A deleted line becomes a marked Obsolete Row.
-- Regeneration is idempotent: running it twice produces identical files.
+- Inserting a line at the top keeps every translation below it, corrects their
+  line numbers, and adds an empty row for the new line. This is the case
+  version 0.2 got wrong.
+- Reordering two lines keeps each translation with its own text.
+- An edited line carries its translation over by line match, with `status` set
+  to `review`.
+- A deleted line is retained with `status` set to `obsolete`, after the live
+  rows.
+- Restoring a deleted line revives its obsolete row and clears the status.
+- Regeneration is idempotent: an up-to-date file, `review` and `obsolete` marks
+  included, regenerates byte for byte.
 
 `errors/`
 - A Missing Translation fails the build, reports
-  `<file>:<line>: ERROR: Missing \`<locale>\` translation for <id>: "<original>"`,
+  `<file>:<line>: ERROR: Missing '<locale>' translation for <id>: "<original>"`,
   and emits no database.
 - A locale requested at runtime that the frontmatter never declared.
 - A malformed `--- locales` block, and one missing its `default:`.
@@ -68,9 +72,12 @@ Extending `TestCase` and `TestRunner` to handle both is part of this task.
 
 `edge-cases/`
 - Two blocks with identical text share one id and one translation.
-- A declared locale whose CSV does not exist yet.
-- A Translation File carrying rows for ids absent from the script.
+- A declared locale whose CSV does not exist yet gets one generated.
 - Text containing commas and quotes, round-tripping through CSV.
+- A script with no translatable text regenerates a header-only file.
+
+Every test is marked `## Pending` until the Compiler milestone lands, so the
+suite stays green while they sit there as the specification.
 
 ## Reference
 

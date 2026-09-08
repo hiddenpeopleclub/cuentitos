@@ -52,7 +52,7 @@ _Avoid_: i18n id, message id, string key, translation key
 
 **Translation File**:
 The per-locale CSV under `locales/` holding one row per Translation Id, with
-columns `id`, `line`, `original` and `translation`.
+columns `id`, `line`, `original`, `translation` and `status`.
 _Avoid_: locale file, language file, string table
 
 **Original**:
@@ -69,9 +69,19 @@ _Avoid_: extraction, sync, merge
 The per-Locale map from Translation Id to translated text that compile folds
 into the Compiled Database, and the only source the runtime reads.
 
+**Row Status**:
+The Translation File cell carrying a row's standing: empty for a current row,
+`review` for one whose Original changed under it, `obsolete` for one whose text
+left the script.
+
 **Obsolete Row**:
 A Translation File row whose Translation Id no longer appears in the script,
-retained and marked so its translation can be salvaged.
+retained with a `status` of `obsolete` so its translation can be salvaged.
+
+**Row Under Review**:
+A Translation File row whose translation was carried over from text that has
+since been edited. It renders like any other translation and carries a
+`status` of `review` until the translator clears it.
 
 **Missing Translation**:
 A Translation File row with an empty translation cell, which fails the

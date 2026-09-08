@@ -26,7 +26,8 @@ and `i18n-for-strings-compatibility-tests`.
 - `common/src/database.rs` — carry the Translation Tables so they serialize
   into the compiled database.
 - `compiler/src/i18n.rs` — Regeneration and the CSV read/write. Two-pass
-  match: id, then line. Retain Obsolete Rows under a marker. Write rows in
+  match: id, then line. Retain Obsolete Rows under a `status` of `obsolete`,
+  after the live rows. Write live rows in
   script order.
 - `compiler/` — fail the build on any Missing Translation, reporting each at
   its source location, and emit no database.
