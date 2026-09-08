@@ -16,9 +16,12 @@ probability — an independent coin flip for that single line. Two notations:
 - Percentage: `(50%) Text here.` — integer percentages only.
 - Probability: `(0.5) Text here.` — float in [0, 1].
 
-A conditional line with no probabilistic siblings behaves independently. A
-bucket (a separate task) is a set of probabilistic siblings where the
-engine picks exactly one.
+A conditional line is any probabilistic block that is not part of a bucket.
+A bucket (a separate task) forms at an indentation level when there are at
+least two blocks at that level and every one of them carries a probability;
+the engine then picks exactly one per visit. One plain sibling stops a
+bucket from forming, and so does having only one block at the level, and in
+both cases the probabilistic blocks there are conditional lines.
 
 ## What to cover
 

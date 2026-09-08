@@ -1,10 +1,15 @@
 # Edge Case: Conditional Line As The Only Child
 
-A conditional line is defined by having no probabilistic siblings. That
-definition holds however many total siblings the block has. A probabilistic
-block that happens to be its parent's only child is still a conditional
-line: it is rolled independently, using its own chance every time this
-point in the story is reached.
+A conditional line is any probabilistic block that is not part of a bucket,
+and a bucket needs at least two blocks at one indentation level, all of them
+probabilistic. A block that is its parent's only child has no second branch
+to pair with, so it is a conditional line: it is rolled independently, using
+its own chance every time this point in the story is reached.
+
+The minimum of two is what decides this case. Every block at the level does
+carry a probability, since there is only the one, so the count is the only
+thing separating a conditional line from a one-branch bucket that would owe
+`100%`.
 
 ## Script
 ```cuentitos
