@@ -17,7 +17,6 @@ I reach a fork in the road.
 ## Input
 ```input
 seed 6947113883557504045
-s
 1
 s
 ```
