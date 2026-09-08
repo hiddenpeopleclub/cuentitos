@@ -18,6 +18,11 @@ A description of the test.
 // The script to run
 ```
 
+## Translations
+```es
+// Optional. A pre-existing translation file for locale `es`.
+```
+
 ## Input
 ```input
 // A linebreak-separated list of inputs
@@ -26,6 +31,11 @@ A description of the test.
 ## Result
 ```result
 // The expected output in the command line
+```
+
+## Expected Translations
+```es
+// Optional. The translation file the compiler must produce for `es`.
 ```
 ````
 
@@ -104,5 +114,49 @@ The person looks at you.
 UNFAMILIAR_FACE: The question is who are you?
 UNFAMILIAR_FACE: And what are you doing in MY house?
 END
+```
+````
+
+## Translations
+
+Optional, and only meaningful for tests covering internationalization. Each
+fenced block is one locale's translation file as it exists **before** the
+test runs; the runner writes it to `locales/<code>.csv` next to the script.
+The fence language is the locale code.
+
+Columns are `id`, `line`, `original` and `translation`, matching what the
+compiler reads and writes.
+
+Example:
+````
+## Translations
+```es
+id,line,original,translation
+3f21,1,"Hello.","Hola."
+```
+````
+
+See [ADR 000017](architecture/000017-i18n-translation-tables.md) for how ids
+are derived and how rows are matched.
+
+## Expected Translations
+
+Optional. Asserts the translation file the compiler must produce **after**
+regeneration, in the same shape as `## Translations`. This is what makes
+merge behaviour testable: carrying a translation over when a line moves,
+carrying it over by line number when its text was edited, and retaining rows
+whose text is gone as marked obsolete entries.
+
+A test that only exercises regeneration needs no `## Input` and no
+`## Result`.
+
+Example:
+````
+## Expected Translations
+```es
+id,line,original,translation
+7c1a,1,"Hello there.","Hola."
+# obsolete
+3f21,1,"Hello.","Hola."
 ```
 ````
