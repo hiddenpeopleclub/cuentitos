@@ -21,15 +21,19 @@ is rolled independently.
 - The compiler rejects invalid sums.
 
 Also includes:
-- Named buckets: `[(50%) bucket_name]` — a named branch that can have
-  `req` and `set`.
+- Named buckets: `[bucket_name]` on its own line, with the bucket's branches
+  indented under it. The header carries no text; a probability on it,
+  `[(35%) bucket_name]`, makes the group a branch of its parent's bucket. The
+  name is snake case, and `req`, `set` and `mod` attach to the group.
 - Options as buckets: when all options at an indentation level are
   probabilistic, only one is shown.
 
 ## What to cover
 
-- `feature/` — bucket picks one branch across seeds, both notations, named
-  buckets with `req`/`set`, options-as-buckets.
+- `feature/` — bucket picks one branch across seeds, both notations, a named
+  bucket grouping its branches, a named bucket gated by `req`, a named
+  bucket's `set` running when its group is chosen and skipped when it is not,
+  options-as-buckets.
 - `errors/` — percentage sum != 100, probability sum != 1.0, mixed
   notations in one bucket.
 - `edge-cases/` — two-branch bucket, bucket nested under a conditional line.
