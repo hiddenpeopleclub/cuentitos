@@ -1,3 +1,4 @@
 website/public
 target
 .claude/settings.local.json
+.claude/worktrees/
