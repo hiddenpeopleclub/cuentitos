@@ -10,8 +10,11 @@ implementation lands. Sibling task:
 
 ## Feature summary
 
-A bucket is a set of indented sibling blocks where the engine picks exactly
-one per visit, respecting the defined probabilities.
+A bucket is a set of probabilistic sibling blocks where the engine picks
+exactly one per visit, respecting the defined probabilities. Any two
+probabilistic lines at the same indentation level form a bucket between them.
+A probabilistic line with no probabilistic siblings is a conditional line and
+is rolled independently.
 
 - Percentage notation: each branch has `(N%)`, must sum to 100.
 - Probability notation: each branch has `(0.N)`, must sum to 1.0.
