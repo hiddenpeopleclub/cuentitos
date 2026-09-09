@@ -18,6 +18,11 @@ A description of the test.
 // The script to run
 ```
 
+## Translations
+```es
+// Optional. A pre-existing translation file for locale `es`.
+```
+
 ## Input
 ```input
 // A linebreak-separated list of inputs
@@ -26,6 +31,11 @@ A description of the test.
 ## Result
 ```result
 // The expected output in the command line
+```
+
+## Expected Translations
+```es
+// Optional. The translation file the compiler must produce for `es`.
 ```
 ````
 
@@ -104,5 +114,54 @@ The person looks at you.
 UNFAMILIAR_FACE: The question is who are you?
 UNFAMILIAR_FACE: And what are you doing in MY house?
 END
+```
+````
+
+## Translations
+
+Optional, and only meaningful for tests covering internationalization. Each
+fenced block is one locale's translation file as it exists **before** the
+test runs; the runner writes it to `locales/<code>.csv` next to the script.
+The fence language is the locale code.
+
+Columns are `id`, `line`, `original`, `translation` and `status`, matching
+what the compiler reads and writes. `status` is empty for a current row,
+`review` for one whose original text was edited underneath it, and `obsolete`
+for one whose text left the script. Quoting follows RFC 4180.
+
+Example:
+````
+## Translations
+```es
+id,line,original,translation,status
+3f21b0c8,6,Hello.,Hola.,
+```
+````
+
+See [ADR 000017](architecture/000017-i18n-translation-tables.md) for how ids
+are derived and how rows are matched.
+
+## Expected Translations
+
+Optional. Asserts the translation file the compiler must produce **after**
+regeneration, in the same shape as `## Translations`. This is what makes
+merge behaviour testable: carrying a translation over when a line moves,
+carrying it over by line number when its text was edited, and retaining rows
+whose text is gone as obsolete entries.
+
+The comparison is byte for byte, so a test that supplies an up-to-date
+`## Translations` block and repeats it here asserts that regeneration is
+idempotent.
+
+Both sections take one fenced block per locale, keyed by the fence language. A
+test covering two locales carries two blocks.
+
+Example:
+````
+## Expected Translations
+```es
+id,line,original,translation,status
+7c1a4f02,6,Hello there.,Hola.,review
+3f21b0c8,6,Hello.,Hola.,obsolete
 ```
 ````
