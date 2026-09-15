@@ -3,7 +3,7 @@
 Complete the remaining work, in the order of the work plan. Each feature or area gets its own milestone; for language features, compatibility tests land before implementation (TDD).
 
 ## Milestone: Line Conditionality
-- [ ] line-conditionality-compatibility-tests — Line Conditionality — compatibility tests
+- [✓] line-conditionality-compatibility-tests — Line Conditionality — compatibility tests
 - [ ] line-conditionality-implementation — Line Conditionality — implementation
 
 ## Milestone: Probabilistic Buckets
